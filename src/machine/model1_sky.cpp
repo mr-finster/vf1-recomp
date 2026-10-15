@@ -509,8 +509,11 @@ namespace {
 struct screen_record { const char *name; uint32_t hash; };
 // The player select has three layouts: player 1 alone (portrait on the left), player 2 alone
 // (portrait on the right: player 2 starting from the demo) and both (VS: a challenger joining).
+// Cheats' Siba (Majido) in Akira's place changes the map (his own select icon): its first frame
+// and player 1 alone, as a7c660d4 and fa5cc994 are Akira's.
 const screen_record SCREEN_RECORDS[] = { { "title", 0x6e31a62b }, { "select", 0xfa5cc994 },
-										 { "select", 0x282467f8 }, { "select", 0xa7c660d4 } };
+										 { "select", 0x282467f8 }, { "select", 0xa7c660d4 },
+										 { "select", 0x14d0cd96 }, { "select", 0x0bc13456 } };
 } // namespace
 
 std::vector<std::string> model1::screen_names()
