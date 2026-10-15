@@ -43,6 +43,7 @@ cp $D/bin/vf-native $P/vf
 strip $P/vf
 cp -L $D/sdl/lib/libSDL3.so.0 $P/lib/
 cp -R assets/ui assets/fonts assets/backgrounds assets/vf_map.txt $P/assets/
+[ -d assets/icons ] && cp -R assets/icons $P/assets/   # (the secret characters' select icons: made from the game, so not in the repository)
 cp assets/icon/icon.png $P/icon.png
 cp tools/deck/README.txt tools/deck/VirtuaFighter.sh $P/
 [ -f build/release/LICENSES.txt ] && cp build/release/LICENSES.txt $P/

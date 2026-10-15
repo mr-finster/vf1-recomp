@@ -812,6 +812,8 @@ int main(int argc, char **argv)
 	load_backgrounds(m, dir + "/backgrounds");   // the player's own (hi-res stage skies...), which win
 	m.set_ring_width(cfg.ring_now());
 	m.set_akira_slot(cfg.akira_slot);
+	auto icon_dirs = [&] { return std::vector<std::string>{ dir + "/icons", find_assets() + "/icons" }; };   // (the player's first)
+	load_secret_icon(m, cfg.akira_slot, icon_dirs());
 	// The play style's coins: PC mode is free play (its FREE PLAY text hidden); Arcade mode has the
 	// cabinet's own coin setting, kept in settings.ini while PC mode has free play in its place (it
 	// was left at free play, so Arcade mode after PC mode had no credits to put in, and a cabinet's
@@ -1584,6 +1586,7 @@ int main(int argc, char **argv)
 				cfg.akira_slot = wrap(cfg.akira_slot + d, N_CHARS);
 				cfg_dirty = true;
 				m.set_akira_slot(cfg.akira_slot);
+				load_secret_icon(m, cfg.akira_slot, icon_dirs());
 			} });
 		static const char *WHO[] = { "Off", "Player 1", "Player 2", "Both" };
 		p.items.push_back({ "Infinite energy", "Energy stays full: hits land but never knock out.",

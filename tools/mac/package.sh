@@ -10,6 +10,7 @@ APP="build/release/Virtua Fighter Recomp.app"
 rm -rf build/release && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/assets"
 cp build/rel/vf-native "$APP/Contents/MacOS/Virtua Fighter Recomp"
 cp -R assets/ui assets/fonts assets/backgrounds assets/vf_map.txt "$APP/Contents/Resources/assets/"
+[ -d assets/icons ] && cp -R assets/icons "$APP/Contents/Resources/assets/"   # (the secret characters' select icons: made from the game, so not in the repository)
 cp assets/icon/VF1.icns "$APP/Contents/Resources/VF1.icns"
 VERSION=${VF_VERSION:-$(git describe --tags --always 2>/dev/null || echo dev)}   # (VF_VERSION=v1.1.11 for a release)
 cat > "$APP/Contents/Info.plist" <<PLIST

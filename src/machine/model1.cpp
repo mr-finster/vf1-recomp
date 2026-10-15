@@ -105,6 +105,7 @@ void model1::run_frame()
 			m_audio->run(CYCLES_PER_LINE * 1e6 / CPU_CLOCK, m_audio_out);
 		if (on_line) on_line(line);
 	}
+	if (m_icon.on) secret_icon_frame();
 	// MAME draws the screen when vblank ends (VIDEO_UPDATE_AFTER_VBLANK): the 2D layers are
 	// as the vblank handler left them
 	if (m_draw) {
@@ -566,7 +567,7 @@ void model1::set_akira_slot(int which)
 	static const int64_t TO[std::size(UNUSED_CHARACTERS)][N] = {     // -1: Akira's own
 		{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
 		{ 0x33af, 0x4843, 0x001d1a8f, 0x0b37, 0x14f7, 0xd773, NO, NO, NO, NO },     // Majido (Siba)
-		{ 0x3c7b, 0x4ca5, 0x001d1a8f, 0x09ff, 0x11eb, 0xc95b, NO, NO, NO, NO },     // Jeff (Majido's portrait)
+		{ 0x3c7b, 0x4ca5, -1, 0x09ff, 0x11eb, 0xc95b, NO, NO, NO, NO },             // Jeff (TCRF's has Majido's icon: a made one instead)
 		{ 0x3df9, 0x4e23, -1, -1, -1, 0xb437, -1, -1, -1, -1 },                     // Takeru, the early Akira (his ribbon)
 		// the Koskol brothers, one each, in both of Akira's slots: TCRF's cheats put two in at once
 		// (Rekka + Score, Aeon + Dural), one per slot
@@ -660,6 +661,119 @@ void model1::akira_slot_heads(uint32_t record)
 		made = true;
 	}
 	if (!made) std::fill(&rom[AT], &rom[LIST + 0x80], 0xff);   // (as it was: no ROM)
+}
+
+// The select's icons for the characters without one (all but Siba, whose is in the ROM): pictures
+// made from their heads (tools/icons), shown in Akira's icon's tiles while one is in his place.
+// His icon (map at 2ff5ec: 7 x 8 tiles, 8 x 8 pixels at 4 bits, colour 0x61, its own) is drawn on the
+// select as entries b080-b0b1, two of them used more than once (the left edge's b087, and b0a5):
+// those cells get tiles of their own, b0b2-b0b7 (unused there). While the icon is on screen its
+// tiles, colours and map are ours, VF's own kept and put back as it goes; when the game writes
+// them again, what it wrote is kept instead.
+const char *const model1::SECRET_ICON_NAMES[] = { nullptr, nullptr, "jeff", "takeru", "rekka", "score", "aeon", "dural" };
+
+namespace {
+constexpr int ICON_W = 7, ICON_H = 8, ICON_COLOUR = 0x61;
+constexpr uint16_t ICON_FIRST = 0xb080;
+// VF's map of the icon, and ours (the repeated cells moved to b0b2-b0b7)
+uint16_t icon_entry(int x, int y, bool ours)
+{
+	static const uint8_t VF[ICON_H][ICON_W] = {
+		{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, { 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d },
+		{ 0x07, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13 }, { 0x07, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19 },
+		{ 0x07, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f }, { 0x07, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25 },
+		{ 0x07, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x25 }, { 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31 } };
+	if (ours && x == 0 && y >= 2 && y <= 6) return ICON_FIRST + 0x32 + (y - 2);
+	if (ours && x == 6 && y == 6) return ICON_FIRST + 0x37;
+	return ICON_FIRST + VF[y][x];
+}
+}
+
+bool model1::set_akira_icon(const uint32_t *xrgb)
+{
+	if (m_icon.active) { m_icon.on = false; secret_icon_frame(); }   // (VF's own back first)
+	if (!xrgb) { m_icon.on = false; return true; }
+	constexpr int W = ICON_W * 8, H = ICON_H * 8;
+	std::vector<uint32_t> cols;
+	std::vector<uint8_t> idx(W * H);
+	for (int i = 0; i < W * H; i++) {
+		const uint32_t c = xrgb[i] & 0xffffff;
+		auto it = std::find(cols.begin(), cols.end(), c);
+		if (it == cols.end()) { if (cols.size() == 15) return false; cols.push_back(c); it = cols.end() - 1; }
+		idx[i] = uint8_t(1 + (it - cols.begin()));   // (0: see-through, unused)
+	}
+	m_icon.pal.assign(16, 0x8000);
+	for (size_t i = 0; i < cols.size(); i++) {
+		const uint32_t c = cols[i];
+		m_icon.pal[1 + i] = uint16_t(0x8000 | ((c & 0xff) >> 3) << 10 | ((c >> 8 & 0xff) >> 3) << 5 | (c >> 16 & 0xff) >> 3);   // (xBGR 555)
+	}
+	m_icon.map.resize(ICON_W * ICON_H);
+	m_icon.chars.assign(0x38 * 16, 0);
+	for (int ty = 0; ty < ICON_H; ty++)
+		for (int tx = 0; tx < ICON_W; tx++) {
+			const uint16_t e = icon_entry(tx, ty, true);
+			m_icon.map[ty * ICON_W + tx] = e;
+			uint16_t *c = &m_icon.chars[(e - ICON_FIRST) * 16];
+			for (int y = 0; y < 8; y++) {
+				uint32_t row = 0;
+				for (int x = 0; x < 8; x++) row |= uint32_t(idx[(ty * 8 + y) * W + tx * 8 + x]) << (28 - 4 * x);
+				c[y * 2] = uint16_t(row >> 16); c[y * 2 + 1] = uint16_t(row);
+			}
+		}
+	m_icon.on = true;
+	return true;
+}
+
+void model1::secret_icon_frame()
+{
+	// where the icon is: its first row, VF's or ours
+	uint32_t at = ~0u;
+	if (m_icon.on)
+		for (uint32_t i = 0; i < 0x4000 - ICON_H * 64 && at == ~0u; i++) {
+			if (m_tiles.tile_r(i) != ICON_FIRST) continue;
+			bool row = true;
+			for (int x = 1; x < ICON_W && row; x++) row = m_tiles.tile_r(i + x) == ICON_FIRST + x;
+			for (int y = 1; y < ICON_H && row; y++) row = (m_tiles.tile_r(i + y * 64 + 1) & 0xff80) == ICON_FIRST;
+			if (row) at = i;
+		}
+	const uint32_t code0 = ICON_FIRST & 0x3fff, pal0 = ICON_COLOUR * 16;
+	if (m_icon.active && at != m_icon.at) {   // gone (or moved): VF's own back
+		for (size_t i = 0; i < m_icon.chars.size(); i++)
+			if (m_tiles.char_r(code0 * 16 + i) == m_icon.chars[i]) m_tiles.char_w(code0 * 16 + i, m_icon.keep_chars[i], 0xffff);
+		for (int i = 1; i < 16; i++)
+			if (m_paletteram16[pal0 + i] == m_icon.pal[i]) model1_paletteram_w(pal0 + i, m_icon.keep_pal[i], 0xffff);
+		for (int y = 0; y < ICON_H; y++)
+			for (int x = 0; x < ICON_W; x++) {
+				const uint32_t o = m_icon.at + y * 64 + x;
+				if (m_tiles.tile_r(o) == m_icon.map[y * ICON_W + x]) m_tiles.tile_w(o, m_icon.keep_map[y * ICON_W + x], 0xffff);
+			}
+		m_icon.active = false;
+	}
+	if (at == ~0u) return;
+	if (!m_icon.active) {   // VF's as it is now
+		m_icon.keep_chars.resize(m_icon.chars.size());
+		for (size_t i = 0; i < m_icon.chars.size(); i++) m_icon.keep_chars[i] = m_tiles.char_r(code0 * 16 + i);
+		m_icon.keep_pal.assign(m_paletteram16 + pal0, m_paletteram16 + pal0 + 16);
+		m_icon.keep_map.resize(ICON_W * ICON_H);
+		for (int y = 0; y < ICON_H; y++)
+			for (int x = 0; x < ICON_W; x++) m_icon.keep_map[y * ICON_W + x] = m_tiles.tile_r(at + y * 64 + x);
+		m_icon.at = at;
+		m_icon.active = true;
+	}
+	for (size_t i = 0; i < m_icon.chars.size(); i++) {
+		const uint16_t now = m_tiles.char_r(code0 * 16 + i);
+		if (now != m_icon.chars[i]) { m_icon.keep_chars[i] = now; m_tiles.char_w(code0 * 16 + i, m_icon.chars[i], 0xffff); }
+	}
+	for (int i = 1; i < 16; i++) {
+		const uint16_t now = m_paletteram16[pal0 + i];
+		if (now != m_icon.pal[i]) { m_icon.keep_pal[i] = now; model1_paletteram_w(pal0 + i, m_icon.pal[i], 0xffff); }
+	}
+	for (int y = 0; y < ICON_H; y++)
+		for (int x = 0; x < ICON_W; x++) {
+			const uint32_t o = at + y * 64 + x;
+			const uint16_t now = m_tiles.tile_r(o), ours = m_icon.map[y * ICON_W + x];
+			if (now != ours) { m_icon.keep_map[y * ICON_W + x] = now; m_tiles.tile_w(o, ours, 0xffff); }
+		}
 }
 
 // No time limit: the round's clock is counted down at fe2190 (dec.h 501285[PC]), and the picture

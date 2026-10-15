@@ -108,6 +108,7 @@ cp build/win/bin/vf-native.exe $P/VirtuaFighter.exe 2>/dev/null || cp build/win/
 $T-strip $P/VirtuaFighter.exe
 cp $D/sdl/bin/SDL3.dll $P/
 cp -R assets/ui assets/fonts assets/backgrounds assets/vf_map.txt $P/assets/
+[ -d assets/icons ] && cp -R assets/icons $P/assets/   # (the secret characters' select icons: made from the game, so not in the repository)
 cp tools/win/README.txt $P/
 [ -f build/release/LICENSES.txt ] && cp build/release/LICENSES.txt $P/
 rm -f $D/VirtuaFighterRecomp-windows.zip

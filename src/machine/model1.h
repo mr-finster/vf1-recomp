@@ -98,12 +98,23 @@ public:
 														 "Rekka (Koskol brother)", "Score (Koskol brother)", "Aeon (Koskol brother)", "Dural" };
 	void set_akira_slot(int which);
 	void akira_slot_heads(uint32_t record);   // (set_akira_slot: a select portrait for a head without one)
+	// The select's icon for the character in Akira's place, in his icon's tiles (56 x 64 pixels,
+	// xRGB, 15 colours at most; nullptr: his own). Returns false for a picture it can't show.
+	bool set_akira_icon(const uint32_t *xrgb);
+	static const char *const SECRET_ICON_NAMES[];   // (by UNUSED_CHARACTERS: assets/icons/NAME.png, nullptr: none)
 	// Cheats, before each frame: energy kept full for the players in `infinite` (bit 0 player 1,
 	// bit 1 player 2), the rest left with 1 when `one_hit` (any hit a knockout), and the round's
 	// clock stopped when `no_time`.
 	void fight_cheats(int infinite, bool one_hit, bool no_time);
 	bool set_no_time_limit(bool on);   // (true: the game's code changed, to be recompiled)
 	bool m_clock_held = false;
+	struct secret_icon {
+		bool on = false, active = false;   // a picture set; in the tiles now
+		uint32_t at = 0;                   // where the icon's map is (tile RAM word)
+		std::vector<uint16_t> chars, pal, map;            // ours: the tiles, the colours, the map
+		std::vector<uint16_t> keep_chars, keep_pal, keep_map;   // VF's own, put back after
+	} m_icon;
+	void secret_icon_frame();
 	// Replaces n bytes of the main CPU program, if their CRC-32 is `crc` (guards against other sets).
 	bool patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to);
 	// Blanks the FREE PLAY notices (the attract/title one and the fight's): for the PC build,

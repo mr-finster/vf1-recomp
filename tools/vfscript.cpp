@@ -3,7 +3,7 @@
 //   vfscript <regions dir> <script> <shot dir>
 // Script lines:   wait N | press PORT MASK FRAMES | hold PORT MASK | release PORT | shot NAME |
 //                 shots NAME N | dump NAME | poke16 ADDR VAL | mash N | watch ADDR | maps NAME |
-//                 every NAME N K | save          (VF_SCALE / VF_ASPECT / VF_REC as for vfrun)
+//                 every NAME N K | icon NAME | save   (VF_SCALE / VF_ASPECT / VF_REC as for vfrun)
 //                 rec NAME | stop: video of what's between, 60 pictures per second of the game's
 //                 time, to NAME.mkv (lossless, ffmpeg), its sound to NAME.wav (VF_SOUND=1;
 //                 VF_MUSIC / VF_EFFECTS levels), and NAME.txt: each picture's moment in game frames
@@ -57,6 +57,18 @@ int main(int argc, char **argv)
 	}
 	const bool smooth = getenv("VF_SMOOTH") != nullptr;
 	if (smooth) m.set_smooth(true);
+	// Cheats: VF_AKIRA=n puts UNUSED_CHARACTERS[n] in Akira's place, VF_ICONS=dir its select icon;
+	// VF_CAM="x y z a b c" sets Akira's place's select camera (tools/icons)
+	if (const char *a = getenv("VF_AKIRA")) m.set_akira_slot(atoi(a));
+	if (const char *ic = getenv("VF_ICONS")) load_secret_icon(m, getenv("VF_AKIRA") ? atoi(getenv("VF_AKIRA")) : 0, { ic });
+	if (const char *c = getenv("VF_CAM")) {
+		auto &rom = const_cast<std::vector<uint8_t> &>(m.maincpu_rom());
+		float f[3]; int a[3];
+		if (sscanf(c, "%f %f %f %d %d %d", &f[0], &f[1], &f[2], &a[0], &a[1], &a[2]) == 6) {
+			memcpy(&rom[0xfd278b], f, 12);
+			for (int i = 0; i < 3; i++) { const int16_t h = int16_t(a[i]); memcpy(&rom[0xfd278b + 12 + 2 * i], &h, 2); }
+		}
+	}
 	m.reset();
 	if (getenv("VF_REC")) {                // the recompiled code instead of the interpreter
 		rec::attach(m.cpu());
@@ -293,6 +305,16 @@ int main(int argc, char **argv)
 			std::vector<uint16_t> t(0x8000);
 			for (uint32_t i = 0; i < t.size(); i++) t[i] = m.tile_word(i);
 			save_blob(std::string(argv[3]) + "/" + name + ".tiles", reinterpret_cast<uint8_t *>(t.data()), t.size() * 2);
+		} else if (cmd == "icon") {          // icon NAME: Akira's select icon (as on screen) to NAME.png (tools/icons)
+			std::string name; ss >> name;
+			for (uint32_t i = 0; i < 0x4000 - 8 * 64; i++) if (m.tile_word(i) == 0xb080) {
+				std::vector<uint16_t> e(7 * 8);
+				for (int y = 0; y < 8; y++) for (int x = 0; x < 7; x++) e[y * 7 + x] = m.tile_word(i + y * 64 + x);
+				std::vector<uint32_t> img(56 * 64);
+				m.render_tiles(e.data(), 7, 8, img.data());
+				write_png((std::string(argv[3]) + "/" + name + ".png").c_str(), img.data(), 56, 64);
+				break;
+			}
 		} else if (cmd == "maps") {          // maps NAME: tile maps 2 and 3 as NAME_m2/_m3.png, scroll in NAME.txt
 			std::string name; ss >> name;
 			std::vector<uint32_t> img;
