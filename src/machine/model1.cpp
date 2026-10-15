@@ -643,6 +643,22 @@ void model1::akira_slot_heads(uint32_t record)
 	if (vf_cam) memcpy(&rom[CAMERA], record == 0xfd369b && made ? DURAL_CAM : AKIRA_CAM, sizeof cam);
 }
 
+// No time limit: the round's clock is counted down at fe2190 (dec.h 501285[PC]), and the picture
+// is drawn after, so a clock put back each frame still showed a tick off its start (29.96). That
+// instruction becomes test.h of the same (the opcode d2 to f2, the same length): the clock stays
+// at its start. It's the game's code, so the change needs a recompile (or the interpreter).
+bool model1::set_no_time_limit(bool on)
+{
+	constexpr uint32_t AT = 0xfe2190;
+	static const uint8_t REST[5] = { 0xf2, 0xf5, 0xf0, 0x51, 0xff };   // (its operand)
+	auto &rom = m_regions.maincpu;
+	if (AT + 6 > rom.size() || memcmp(&rom[AT + 1], REST, 5) || (rom[AT] != 0xd2 && rom[AT] != 0xf2)) return false;
+	const uint8_t op = on ? 0xf2 : 0xd2;
+	if (rom[AT] == op) return false;
+	rom[AT] = op;
+	return true;
+}
+
 // The fighters' energy (ffc4a0: player n's at [50130c] + n * 0x1800, the energy -2e from there,
 // what hits take off; the full amount for the round at 501186).
 void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
@@ -668,11 +684,11 @@ void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 	}
 	if (!ok) return;
 	// The round's clock (501285): 0x384 as a round starts (fe2152), counted down while neither
-	// fighter is down (fe2190: their -80's bit 0x1b), time up below 0. Other screens count with it
-	// too, so it's only held once a round has started it: at its start, so it never moves (30). At
-	// the end of a round the game files its replay by the clock (fe2617: a round over while it's
-	// still above 0x357, its first moments, goes another way), so as a fighter goes down it's let
-	// go at 0x356, a round's time like any other.
+	// fighter is down (fe2190, which set_no_time_limit stops: their -80's bit 0x1b), time up below
+	// 0. Other screens count with it too, so this is only once a round has started it. At the end
+	// of a round the game files its replay by the clock (fe2617: a round over while it's still
+	// above 0x357, its first moments, goes another way), so as a fighter goes down it's let go at
+	// 0x356, a round's time like any other. (Put back each frame too, should the code be VF's own.)
 	if (no_time) {
 		const int t = rd16(0x501285);
 		const bool down = (rd32(base - 0x80) | rd32(base + 0x1800 - 0x80)) >> 0x1b & 1;

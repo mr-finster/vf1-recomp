@@ -765,19 +765,24 @@ int main(int argc, char **argv)
 	};
 	uint64_t saved_hash = backup_hash();
 	if (!interp) m.run_cpu = [](int n) { rec::run(n); };
+	m.set_no_time_limit(cfg.no_time_limit);   // (Cheats: an instruction of the game's, so before it's recompiled)
 #ifdef VF_NATIVE
 	// The game's code, recompiled to native code from this ROM, now (tens of milliseconds); the
 	// address map says where the code is. Without it the game runs on the interpreter.
-	if (!interp) {
-		rec::attach(m.cpu());
+	auto recompile = [&] {
 		rec::hints map;
 		std::vector<uint8_t> mem = m.maincpu_rom();
 		mem.resize(0x2000000);
 		rec::native_stats st;
-		if (map.read(find_assets() + "/vf_map.txt") && rec::build_native(mem, map, &st))
+		const bool ok = map.read(find_assets() + "/vf_map.txt") && rec::build_native(mem, map, &st);
+		if (ok)
 			fprintf(stderr, "recompiled %zu functions (%zu instructions) to %zu KB of native code in %.0f ms\n",
 					st.functions, st.instructions, st.code_bytes / 1024, st.ms);
-		else {
+		return ok;
+	};
+	if (!interp) {
+		rec::attach(m.cpu());
+		if (!recompile()) {
 			// Still playable, just slower: say so (the log is the only console a packaged build has).
 			const std::string why = "Couldn't recompile the game (" + find_assets() + "/vf_map.txt missing or unusable, "
 									"or no executable memory): running it on the slower interpreter instead.";
@@ -1387,7 +1392,7 @@ int main(int argc, char **argv)
 	// Reset (the menu, F3): the menu closes, a paused game unpauses, and the screen goes black at
 	// once while the boot runs unseen (a few seconds on a slow machine), not the last picture held.
 	// the arcade settings as their page opened (and the ring): see arcade_page
-	std::optional<std::array<int, 8>> assign_before;
+	std::optional<std::array<int, 9>> assign_before;
 	auto reset_game = [&](bool keep_coins = true) {
 		assign_before.reset();   // a restart applies them
 		if (keep_coins) keep_arcade_coins();     // (Arcade: as the service menu may have left them)
@@ -1524,13 +1529,14 @@ int main(int argc, char **argv)
 	// so closing the menu after changing one restarts it (only if something is different) ----
 	using ga = model1::game_assignment;
 	constexpr int N_ASSIGN = 5;
-	static_assert(std::tuple_size_v<decltype(assign_before)::value_type> == N_ASSIGN + 3);
+	static_assert(std::tuple_size_v<decltype(assign_before)::value_type> == N_ASSIGN + 4);
 	auto assignments_now = [&] {
-		std::array<int, N_ASSIGN + 3> v;
+		std::array<int, N_ASSIGN + 4> v;
 		for (int i = 0; i < N_ASSIGN; i++) v[i] = m.assignment(ga(i));
 		v[N_ASSIGN] = cfg.ring;
 		v[N_ASSIGN + 1] = cfg.akira_slot;   // (Cheats: read as a fight loads, so it restarts too)
 		v[N_ASSIGN + 2] = cfg.ring_cheat;
+		v[N_ASSIGN + 3] = cfg.no_time_limit;   // (an instruction of the game's: a restart recompiles it)
 		return v;
 	};
 	auto arcade_page = [&] {
@@ -1570,10 +1576,10 @@ int main(int argc, char **argv)
 		if (!assign_before) assign_before = assignments_now();
 		menu_page p{ "Cheats: a change restarts the game when the menu closes", "", {} };
 		constexpr int N_CHARS = int(std::size(model1::UNUSED_CHARACTERS));
-		p.items.push_back({ "Akira's place",
-			"Characters cut from the game: choose Akira on the select screen to play as one. Unfinished: borrowed moves, no throws. "
-			"The Koskol brothers were to be the final bosses.",
-			[&] { return std::string(model1::UNUSED_CHARACTERS[cfg.akira_slot]); },
+		p.items.push_back({ "Secret character",
+			"A character cut from the game, in Akira's spot on the select screen (Akira is away while one is in). "
+			"Unfinished: borrowed moves, no throws. The Koskol brothers were to be the final bosses.",
+			[&] { return std::string(cfg.akira_slot ? model1::UNUSED_CHARACTERS[cfg.akira_slot] : "Off"); },
 			[&](int d) {
 				cfg.akira_slot = wrap(cfg.akira_slot + d, N_CHARS);
 				cfg_dirty = true;
@@ -1892,7 +1898,16 @@ int main(int argc, char **argv)
 			if (assign_before) {
 				const bool changed = *assign_before != assignments_now();
 				assign_before.reset();
-				if (changed) reset_game();
+				if (changed) {
+					// (the game's code is then new: recompiled before the reset, which leaves the old behind)
+					const bool code = m.set_no_time_limit(cfg.no_time_limit);
+#ifdef VF_NATIVE
+					if (code && !interp) recompile();
+#else
+					(void)code;
+#endif
+					reset_game();
+				}
 			}
 			pstate[0] = pstate[1] = pad_state{};   // the button that closed it isn't a move
 			pstate[0].back_was = pstate[1].back_was = true;
