@@ -311,7 +311,7 @@ bool game_menu::handle_event(const SDL_Event &e)
 		case SDL_GAMEPAD_BUTTON_SOUTH: activate(); break;
 		case SDL_GAMEPAD_BUTTON_EAST: pop(); break;
 		case SDL_GAMEPAD_BUTTON_NORTH: clear(); break;
-		case SDL_GAMEPAD_BUTTON_START: case SDL_GAMEPAD_BUTTON_BACK: case SDL_GAMEPAD_BUTTON_GUIDE: close(); break;
+		case SDL_GAMEPAD_BUTTON_START: case SDL_GAMEPAD_BUTTON_BACK: case SDL_GAMEPAD_BUTTON_GUIDE: case SDL_GAMEPAD_BUTTON_TOUCHPAD: close(); break;
 		default: break;
 		}
 		return true;

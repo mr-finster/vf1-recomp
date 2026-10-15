@@ -7,14 +7,14 @@
 
 enum control_action {
 	C_UP, C_DOWN, C_LEFT, C_RIGHT, C_GUARD, C_PUNCH, C_KICK,
-	C_GUARD_PUNCH, C_PUNCH_KICK, C_GUARD_KICK, C_ALL_THREE, C_START, C_COIN, C_COUNT
+	C_GUARD_PUNCH, C_PUNCH_KICK, C_GUARD_KICK, C_ALL_THREE, C_START, C_COIN, C_MENU, C_COUNT
 };
 inline const char *const CONTROL_NAMES[C_COUNT] = {
 	"Up", "Down", "Left", "Right", "Guard", "Punch", "Kick",
-	"Guard + Punch", "Punch + Kick", "Guard + Kick", "All three", "Start", "Coin" };
+	"Guard + Punch", "Punch + Kick", "Guard + Kick", "All three", "Start", "Coin", "Menu" };
 inline const char *const CONTROL_KEYS[C_COUNT] = {
 	"up", "down", "left", "right", "guard", "punch", "kick",
-	"guard_punch", "punch_kick", "guard_kick", "all_three", "start", "coin" };
+	"guard_punch", "punch_kick", "guard_kick", "all_three", "start", "coin", "menu" };
 
 // Pad controls: an SDL gamepad button, or one of the triggers.
 enum { PAD_NONE = -1, PAD_LT = 100, PAD_RT = 101 };
@@ -31,17 +31,17 @@ struct player_controls
 		static const SDL_Scancode k1[C_COUNT] = {
 			SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
 			SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_C,
-			SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_1, SDL_SCANCODE_UNKNOWN };
+			SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_1, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN };
 		static const SDL_Scancode k2[C_COUNT] = {
 			SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
 			SDL_SCANCODE_B, SDL_SCANCODE_N, SDL_SCANCODE_M,
-			SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_2, SDL_SCANCODE_UNKNOWN };
+			SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_2, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN };
 		// Saturn layout: A guard, B punch, C kick on the west, south and east buttons
 		static const int pad[C_COUNT] = {
 			PAD_NONE, PAD_NONE, PAD_NONE, PAD_NONE,
 			SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
 			SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,
-			PAD_RT, SDL_GAMEPAD_BUTTON_START, PAD_NONE };   // (Coin: none; in Arcade mode View tapped is a coin)
+			PAD_RT, SDL_GAMEPAD_BUTTON_START, PAD_NONE, SDL_GAMEPAD_BUTTON_BACK };   // (Coin: none; Menu: View tapped)
 		for (int a = 0; a < C_COUNT; a++) {
 			c.key[a] = (player ? k2 : k1)[a];
 			c.pad[a] = pad[a];
@@ -97,6 +97,8 @@ struct player_controls
 		case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "Right stick press";
 		case SDL_GAMEPAD_BUTTON_START: return "Start";
 		case SDL_GAMEPAD_BUTTON_BACK: return "View";
+		case SDL_GAMEPAD_BUTTON_GUIDE: return "Guide";
+		case SDL_GAMEPAD_BUTTON_TOUCHPAD: return "Touchpad click";
 		case SDL_GAMEPAD_BUTTON_DPAD_UP: return "D-pad up";
 		case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return "D-pad down";
 		case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return "D-pad left";

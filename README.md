@@ -124,8 +124,9 @@ Change them in the menu (<kbd>Esc</kbd>, or View / Select on a pad).
 | <kbd>F12</kbd> | Screenshot |
 
 Gamepad (Xbox layout): d-pad or stick to move, X guard, A punch, B kick, Y guard + punch (throws), RB punch + kick,
-LB guard + kick, RT all three, Start to start. View (tap) opens the menu; View + LB / RB change the render scale /
-picture shape.
+LB guard + kick, RT all three, Start to start. View (tap), L3 + R3 or the touchpad click opens the menu (Menu can be
+moved in Controls); View + LB / RB change the render scale / picture shape. In Arcade mode, set Coin in Controls (View
+works) for a coin button.
 
 ## How it works
 

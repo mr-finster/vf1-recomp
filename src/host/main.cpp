@@ -69,7 +69,8 @@ const key_bind SYS_KEYS[] = {
 //   d-pad / left stick: move     X guard   A punch   B kick
 //   Y guard+punch (throws)   RB punch+kick   LB guard+kick   RT guard+punch+kick
 //   Start: starts (with --arcade: only with a credit, as the cabinet's start button)
-//   View tapped: the menu (with --arcade: a coin; the menu is View held + Start)   View + LB: render scale   View + RB: picture shape
+//   Menu (View tapped, remappable), L3 + R3 or the touchpad click: the menu   View + Start: the menu too
+//   View + LB: render scale   View + RB: picture shape   (View is a coin instead only when it's set as Coin)
 // The PC build (the default; --arcade for the cabinet's behaviour): no boot screen, always free
 // play with nothing said about it, and Start simply starts.
 bool g_pc_mode = true;
@@ -77,6 +78,7 @@ bool g_pc_mode = true;
 struct pad_state
 {
 	bool back_was = false, back_combo = false, start_was = false;
+	bool menu_was = false, touch_was = false, sticks_was = false;   // the menu's other buttons (edges)
 	int coin_frames = 0, start_delay = -1, start_frames = 0;
 };
 
@@ -191,12 +193,16 @@ hotkey read_inputs(model1 &m, SDL_Gamepad *pads[2], pad_state ps[2], const playe
 		if (ks[k.key]) in[k.port] |= k.bit;
 	auto key = [&](SDL_Scancode k) { return k != SDL_SCANCODE_UNKNOWN && ks[k]; };
 	hotkey hk = hotkey::none;
-	static bool key_start_was[2], key_coin_was[2], pad_coin_was[2];
+	static bool key_start_was[2], key_coin_was[2], pad_coin_was[2], key_menu_was[2];
 	for (int p = 0; p < 2; p++) {
 		pad_state &st = ps[p];
 		// Start is the cabinet's start button: in Arcade mode it starts only with a credit (coins
-		// come from the Coin binding, the 5 and 6 keys, or View tapped on a pad)
+		// come from the Coin binding or the 5 and 6 keys)
 		auto press_start = [&] { st.start_delay = 0; };
+		// a key set as Menu opens it too (Esc always does)
+		const bool kmenu = key(ctl[p].key[C_MENU]);
+		if (kmenu && !key_menu_was[p]) hk = hotkey::menu;
+		key_menu_was[p] = kmenu;
 		for (int a = 0; a < C_START; a++)
 			if (key(ctl[p].key[a])) in[1 + p] |= BITS[a];
 		const bool kstart = key(ctl[p].key[C_START]);
@@ -216,9 +222,24 @@ hotkey read_inputs(model1 &m, SDL_Gamepad *pads[2], pad_state ps[2], const playe
 			const int dead = 12000;
 			const bool back = btn(SDL_GAMEPAD_BUTTON_BACK);
 			const bool start = player_controls::pad_down(g, ctl[p].pad[C_START]);
-			const bool pcoin = player_controls::pad_down(g, ctl[p].pad[C_COIN]);
+			// Coin and Menu on View are its tap (below), so View + LB and the like stay hotkeys
+			const int coin_code = ctl[p].pad[C_COIN], menu_code = ctl[p].pad[C_MENU];
+			const bool pcoin = coin_code != SDL_GAMEPAD_BUTTON_BACK && player_controls::pad_down(g, coin_code);
 			if (pcoin && !pad_coin_was[p] && !g_pc_mode) st.coin_frames = 6;
 			pad_coin_was[p] = pcoin;
+			const bool pmenu = menu_code != SDL_GAMEPAD_BUTTON_BACK && player_controls::pad_down(g, menu_code);
+			if (pmenu && !st.menu_was && !back) hk = hotkey::menu;   // (View held: LB and RB are its hotkeys)
+			st.menu_was = pmenu;
+			// L3 + R3 and the touchpad click (a PlayStation pad's) always open the menu as well, so a
+			// pad without a View button, or with Menu moved, can't be locked out of it
+			const bool sticks = btn(SDL_GAMEPAD_BUTTON_LEFT_STICK) && btn(SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+			if (sticks && !st.sticks_was) hk = hotkey::menu;
+			st.sticks_was = sticks;
+			bool touch_bound = false;
+			for (int a = C_GUARD; a < C_COUNT; a++) touch_bound |= ctl[p].pad[a] == SDL_GAMEPAD_BUTTON_TOUCHPAD;
+			const bool touch = !touch_bound && btn(SDL_GAMEPAD_BUTTON_TOUCHPAD);
+			if (touch && !st.touch_was) hk = hotkey::menu;
+			st.touch_was = touch;
 			if (btn(SDL_GAMEPAD_BUTTON_DPAD_UP) || ly < -dead) b |= PL_UP;
 			if (btn(SDL_GAMEPAD_BUTTON_DPAD_DOWN) || ly > dead) b |= PL_DOWN;
 			if (btn(SDL_GAMEPAD_BUTTON_DPAD_LEFT) || lx < -dead) b |= PL_LEFT;
@@ -237,10 +258,10 @@ hotkey read_inputs(model1 &m, SDL_Gamepad *pads[2], pad_state ps[2], const playe
 					if (player_controls::pad_down(g, ctl[p].pad[a])) b |= BITS[a];
 				if (start && !st.start_was) press_start();
 			}
-			// View tapped on its own: the menu (with --arcade: a coin)
+			// View tapped on its own: whichever of Menu and Coin it's set as
 			if (!back && st.back_was && !st.back_combo) {
-				if (g_pc_mode) hk = hotkey::menu;
-				else st.coin_frames = 6;
+				if (menu_code == SDL_GAMEPAD_BUTTON_BACK) hk = hotkey::menu;
+				else if (coin_code == SDL_GAMEPAD_BUTTON_BACK && !g_pc_mode) st.coin_frames = 6;
 			}
 			if (!back) st.back_combo = false;
 			st.back_was = back;
@@ -367,6 +388,15 @@ struct settings
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
 		if (auto it = kv.find("roms_folder"); it != kv.end()) roms_folder = it->second;
 		for (int p = 0; p < 2; p++) ctl[p].load(kv, p);
+		// settings from before the Menu button: Arcade mode's View tapped was a coin. It stays one
+		// (as Coin, so the menu is L3 + R3, the touchpad, View + Start or Esc), so a cabinet's coin
+		// button keeps working after the update
+		if (arcade && !kv.count("p1_pad_menu"))
+			for (auto &c : ctl)
+				if (c.pad[C_COIN] == PAD_NONE && c.pad[C_MENU] == SDL_GAMEPAD_BUTTON_BACK) {
+					c.pad[C_COIN] = SDL_GAMEPAD_BUTTON_BACK;
+					c.pad[C_MENU] = PAD_NONE;
+				}
 	}
 
 	void save(const std::string &path) const
@@ -1440,7 +1470,7 @@ int main(int argc, char **argv)
 	auto game_page = [&] {
 		menu_page p{ "Game", "", {} };
 		p.items.push_back({ "Play style",
-			"PC skips the boot screen and is always free play. Arcade has the boot screen, coins and credits, like the real cabinet: Start needs a credit, and Coin (or View tapped on a pad) adds one (its coin settings are kept for it). Changing it restarts the game.",
+			"PC skips the boot screen and is always free play. Arcade has the boot screen, coins and credits, like the real cabinet: Start needs a credit, and Coin adds one (set it in Controls: a key, or a pad button such as View; its coin settings are kept for it). Changing it restarts the game.",
 			[&] { return std::string(cfg.arcade ? "Arcade" : "PC"); },
 			[&](int) {
 				keep_arcade_coins();
@@ -1527,9 +1557,9 @@ int main(int argc, char **argv)
 	auto keys_page = [&](int p) {
 		menu_page pg{ p ? "Player 2 keyboard" : "Player 1 keyboard", "", {} };
 		for (int a = 0; a < C_COUNT; a++)
-			pg.items.push_back({ CONTROL_NAMES[a], a == C_COIN
-					? "A coin for this player in Arcade mode (a cabinet's coin slot). Select, then press the key to use. Delete clears it."
-					: "Select, then press the key to use. Delete clears it.",
+			pg.items.push_back({ CONTROL_NAMES[a], std::string(a == C_COIN ? "A coin for this player in Arcade mode (a cabinet's coin slot). "
+													: a == C_MENU ? "Opens this menu (as Esc always does): for a cabinet's button. " : "") +
+					"Select, then press the key to use. Delete clears it.",
 				[&, p, a] { return key_name(cfg.ctl[p].key[a]); }, {},
 				[&, p, a] {
 					menu.capture(std::string("Press a key for ") + CONTROL_NAMES[a] + (p ? " (player 2)" : " (player 1)") +
@@ -1556,13 +1586,14 @@ int main(int argc, char **argv)
 	auto pad_buttons_page = [&](int p) {
 		menu_page pg{ p ? "Player 2 pad buttons" : "Player 1 pad buttons", "", {} };
 		for (int a = C_GUARD; a < C_COUNT; a++)
-			pg.items.push_back({ CONTROL_NAMES[a], std::string(a == C_COIN ? "A coin for this player in Arcade mode (a cabinet's coin slot). " : "") +
+			pg.items.push_back({ CONTROL_NAMES[a], std::string(a == C_COIN ? "A coin for this player in Arcade mode (a cabinet's coin slot). "
+												   : a == C_MENU ? "Opens this menu. L3 + R3 and the touchpad click (when it isn't set to something else) always do too, and Esc on a keyboard. " : "") +
 												   "Select, then press the button (or trigger) to use. Y (or Delete) clears it. "
 												   "The d-pad and left stick always move.",
 				[&, p, a] { return player_controls::pad_label(cfg.ctl[p].pad[a]); }, {},
 				[&, p, a] {
 					menu.capture(std::string("Press a pad button for ") + CONTROL_NAMES[a] + (p ? " (player 2)" : " (player 1)") +
-								 ". View or Esc keeps it; Delete clears it.",
+								 (a >= C_COIN ? ". Esc keeps it; Delete clears it." : ". View or Esc keeps it; Delete clears it."),
 						[&, p, a](const SDL_Event &e) {
 							int code = PAD_NONE;
 							if (e.type == SDL_EVENT_KEY_DOWN) {
@@ -1572,7 +1603,8 @@ int main(int argc, char **argv)
 								return true;
 							}
 							if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-								if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) return true;     // View: keep it
+								// View: keep it (View is for the menu's hotkeys, not moves), unless it's for Coin or Menu
+								if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && a < C_COIN) return true;
 								code = e.gbutton.button;
 							} else if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && e.gaxis.value > 16000 &&
 									   (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER))
@@ -1592,7 +1624,7 @@ int main(int argc, char **argv)
 		pg.items.push_back({ "Pad", "Which controller this player uses: any free one, a particular one, or none.",
 							 [&, p] { return pad_name(p); }, [&, p](int d) { cycle_pad(p, d); } });
 		pg.items.push_back({ "Keyboard", "Change this player's keys.", {}, {}, [&, p] { menu.push(keys_page(p)); } });
-		pg.items.push_back({ "Pad buttons", "Change which buttons guard, punch, kick, do the combinations and start.",
+		pg.items.push_back({ "Pad buttons", "Change which buttons guard, punch, kick, do the combinations, start, add a coin and open the menu.",
 							 {}, {}, [&, p] { menu.push(pad_buttons_page(p)); } });
 		pg.items.push_back({ "Reset to defaults", "Put this player's keys and buttons back as they were.", {}, {},
 							 [&, p] {
@@ -1795,6 +1827,7 @@ int main(int argc, char **argv)
 			pstate[0].back_was = pstate[1].back_was = true;
 			pstate[0].back_combo = pstate[1].back_combo = true;
 			pstate[0].start_was = pstate[1].start_was = true;
+			for (pad_state &s : pstate) s.menu_was = s.touch_was = s.sticks_was = true;
 		}
 		if (paused || menu.is_open()) restart_clock();   // (no catching up afterwards)
 		if (!paused && !menu.is_open()) {
