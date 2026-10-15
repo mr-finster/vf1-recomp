@@ -548,38 +548,45 @@ bool model1::set_ring_width(int width)
 	return true;
 }
 
-// Akira's entries (from mountainmanjed's MAME cheats, tcrf.net/Virtua_Fighter_(Arcade)): his model
-// and moves for each costume, his select portrait, his name on the select screen for each side,
-// and his bio. An unused character takes as many as it has; the rest stay Akira's.
+// Akira's entries (from mountainmanjed's MAME cheats, tcrf.net/Virtua_Fighter_(Arcade)): his two
+// slots in the table of characters (fd2e8f: 26 pointers into an array of 0x176-byte records), his
+// select portrait, his name on the select screen for each side, and his bio. An unused character
+// takes as many as it has; the rest stay Akira's.
+// The strands that swing (hair, braids, Akira's headband ribbon) are listed by slot, not by record
+// (fd2b33: a slot number and its strands' data, to ff): a character in Akira's slots would wear
+// his ribbon, so his two entries there get a slot no player has (0x19, the last boss's).
 void model1::set_akira_slot(int which)
 {
-	enum { MODEL1, MODEL2, PORTRAIT, NAME_P1, NAME_P2, BIO, N };
+	enum { MODEL1, MODEL2, PORTRAIT, NAME_P1, NAME_P2, BIO, RIBBON1, RIBBON2, N };
 	static const struct { uint32_t addr; int size; } AT[N] = {
-		{ 0xfd2ee7, 2 }, { 0xfd2ebb, 2 }, { 0xfd2a73, 4 }, { 0xfd2a93, 2 }, { 0xfd2ab3, 2 }, { 0xfd2ad3, 2 } };
+		{ 0xfd2ee7, 2 }, { 0xfd2ebb, 2 }, { 0xfd2a73, 4 }, { 0xfd2a93, 2 }, { 0xfd2ab3, 2 }, { 0xfd2ad3, 2 },
+		{ 0xfd2b60, 1 }, { 0xfd2b5b, 1 } };
+	constexpr int NO = 0x19;   // (no ribbon)
 	static const int64_t TO[std::size(UNUSED_CHARACTERS)][N] = {     // -1: Akira's own
-		{ -1, -1, -1, -1, -1, -1 },
-		{ 0x33af, 0x4843, 0x001d1a8f, 0x0b37, 0x14f7, 0xd773 },     // Majido (Siba)
-		{ 0x3c7b, 0x4ca5, 0x001d1a8f, 0x09ff, 0x11eb, 0xc95b },     // Jeff (Majido's portrait)
-		{ 0x3df9, 0x4e23, -1, -1, -1, 0xb437 },                     // Takeru, the early Akira
-		// the Koskol brothers, one outfit each (0x176 apart, after Akira's), in both of his costumes'
-		// places: TCRF's cheats put two in at once (Rekka + Score, Aeon + Dural), one per costume
-		{ 0x510f, 0x510f, -1, -1, -1, -1 },                         // Rekka
-		{ 0x5285, 0x5285, -1, -1, -1, -1 },                         // Score
-		{ 0x53fb, 0x53fb, -1, -1, -1, -1 },                         // Aeon
-		{ 0x369b, 0x369b, -1, -1, -1, -1 },                         // Dural (TCRF's second costume with Aeon)
+		{ -1, -1, -1, -1, -1, -1, -1, -1 },
+		{ 0x33af, 0x4843, 0x001d1a8f, 0x0b37, 0x14f7, 0xd773, NO, NO },     // Majido (Siba)
+		{ 0x3c7b, 0x4ca5, 0x001d1a8f, 0x09ff, 0x11eb, 0xc95b, NO, NO },     // Jeff (Majido's portrait)
+		{ 0x3df9, 0x4e23, -1, -1, -1, 0xb437, -1, -1 },                     // Takeru, the early Akira (his ribbon)
+		// the Koskol brothers, one each, in both of Akira's slots: TCRF's cheats put two in at once
+		// (Rekka + Score, Aeon + Dural), one per slot
+		{ 0x510f, 0x510f, -1, -1, -1, -1, NO, NO },                         // Rekka
+		{ 0x5285, 0x5285, -1, -1, -1, -1, NO, NO },                         // Score
+		{ 0x53fb, 0x53fb, -1, -1, -1, -1, NO, NO },                         // Aeon
+		{ 0x369b, 0x369b, -1, -1, -1, -1, NO, NO },                         // Dural (TCRF's second with Aeon)
 	};
 	auto &rom = m_regions.maincpu;
 	if (AT[0].addr + 4 > rom.size()) return;
 	static uint8_t akira[N][4];
-	static bool kept = false;
+	static bool kept = false, ribbon = false;
 	if (!kept) {
 		for (int i = 0; i < N; i++) memcpy(akira[i], &rom[AT[i].addr], AT[i].size);
+		ribbon = akira[RIBBON1][0] == 0x16 && akira[RIBBON2][0] == 0x0b;   // (VF's list as expected)
 		kept = true;
 	}
 	which = std::clamp(which, 0, int(std::size(UNUSED_CHARACTERS)) - 1);
 	for (int i = 0; i < N; i++) {
 		uint8_t *p = &rom[AT[i].addr];
-		if (TO[which][i] < 0) memcpy(p, akira[i], AT[i].size);
+		if (TO[which][i] < 0 || (i >= RIBBON1 && !ribbon)) memcpy(p, akira[i], AT[i].size);
 		else for (int b = 0; b < AT[i].size; b++) p[b] = uint8_t(TO[which][i] >> (8 * b));   // (little-endian)
 	}
 }
