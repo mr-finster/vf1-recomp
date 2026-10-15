@@ -199,6 +199,11 @@ SLJIT (Zoltan Herczeg, BSD-2-Clause), the Z80 core (Nicolas Allemand, MIT), RmlU
 (Sean Barrett, public domain / MIT), SDL 3 (zlib), FreeType (FreeType License) and the Barlow Condensed font (SIL
 Open Font License). `tools/release/licenses.sh` gathers their notices for the downloads.
 
+Thanks to everyone who tested and reported: [svera](https://github.com/svera) (portable mode, the unused
+characters), [terryarcade](https://github.com/terryarcade), [chocolatelily-0716](https://github.com/chocolatelily-0716),
+[vmicka72](https://github.com/vmicka72) and [aadsasdasd](https://github.com/aadsasdasd). The secret characters come
+from mountainmanjed's MAME cheats, documented on [The Cutting Room Floor](https://tcrf.net/Virtua_Fighter_(Arcade)).
+
 Virtua Fighter is SEGA's. This project is not affiliated with or endorsed by SEGA.
 
 ## Licence

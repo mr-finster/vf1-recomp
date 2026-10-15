@@ -592,6 +592,35 @@ void model1::set_akira_slot(int which)
 		else for (int b = 0; b < AT[i].size; b++) p[b] = uint8_t(TO[which][i] >> (8 * b));   // (little-endian)
 	}
 	akira_slot_heads(TO[which][MODEL1] < 0 ? 0 : 0xfd0000 | uint32_t(TO[which][MODEL1]));
+	// The select's camera for Akira's spot (fd278b: x, y, z, then 3 angles, a camera per place in
+	// the row): each head sits differently in its own frame (its origin, how it's turned), so each
+	// has its own: the eyes at the cast's height (a little below the middle), the face across the
+	// middle, the head the cast's size, the neck running off the bottom. Dural's head (the fight's)
+	// is turned and tilted down besides: hers turns it to face as the rest. (Found by rendering
+	// each against the cast's.)
+	struct cam { float x, y, z; int16_t a, b, c; };
+	static const cam CAMS[std::size(UNUSED_CHARACTERS)] = {
+		{ 0, 0, 0, 0, 0, 0 },                                   // Akira: his own
+		{ -0.028f, -0.075f, 1.0f, 17400, 32000, -23549 },        // Siba
+		{ -0.019f, -0.103f, 1.0f, 17400, 32000, -23549 },        // Jeff
+		{ -0.025f, -0.1f, 0.9f, 17400, 32000, -23549 },          // Takeru
+		{ -0.003f, -0.085f, 0.95f, 17400, 32000, -23549 },       // Rekka
+		{ -0.003f, -0.085f, 0.95f, 17400, 32000, -23549 },       // Score
+		{ -0.018f, -0.0995f, 0.95f, 17400, 32000, -23549 },      // Aeon
+		{ -0.025f, -0.08f, 0.88f, 15400, 32000, -22800 },        // Dural
+	};
+	constexpr uint32_t CAMERA = 0xfd278b;
+	static uint8_t akira_cam[18];
+	static bool cam_kept = false;
+	if (!cam_kept) { memcpy(akira_cam, &rom[CAMERA], sizeof akira_cam); cam_kept = true; }
+	memcpy(&rom[CAMERA], akira_cam, sizeof akira_cam);
+	if (which) {
+		const cam &c = CAMS[which];
+		const float f[3] = { c.x, c.y, c.z };
+		const int16_t h[3] = { c.a, c.b, c.c };
+		memcpy(&rom[CAMERA], f, sizeof f);       // (little-endian, as VF's)
+		memcpy(&rom[CAMERA + 12], h, sizeof h);
+	}
 }
 
 // A select portrait for the characters without one (Dural and the Koskol brothers), made from
@@ -631,16 +660,6 @@ void model1::akira_slot_heads(uint32_t record)
 		made = true;
 	}
 	if (!made) std::fill(&rom[AT], &rom[LIST + 0x80], 0xff);   // (as it was: no ROM)
-	// Dural's head sits right of and below the others' in the frame (its own origin): Akira's
-	// select camera (fd278b: x, y, z, then 3 angles, per character) moves it back to the middle,
-	// a little further away so the chin isn't cut off, while he's in Akira's place.
-	constexpr uint32_t CAMERA = 0xfd278b;
-	static const float AKIRA_CAM[3] = { 0.0f, -0.1f, 0.9f }, DURAL_CAM[3] = { -0.04f, -0.06f, 1.1f };
-	float cam[3];
-	memcpy(cam, &rom[CAMERA], sizeof cam);
-	static const float DURAL_CAM_V1[3] = { -0.04f, -0.07f, 1.0f };   // (an earlier build's)
-	const bool vf_cam = !memcmp(cam, AKIRA_CAM, sizeof cam) || !memcmp(cam, DURAL_CAM, sizeof cam) || !memcmp(cam, DURAL_CAM_V1, sizeof cam);
-	if (vf_cam) memcpy(&rom[CAMERA], record == 0xfd369b && made ? DURAL_CAM : AKIRA_CAM, sizeof cam);
 }
 
 // No time limit: the round's clock is counted down at fe2190 (dec.h 501285[PC]), and the picture
