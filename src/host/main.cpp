@@ -1051,20 +1051,37 @@ int main(int argc, char **argv)
 		}
 #if VF_GPU3D_SDL
 		// (SDL_GPU: its picture of the test scene checked against the CPU's before it's used)
-		if (cfg.renderer3d != 0 && !a3.tested) {
+		// (Direct3D 12's test failing, Vulkan's tried at once: SDL_GPU's other on Windows, where some
+		// older cards draw nothing on one and are fine on the other (vf2-recomp #3: a GTX 970); the
+		// 3D has a device of its own, so the screen's renderer is untouched. SDL_GPU_DRIVER, SDL's
+		// own, chooses over this.)
+		for (int attempt = 0; cfg.renderer3d != 0 && !a3.tested; attempt++) {
 			a3.tested = true;
 			double c = 0, g = 0;
 			long long d = -1;
 			m.m_gpu3d_chosen = cfg.renderer3d == 1;
-			const long long px = (long long)m.frame_w() * m.frame_h(), ok = m.gpu_rounding_ok(px);
-			if (!m.bench3d(1, c, g, &d) || d < 0 || d > ok) {
+			const long long px = (long long)m.frame_w() * m.frame_h();
+			const auto &dd = m.m_bench_diff;
+			if (!m.bench3d(1, c, g, &d) || d < 0 || !m.gpu_diff_ok(dd, px)) {
+				if (d > 0) fprintf(stderr, "the 3D on the GPU (%s): its test picture isn't the CPU's (%lld of %lld pixels differ, %lld drawn on one only, %lld by more than %d)\n",
+								   g3->name(), d, px, dd.cover, dd.big, model1::GPU_ROUNDING_COLOUR);
+				else fprintf(stderr, "the 3D on the GPU (%s): its test picture failed\n", g3->name());
+				if (attempt == 0 && !strncmp(g3->name(), "direct3d12", 10) && !getenv("SDL_GPU_DRIVER")) {
+					m.set_gpu3d(nullptr);
+					g3.reset();
+					g3 = gpu3d_create_sdlgpu("vulkan");
+					fprintf(stderr, "the 3D on the GPU: trying Vulkan instead: %s\n", g3 ? g3->name() : "none here");
+					if (g3) { m.set_gpu3d(g3.get()); a3.tested = false; continue; }
+					a3.broken = true; a3.gpu = false; apply_3d();   // (g3 gone: the CPU's)
+					return;
+				}
 				a3.broken = true; a3.gpu = false; apply_3d();
-				if (d > 0) fprintf(stderr, "the 3D on the GPU: its test picture isn't the CPU's (%lld of %lld pixels differ, over the %lld kept): the CPU for this run\n", d, px, ok);
-				else fprintf(stderr, "the 3D on the GPU: its test picture failed: the CPU for this run\n");
+				fprintf(stderr, "the 3D on the GPU: the CPU for this run\n");
 				return;
 			}
-			if (d > 0) fprintf(stderr, "the 3D on the GPU: its test picture: %lld of %lld pixels differ by rounding (up to %lld kept): keeping the GPU\n", d, px, ok);
-			else fprintf(stderr, "the 3D on the GPU: its test picture is the CPU's, pixel for pixel\n");
+			if (d > 0) fprintf(stderr, "the 3D on the GPU (%s): its test picture: %lld of %lld pixels differ by rounding (%lld drawn on one only, %lld by more than %d, colours by %d at most): keeping the GPU\n",
+							   g3->name(), d, px, dd.cover, dd.big, model1::GPU_ROUNDING_COLOUR, dd.most);
+			else fprintf(stderr, "the 3D on the GPU (%s): its test picture is the CPU's, pixel for pixel\n", g3->name());
 		}
 #endif
 		if (cfg.renderer3d != 2) {

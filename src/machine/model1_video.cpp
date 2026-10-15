@@ -2254,10 +2254,9 @@ void model1::gpu3d_end(bitmap_rgb32 &bitmap)
 			rec_replay(m_check_cpu);
 			const size_t n = size_t(bitmap.width()) * bitmap.height();
 			const uint32_t *a = m_check_cpu.data(), *g = bitmap.data();
-			size_t diff = 0, first = n;
-			for (size_t i = 0; i < n; i++) if (a[i] != g[i]) { if (!diff) first = i; diff++; }
-			if (verify) diff = size_t(gpu_test_diff((long long)diff, (long long)n));
-			if (first == n) first = 0;
+			gpu_diff dd = gpu_compare(a, g, n);
+			if (verify) { const long long k = gpu_test_diff(dd.all, (long long)n) - dd.all; dd.all += k; dd.cover += k; }   // (tests: as drawn on one only)
+			size_t diff = size_t(dd.all), first = dd.first;
 			m_g3.checked++;
 			if (diff) {
 				m_g3.differ++;
@@ -2265,14 +2264,16 @@ void model1::gpu3d_end(bitmap_rgb32 &bitmap)
 						(unsigned long long)m_frame, bitmap.width(), bitmap.height(), diff, first % bitmap.width(), first / bitmap.width(), a[first], g[first]);
 			}
 			if (verify) {
-				if (diff && (long long)diff <= gpu_rounding_ok((long long)n)) {   // (rounding: the GPU's kept)
-					fprintf(stderr, "the 3D on the GPU: %zu of %d x %d pixels differ by rounding (up to %lld kept): keeping the GPU\n", diff, bitmap.width(), bitmap.height(), gpu_rounding_ok((long long)n));
+				if (diff && gpu_diff_ok(dd, (long long)n)) {   // (rounding: the GPU's kept)
+					fprintf(stderr, "the 3D on the GPU: %zu of %d x %d pixels differ by rounding (%lld drawn on one only, %lld by more than %d, colours by %d at most): keeping the GPU\n",
+							diff, bitmap.width(), bitmap.height(), dd.cover, dd.big, GPU_ROUNDING_COLOUR, dd.most);
 					if (--m_gpu3d_verify == 0) fprintf(stderr, "the 3D on the GPU: the game's pictures checked against the CPU's\n");
 				} else if (diff) {   // (not the CPU's: the CPU's picture shown, and the CPU's from now on)
 					memcpy(bitmap.data(), m_check_cpu.data(), n * 4);
 					m_g3.failed++;
 					m_gpu3d_verify = 0;
-					fprintf(stderr, "the 3D on the GPU: its picture isn't the CPU's: the CPU's 3D from now on\n");
+					fprintf(stderr, "the 3D on the GPU: its picture isn't the CPU's (%zu pixels differ, %lld drawn on one only, %lld by more than %d): the CPU's 3D from now on\n",
+							diff, dd.cover, dd.big, GPU_ROUNDING_COLOUR);
 				} else if (--m_gpu3d_verify == 0)
 					fprintf(stderr, "the 3D on the GPU: the game's pictures checked against the CPU's, pixel for pixel\n");
 			}
@@ -2363,9 +2364,10 @@ bool model1::bench3d(int reps, double &cpu_ms, double &gpu_ms, long long *differ
 		run_cpu();
 		std::vector<uint32_t> cpu(scratch.data(), scratch.data() + size_t(W) * H);
 		ok = run_gpu() >= 0;
-		long long d = 0;
-		for (size_t i = 0; i < cpu.size(); i++) d += cpu[i] != scratch.data()[i];
-		*differ = gpu_test_diff(d, (long long)cpu.size());
+		m_bench_diff = gpu_compare(cpu.data(), scratch.data(), cpu.size());
+		const long long k = gpu_test_diff(m_bench_diff.all, (long long)cpu.size()) - m_bench_diff.all;   // (tests: as drawn on one only)
+		m_bench_diff.all += k; m_bench_diff.cover += k;
+		*differ = m_bench_diff.all;
 	}
 	view->x1 = sx1; view->x2 = sx2; view->y1 = sy1; view->y2 = sy2;
 	s_mark_y1 = mk1; s_mark_y2 = mk2;

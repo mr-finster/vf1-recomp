@@ -264,10 +264,10 @@ private:
 
 }
 
-std::unique_ptr<gpu3d> gpu3d_create_sdlgpu()
+std::unique_ptr<gpu3d> gpu3d_create_sdlgpu(const char *driver)
 {
 	// (GPU3D_VALIDATE=1: the driver's validation, Vulkan's layers)
-	SDL_GPUDevice *dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, getenv("GPU3D_VALIDATE") != nullptr, nullptr);
+	SDL_GPUDevice *dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, getenv("GPU3D_VALIDATE") != nullptr, driver);
 	if (!dev) { fprintf(stderr, "gpu3d sdl_gpu: no device: %s\n", SDL_GetError()); return nullptr; }
 	auto g = std::make_unique<gpu3d_sdlgpu>(dev, true);
 	if (!g->init()) return nullptr;

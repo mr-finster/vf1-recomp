@@ -68,4 +68,4 @@ void gpu3d_metal_prewarm();
 // SDL_GPU (gpu3d_sdlgpu.cpp: Direct3D 12 or Vulkan, Windows and Linux), on a device of its own:
 // the polygons go up and each pixel's result comes back into the picture (no shared memory). The
 // x86-64 CPU rasterizer's pixels. Null if it can't.
-std::unique_ptr<gpu3d> gpu3d_create_sdlgpu();
+std::unique_ptr<gpu3d> gpu3d_create_sdlgpu(const char *driver = nullptr);   // (driver: SDL_GPU's, "vulkan"; none: SDL's choice)
