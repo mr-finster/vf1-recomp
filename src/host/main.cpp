@@ -1586,7 +1586,7 @@ int main(int argc, char **argv)
 		p.items.push_back({ "One-hit KO", "Every fighter (but one with infinite energy) is down to their last bit of energy: any hit wins the round.",
 			[&] { return on_off(cfg.one_hit_ko); },
 			[&](int) { cfg.one_hit_ko = !cfg.one_hit_ko; cfg_dirty = true; } });
-		p.items.push_back({ "No time limit", "The round's clock stops just after it starts: a round ends by knockout or ring out.",
+		p.items.push_back({ "No time limit", "The round's clock stays at its start and never runs out: a round ends by knockout or ring out.",
 			[&] { return on_off(cfg.no_time_limit); },
 			[&](int) { cfg.no_time_limit = !cfg.no_time_limit; cfg_dirty = true; } });
 		static const char *RING[] = { "Normal", "Tiny", "Huge" };

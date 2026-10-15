@@ -102,7 +102,6 @@ public:
 	// bit 1 player 2), the rest left with 1 when `one_hit` (any hit a knockout), and the round's
 	// clock stopped when `no_time`.
 	void fight_cheats(int infinite, bool one_hit, bool no_time);
-	int m_clock_prev = -1;
 	bool m_clock_held = false;
 	// Replaces n bytes of the main CPU program, if their CRC-32 is `crc` (guards against other sets).
 	bool patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to);

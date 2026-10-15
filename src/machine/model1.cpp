@@ -669,18 +669,19 @@ void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 	if (!ok) return;
 	// The round's clock (501285): 0x384 as a round starts (fe2152), counted down while neither
 	// fighter is down (fe2190: their -80's bit 0x1b), time up below 0. Other screens count with it
-	// too, so it's only held once a round has started it, at 0x357 (the game marks the round's
-	// first moments by the clock being above that), until a knockout or the game clears it.
+	// too, so it's only held once a round has started it: at its start, so it never moves (30). At
+	// the end of a round the game files its replay by the clock (fe2617: a round over while it's
+	// still above 0x357, its first moments, goes another way), so as a fighter goes down it's let
+	// go at 0x356, a round's time like any other.
 	if (no_time) {
 		const int t = rd16(0x501285);
-		const auto down = [&](int p) { return rd32(base + p * 0x1800 - 0x80) >> 0x1b & 1; };
-		const bool starting = t > 0x357 && t <= 0x384 && t == m_clock_prev - 1;   // (a round's first moments, counting)
-		if (starting || t == 0x384) m_clock_held = true;
-		if (t <= 0 || down(0) || down(1) || (t > m_clock_prev + 1 && t != 0x384)) m_clock_held = false;
-		if (m_clock_held && t < 0x357 && t == m_clock_prev - 1) {
-			wr16(0x501285, 0x357);
-			m_clock_prev = 0x357;
-		} else m_clock_prev = t;
+		const bool down = (rd32(base - 0x80) | rd32(base + 0x1800 - 0x80)) >> 0x1b & 1;
+		if (t == 0x384 && !down) m_clock_held = true;
+		if (m_clock_held && (down || t <= 0 || t > 0x384)) {
+			m_clock_held = false;
+			if (down && t > 0x356) wr16(0x501285, 0x356);
+		}
+		if (m_clock_held && t < 0x384) wr16(0x501285, 0x384);
 	} else m_clock_held = false;
 	if (!infinite && !one_hit) return;
 	const int16_t full = rd16(0x501186);
