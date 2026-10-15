@@ -548,6 +548,38 @@ bool model1::set_ring_width(int width)
 	return true;
 }
 
+// Akira's entries (from mountainmanjed's MAME cheats, tcrf.net/Virtua_Fighter_(Arcade)): his model
+// and moves for each costume, his select portrait, his name on the select screen for each side,
+// and his bio. An unused character takes as many as it has; the rest stay Akira's.
+void model1::set_akira_slot(int which)
+{
+	enum { MODEL1, MODEL2, PORTRAIT, NAME_P1, NAME_P2, BIO, N };
+	static const struct { uint32_t addr; int size; } AT[N] = {
+		{ 0xfd2ee7, 2 }, { 0xfd2ebb, 2 }, { 0xfd2a73, 4 }, { 0xfd2a93, 2 }, { 0xfd2ab3, 2 }, { 0xfd2ad3, 2 } };
+	static const int64_t TO[std::size(UNUSED_CHARACTERS)][N] = {     // -1: Akira's own
+		{ -1, -1, -1, -1, -1, -1 },
+		{ 0x33af, 0x4843, 0x001d1a8f, 0x0b37, 0x14f7, 0xd773 },     // Majido (Siba)
+		{ 0x3c7b, 0x4ca5, 0x001d1a8f, 0x09ff, 0x11eb, 0xc95b },     // Jeff (Majido's portrait)
+		{ 0x3df9, 0x4e23, -1, -1, -1, 0xb437 },                     // Takeru, the early Akira
+		{ 0x510f, 0x5285, -1, -1, -1, -1 },                         // the Koskol brothers: Rekka, Score
+		{ 0x53fb, 0x369b, -1, -1, -1, -1 },                         // Aeon, and Dural for the second costume
+	};
+	auto &rom = m_regions.maincpu;
+	if (AT[0].addr + 4 > rom.size()) return;
+	static uint8_t akira[N][4];
+	static bool kept = false;
+	if (!kept) {
+		for (int i = 0; i < N; i++) memcpy(akira[i], &rom[AT[i].addr], AT[i].size);
+		kept = true;
+	}
+	which = std::clamp(which, 0, int(std::size(UNUSED_CHARACTERS)) - 1);
+	for (int i = 0; i < N; i++) {
+		uint8_t *p = &rom[AT[i].addr];
+		if (TO[which][i] < 0) memcpy(p, akira[i], AT[i].size);
+		else for (int b = 0; b < AT[i].size; b++) p[b] = uint8_t(TO[which][i] >> (8 * b));   // (little-endian)
+	}
+}
+
 static std::vector<std::pair<uint32_t, std::vector<uint8_t>>> s_free_play_text;   // the bytes hide_free_play_text replaced
 
 void model1::show_free_play_text()

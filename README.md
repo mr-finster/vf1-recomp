@@ -115,7 +115,7 @@ Change them in the menu (<kbd>Esc</kbd>, or View / Select on a pad).
 | <kbd>I</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> | Player 2: move |
 | <kbd>B</kbd> <kbd>N</kbd> <kbd>M</kbd> | Player 2: guard, punch, kick |
 | <kbd>2</kbd> | Player 2: start |
-| <kbd>Esc</kbd> | Menu: display (render scale, picture shape, antialiasing, 3D renderer...), sound, game, controls, quit |
+| <kbd>Esc</kbd> | Menu: display (render scale, picture shape, antialiasing, 3D renderer...), sound, game, controls, cheats (the unused characters), quit |
 | <kbd>P</kbd> | Pause |
 | <kbd>F3</kbd> | Reset |
 | <kbd>F5</kbd> / <kbd>F6</kbd> | Render scale / picture shape |

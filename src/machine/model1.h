@@ -91,6 +91,12 @@ public:
 	// The ring's width (1200-1500) whatever the difficulty, or 0 for the arcade's (by difficulty,
 	// which the test mode shows as STAGE WIDTH). From the next match; false if the table isn't VF's.
 	bool set_ring_width(int width);
+	// The unused characters left in the game (TCRF: Jeff, Majido, Takeru, the Koskol brothers)
+	// play in Akira's place: his entries in the character tables point at theirs. 0 is Akira; the
+	// rest are UNUSED_CHARACTERS. Read as a fight loads, so a change wants a restart.
+	static constexpr const char *UNUSED_CHARACTERS[] = { "Akira", "Siba (Majido)", "Jeff", "Takeru (early Akira)",
+														 "Koskol brothers 1 + 2", "Koskol brother 3 + Dural" };
+	void set_akira_slot(int which);
 	// Replaces n bytes of the main CPU program, if their CRC-32 is `crc` (guards against other sets).
 	bool patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to);
 	// Blanks the FREE PLAY notices (the attract/title one and the fight's): for the PC build,

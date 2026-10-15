@@ -349,6 +349,7 @@ struct settings
 {
 	int scale = 2, aspect = 0, volume = 100, music = 100, effects = 100, aa = 1, filter = 0, ring = 0;
 	int renderer3d = 2;     // the 3D's renderer: 0 the CPU, 1 the GPU, 2 Auto (whichever is quicker here)
+	int akira_slot = 0;     // Cheats: who plays in Akira's place (model1::UNUSED_CHARACTERS; 0 Akira)
 	std::string auto_3d;    // Auto's findings, per render scale and antialiasing ("3x1:g,2x0:c")
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
@@ -385,6 +386,7 @@ struct settings
 		flag("show_fps", show_fps);
 		num("arcade_coins", arcade_coin, -1, 0xffff);
 		num("renderer_3d", renderer3d, 0, 2);
+		num("akira_slot", akira_slot, 0, int(std::size(model1::UNUSED_CHARACTERS)) - 1);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
 		if (auto it = kv.find("roms_folder"); it != kv.end()) roms_folder = it->second;
 		for (int p = 0; p < 2; p++) ctl[p].load(kv, p);
@@ -410,6 +412,7 @@ struct settings
 				int(fullscreen), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
 		if (arcade_coin >= 0) fprintf(f, "arcade_coins = %d\n", arcade_coin);
 		fprintf(f, "renderer_3d = %d\n", renderer3d);
+		if (akira_slot) fprintf(f, "akira_slot = %d\n", akira_slot);
 		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\n", auto_3d.c_str());
 		if (!roms_folder.empty()) fprintf(f, "roms_folder = %s\n", roms_folder.c_str());
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
@@ -788,6 +791,7 @@ int main(int argc, char **argv)
 	load_backgrounds(m, find_assets() + "/backgrounds");   // the title and select's widescreen sides
 	load_backgrounds(m, dir + "/backgrounds");   // the player's own (hi-res stage skies...), which win
 	m.set_ring_width(cfg.ring);
+	m.set_akira_slot(cfg.akira_slot);
 	// The play style's coins: PC mode is free play (its FREE PLAY text hidden); Arcade mode has the
 	// cabinet's own coin setting, kept in settings.ini while PC mode has free play in its place (it
 	// was left at free play, so Arcade mode after PC mode had no credits to put in, and a cabinet's
@@ -1351,7 +1355,7 @@ int main(int argc, char **argv)
 	// Reset (the menu, F3): the menu closes, a paused game unpauses, and the screen goes black at
 	// once while the boot runs unseen (a few seconds on a slow machine), not the last picture held.
 	// the arcade settings as their page opened (and the ring): see arcade_page
-	std::optional<std::array<int, 6>> assign_before;
+	std::optional<std::array<int, 7>> assign_before;
 	auto reset_game = [&](bool keep_coins = true) {
 		assign_before.reset();   // a restart applies them
 		if (keep_coins) keep_arcade_coins();     // (Arcade: as the service menu may have left them)
@@ -1488,11 +1492,12 @@ int main(int argc, char **argv)
 	// so closing the menu after changing one restarts it (only if something is different) ----
 	using ga = model1::game_assignment;
 	constexpr int N_ASSIGN = 5;
-	static_assert(std::tuple_size_v<decltype(assign_before)::value_type> == N_ASSIGN + 1);
+	static_assert(std::tuple_size_v<decltype(assign_before)::value_type> == N_ASSIGN + 2);
 	auto assignments_now = [&] {
-		std::array<int, N_ASSIGN + 1> v;
+		std::array<int, N_ASSIGN + 2> v;
 		for (int i = 0; i < N_ASSIGN; i++) v[i] = m.assignment(ga(i));
 		v[N_ASSIGN] = cfg.ring;
+		v[N_ASSIGN + 1] = cfg.akira_slot;   // (Cheats: read as a fight loads, so it restarts too)
 		return v;
 	};
 	auto arcade_page = [&] {
@@ -1524,6 +1529,24 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Service menu",
 			"The arcade's own test menu: input and sound tests, coin settings and bookkeeping. Down moves, Start selects (or 9 and F2 on a keyboard). Choose EXIT to come back.",
 			{}, {}, [&] { menu.close(); paused = false; g_test_pending = true; } });
+		p.items.push_back(back_item());
+		return p;
+	};
+	// ---- cheats: the unused characters (in Akira's place) ----
+	auto cheats_page = [&] {
+		if (!assign_before) assign_before = assignments_now();
+		menu_page p{ "Cheats: a change restarts the game when the menu closes", "", {} };
+		constexpr int N_CHARS = int(std::size(model1::UNUSED_CHARACTERS));
+		p.items.push_back({ "Akira's place",
+			"Characters cut from the game but left in it: choose Akira on the select screen to play as one (a computer Akira is them too). "
+			"They're unfinished: a few borrowed moves and no throws, and Siba's pursuit attack can jump across the ring. "
+			"The Koskol brothers (the planned final bosses) use Dural's moves; the second of each pair is the other costume.",
+			[&] { return std::string(model1::UNUSED_CHARACTERS[cfg.akira_slot]); },
+			[&](int d) {
+				cfg.akira_slot = wrap(cfg.akira_slot + d, N_CHARS);
+				cfg_dirty = true;
+				m.set_akira_slot(cfg.akira_slot);
+			} });
 		p.items.push_back(back_item());
 		return p;
 	};
@@ -1671,6 +1694,8 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Arcade settings", "Difficulty, ring size, rounds, continues and the service menu. Changing them restarts the game.", {}, {},
 							[&] { menu.push(arcade_page()); } });
 		p.items.push_back({ "Controls", "Each player's controller, keys and buttons.", {}, {}, [&] { menu.push(controls_page()); } });
+		p.items.push_back({ "Cheats", "Play as the characters left unused in the game. Changing it restarts the game.", {}, {},
+							[&] { menu.push(cheats_page()); } });
 		p.items.push_back({ "Quit", "Saves and closes the game.", {}, {}, [&] { running = false; } });
 		return p;
 	};
