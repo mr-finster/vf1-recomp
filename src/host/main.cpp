@@ -350,6 +350,9 @@ struct settings
 	int scale = 2, aspect = 0, volume = 100, music = 100, effects = 100, aa = 1, filter = 0, ring = 0;
 	int renderer3d = 2;     // the 3D's renderer: 0 the CPU, 1 the GPU, 2 Auto (whichever is quicker here)
 	int akira_slot = 0;     // Cheats: who plays in Akira's place (model1::UNUSED_CHARACTERS; 0 Akira)
+	int infinite_energy = 0;   // Cheats: bit 0 player 1, bit 1 player 2
+	bool one_hit_ko = false, tiny_ring = false;   // Cheats
+	int ring_now() const { return tiny_ring ? 600 : ring; }
 	std::string auto_3d;    // Auto's findings, per render scale and antialiasing ("3x1:g,2x0:c")
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
@@ -387,6 +390,9 @@ struct settings
 		num("arcade_coins", arcade_coin, -1, 0xffff);
 		num("renderer_3d", renderer3d, 0, 2);
 		num("akira_slot", akira_slot, 0, int(std::size(model1::UNUSED_CHARACTERS)) - 1);
+		num("infinite_energy", infinite_energy, 0, 3);
+		flag("one_hit_ko", one_hit_ko);
+		flag("tiny_ring", tiny_ring);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
 		if (auto it = kv.find("roms_folder"); it != kv.end()) roms_folder = it->second;
 		for (int p = 0; p < 2; p++) ctl[p].load(kv, p);
@@ -413,6 +419,9 @@ struct settings
 		if (arcade_coin >= 0) fprintf(f, "arcade_coins = %d\n", arcade_coin);
 		fprintf(f, "renderer_3d = %d\n", renderer3d);
 		if (akira_slot) fprintf(f, "akira_slot = %d\n", akira_slot);
+		if (infinite_energy) fprintf(f, "infinite_energy = %d\n", infinite_energy);
+		if (one_hit_ko) fprintf(f, "one_hit_ko = 1\n");
+		if (tiny_ring) fprintf(f, "tiny_ring = 1\n");
 		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\n", auto_3d.c_str());
 		if (!roms_folder.empty()) fprintf(f, "roms_folder = %s\n", roms_folder.c_str());
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
@@ -790,7 +799,7 @@ int main(int argc, char **argv)
 	};
 	load_backgrounds(m, find_assets() + "/backgrounds");   // the title and select's widescreen sides
 	load_backgrounds(m, dir + "/backgrounds");   // the player's own (hi-res stage skies...), which win
-	m.set_ring_width(cfg.ring);
+	m.set_ring_width(cfg.ring_now());
 	m.set_akira_slot(cfg.akira_slot);
 	// The play style's coins: PC mode is free play (its FREE PLAY text hidden); Arcade mode has the
 	// cabinet's own coin setting, kept in settings.ini while PC mode has free play in its place (it
@@ -1520,7 +1529,7 @@ int main(int argc, char **argv)
 				int i = int(std::find(std::begin(RINGS), std::end(RINGS), cfg.ring) - std::begin(RINGS));
 				cfg.ring = RINGS[std::clamp(i + d, 0, int(std::size(RINGS)) - 1)];
 				cfg_dirty = true;
-				m.set_ring_width(cfg.ring);
+				m.set_ring_width(cfg.ring_now());
 			} });
 		choice("Rounds to win (vs CPU)", "Rounds needed to win a match against the computer.", ga::match_1p, [](int v) { return std::to_string(v); });
 		choice("Rounds to win (vs player)", "Rounds needed to win a match between two players.", ga::match_vs, [](int v) { return std::to_string(v); });
@@ -1538,15 +1547,24 @@ int main(int argc, char **argv)
 		menu_page p{ "Cheats: a change restarts the game when the menu closes", "", {} };
 		constexpr int N_CHARS = int(std::size(model1::UNUSED_CHARACTERS));
 		p.items.push_back({ "Akira's place",
-			"Characters cut from the game but left in it: choose Akira on the select screen to play as one (a computer Akira is them too). "
-			"They're unfinished: a few borrowed moves and no throws, and Siba's pursuit attack can jump across the ring. "
-			"The Koskol brothers were to be the final bosses, and use Dural's moves. The bosses never had a select portrait: theirs is made from their fight head.",
+			"Characters cut from the game: choose Akira on the select screen to play as one. Unfinished: borrowed moves, no throws. "
+			"The Koskol brothers were to be the final bosses.",
 			[&] { return std::string(model1::UNUSED_CHARACTERS[cfg.akira_slot]); },
 			[&](int d) {
 				cfg.akira_slot = wrap(cfg.akira_slot + d, N_CHARS);
 				cfg_dirty = true;
 				m.set_akira_slot(cfg.akira_slot);
 			} });
+		static const char *WHO[] = { "Off", "Player 1", "Player 2", "Both" };
+		p.items.push_back({ "Infinite energy", "Energy stays full: hits land but never knock out.",
+			[&] { return std::string(WHO[cfg.infinite_energy]); },
+			[&](int d) { cfg.infinite_energy = wrap(cfg.infinite_energy + d, 4); cfg_dirty = true; } });
+		p.items.push_back({ "One-hit KO", "Every fighter (but one with infinite energy) is down to their last bit of energy: any hit wins the round.",
+			[&] { return on_off(cfg.one_hit_ko); },
+			[&](int) { cfg.one_hit_ko = !cfg.one_hit_ko; cfg_dirty = true; } });
+		p.items.push_back({ "Tiny ring", "Half the smallest ring: ring outs everywhere. From the next fight.",
+			[&] { return on_off(cfg.tiny_ring); },
+			[&](int) { cfg.tiny_ring = !cfg.tiny_ring; cfg_dirty = true; m.set_ring_width(cfg.ring_now()); } });
 		p.items.push_back(back_item());
 		return p;
 	};
@@ -1914,6 +1932,7 @@ int main(int argc, char **argv)
 				case hotkey::none: break;
 				}
 				if (menu.is_open()) break;
+				if (cfg.infinite_energy || cfg.one_hit_ko) m.fight_cheats(cfg.infinite_energy, cfg.one_hit_ko);
 				m.run_frame();
 				game_run++;
 				// leaving the service menu: the PC build restarts at once, past the boot screen

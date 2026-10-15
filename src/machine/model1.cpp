@@ -543,7 +543,7 @@ bool model1::set_ring_width(int width)
 	auto &rom = m_regions.maincpu;
 	if (TABLE + 12 > rom.size() || memcmp(&rom[TABLE + 4], ENERGY, 8)) return false;
 	for (int i = 0; i < 4; i++)
-		if (rom[TABLE + i] < 50 || rom[TABLE + i] > 100) return false;   // not VF's table (or ours)
+		if (rom[TABLE + i] < 25 || rom[TABLE + i] > 100) return false;   // not VF's table (or ours: Cheats' tiny ring is 600)
 	for (int i = 0; i < 4; i++) rom[TABLE + i] = width ? uint8_t(width / 20) : ARCADE[i];
 	return true;
 }
@@ -631,6 +631,36 @@ void model1::akira_slot_heads(uint32_t record)
 		made = true;
 	}
 	if (!made) std::fill(&rom[AT], &rom[LIST + 0x80], 0xff);   // (as it was: no ROM)
+	// Dural's head sits right of and below the others' in the frame (its own origin): Akira's
+	// select camera (fd278b: x, y, z, then 3 angles, per character) moves it back to the middle,
+	// a little further away so the chin isn't cut off, while he's in Akira's place.
+	constexpr uint32_t CAMERA = 0xfd278b;
+	static const float AKIRA_CAM[3] = { 0.0f, -0.1f, 0.9f }, DURAL_CAM[3] = { -0.04f, -0.07f, 1.0f };
+	float cam[3];
+	memcpy(cam, &rom[CAMERA], sizeof cam);
+	const bool vf_cam = !memcmp(cam, AKIRA_CAM, sizeof cam) || !memcmp(cam, DURAL_CAM, sizeof cam);
+	if (vf_cam) memcpy(&rom[CAMERA], record == 0xfd369b && made ? DURAL_CAM : AKIRA_CAM, sizeof cam);
+}
+
+// The fighters' energy (ffc4a0: player n's at [50130c] + n * 0x1800, the energy -2e from there,
+// what hits take off; the full amount for the round at 501186).
+void model1::fight_cheats(int infinite, bool one_hit)
+{
+	auto &ram = m_ram_b;
+	auto rd32 = [&](uint32_t a) { return uint32_t(ram[a] | ram[a + 1] << 8 | ram[a + 2] << 16 | ram[a + 3] << 24); };
+	const uint32_t base = rd32(0x130c);
+	if (base < 0x500000 + 0x2e || base + 0x1800 - 0x500000 > ram.size()) return;   // (not set yet)
+	const int16_t full = int16_t(ram[0x1186] | ram[0x1187] << 8);
+	if (full <= 0 || full > 1000) return;
+	for (int p = 0; p < 2; p++) {
+		const uint32_t a = base + p * 0x1800 - 0x2e - 0x500000;
+		int16_t e = int16_t(ram[a] | ram[a + 1] << 8);
+		if (infinite >> p & 1) e = full;
+		else if (one_hit && e > 1) e = 1;
+		else continue;
+		ram[a] = uint8_t(e);
+		ram[a + 1] = uint8_t(uint16_t(e) >> 8);
+	}
 }
 
 static std::vector<std::pair<uint32_t, std::vector<uint8_t>>> s_free_play_text;   // the bytes hide_free_play_text replaced
