@@ -698,6 +698,9 @@ int main(int argc, char **argv)
 				freopen((dir + "/log.txt").c_str(), "w", stderr);
 				setvbuf(stderr, nullptr, _IONBF, 0);
 			}
+			// the log's first line: which build (as the menu's footer), and where it runs
+			fprintf(stderr, "Virtua Fighter Recomp %s (%s) on %s, %d logical processors, %d MB of memory\n", VF_VERSION, *VF_DATE ? VF_DATE : "no date",
+					SDL_GetPlatform(), SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM());
 			if (portable) fprintf(stderr, "portable (%s beside the program): everything in %s\n", portable, dir.c_str());
 			else if (home.find("/AppTranslocation/") != std::string::npos)   // (macOS runs a downloaded app from a hidden copy until it's moved)
 				fprintf(stderr, "run from macOS's hidden copy of the app (App Translocation): a portable.txt beside it isn't seen until the app is moved with the Finder\n");
