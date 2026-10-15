@@ -890,6 +890,10 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 		m_parts->ops.push_back(o);
 		o.tex = TEX_3D; o.sw = o.dw = float(bitmap.width()); o.sh = o.dh = float(bitmap.height());
 		m_parts->ops.push_back(o);                   // (drawn below, before the host puts it on)
+		if (m_screen_now) {                          // the painted sides again, over the 3D (see below)
+			gpu_op s; s.tex = TEX_SIDES; s.sw = s.dw = float(m_sides.width()); s.sh = s.dh = float(m_sides.height());
+			m_parts->ops.push_back(s);
+		}
 	} else {
 		draw_tiles(bitmap, cliprect, 2, 0);
 		draw_tiles(bitmap, cliprect, 0, 0);
@@ -904,6 +908,21 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 			for (int y = a; y < b; y++) { uint32_t *p = &bitmap.pix(y); for (int x = 0; x < bitmap.width(); x++) p[x] |= UNDER_3D; }
 		});
 	const bool g3 = gpu3d_on() && !no_polys;   // the 3D on the GPU (gpu3d_end), else the CPU's
+	// A picture's painted sides stay over the 3D: what it draws beyond the arcade's 4:3 was off the
+	// cabinet's screen (a boss's empty select portrait, in Cheats' Akira's place, leaves its sky
+	// there). Put together on the GPU, the sides go on again above the 3D (above); else kept here.
+	std::vector<uint32_t> sides_kept;
+	const int side_l = m_ext * m_scale, side_r = std::min((m_ext + SCREEN_W) * m_scale, bitmap.width());
+	if (m_screen_now && !m_parts && side_l > 0) {
+		const int w = bitmap.width();
+		sides_kept.resize(size_t(cliprect.max_y - cliprect.min_y + 1) * (side_l + w - side_r));
+		uint32_t *k = sides_kept.data();
+		for (int y = cliprect.min_y; y <= cliprect.max_y; y++) {
+			const uint32_t *p = &bitmap.pix(y);
+			k = std::copy(p, p + side_l, k);
+			k = std::copy(p + side_r, p + w, k);
+		}
+	}
 	m_raster_ms = 0;
 	if (g3) gpu3d_begin(bitmap);
 	if (!no_polys) tgp_render(bitmap, cliprect, RENDER_BELOW_HUD);
@@ -914,6 +933,15 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 		const uint64_t t0 = trace_ns();
 		edge_smooth(bitmap, m_parts != nullptr);
 		m_work.edge_ns += trace_ns() - t0;
+	}
+	if (!sides_kept.empty()) {
+		const int w = bitmap.width();
+		const uint32_t *k = sides_kept.data();
+		for (int y = cliprect.min_y; y <= cliprect.max_y; y++) {
+			uint32_t *p = &bitmap.pix(y);
+			std::copy(k, k + side_l, p); k += side_l;
+			std::copy(k, k + (w - side_r), p + side_r); k += w - side_r;
+		}
 	}
 
 	if (m_parts) {
