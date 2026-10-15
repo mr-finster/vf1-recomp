@@ -647,17 +647,23 @@ void model1::akira_slot_heads(uint32_t record)
 // what hits take off; the full amount for the round at 501186).
 void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 {
-	auto &ram = m_ram_b;
-	auto rd32 = [&](uint32_t a) { return uint32_t(ram[a] | ram[a + 1] << 8 | ram[a + 2] << 16 | ram[a + 3] << 24); };
-	// (the fields are below the pointer: player 2's last one read is at +0x1800 - 0x2e)
-	const uint32_t base = rd32(0x130c);
-	const bool ok = base >= 0x500000 + 0x80 && base + 0x1800 - 0x2e + 2 - 0x500000 <= ram.size();
+	// a 16- or 32-bit value at a main CPU address in either RAM: the fighters' data is in the
+	// battery-backed one (seen at 400700), the round's numbers in work RAM
+	auto at = [&](uint32_t a, int n) -> uint8_t * {
+		if (a >= 0x500000 && a + n - 0x500000 <= m_ram_b.size()) return &m_ram_b[a - 0x500000];
+		if (a >= 0x400000 && a + n - 0x400000 <= m_ram_a.size()) return &m_ram_a[a - 0x400000];
+		return nullptr;
+	};
+	auto rd16 = [&](uint32_t a) { const uint8_t *p = at(a, 2); return p ? int16_t(p[0] | p[1] << 8) : int16_t(0); };
+	auto rd32 = [&](uint32_t a) { const uint8_t *p = at(a, 4); return p ? uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24) : 0u; };
+	auto wr16 = [&](uint32_t a, int16_t v) { if (uint8_t *p = at(a, 2)) { p[0] = uint8_t(v); p[1] = uint8_t(uint16_t(v) >> 8); } };
+	// (the fields are below the pointer: player 2's at +0x1800, down to -0x80)
+	const uint32_t base = rd32(0x50130c);
+	const bool ok = at(base - 0x80, 0x80) && at(base + 0x1800 - 0x80, 0x80);
 	static int told = 0;
 	if (told < 2 && (ok ? told == 1 || told == 0 : told == 0)) {   // (log.txt: what the cheats found, once each way)
-		fprintf(stderr, "cheats: players at %06x%s, energy %d/%d %d/%d, clock %d\n", base, ok ? "" : " (not set yet)",
-				ok ? int16_t(ram[base - 0x2e - 0x500000] | ram[base - 0x2d - 0x500000] << 8) : 0, int16_t(ram[0x1186] | ram[0x1187] << 8),
-				ok ? int16_t(ram[base + 0x1800 - 0x2e - 0x500000] | ram[base + 0x1800 - 0x2d - 0x500000] << 8) : 0, int16_t(ram[0x1186] | ram[0x1187] << 8),
-				int16_t(ram[0x1285] | ram[0x1286] << 8));
+		fprintf(stderr, "cheats: players at %06x%s, energy %d %d of %d, clock %d\n", base, ok ? "" : " (not set yet)",
+				ok ? rd16(base - 0x2e) : 0, ok ? rd16(base + 0x1800 - 0x2e) : 0, rd16(0x501186), rd16(0x501285));
 		told = ok ? 2 : 1;
 	}
 	if (!ok) return;
@@ -666,28 +672,26 @@ void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 	// too, so it's only held once a round has started it, at 0x357 (the game marks the round's
 	// first moments by the clock being above that), until a knockout or the game clears it.
 	if (no_time) {
-		const int t = int16_t(ram[0x1285] | ram[0x1286] << 8);
-		const auto down = [&](int p) { return rd32(base + p * 0x1800 - 0x80 - 0x500000) >> 0x1b & 1; };
+		const int t = rd16(0x501285);
+		const auto down = [&](int p) { return rd32(base + p * 0x1800 - 0x80) >> 0x1b & 1; };
 		const bool starting = t > 0x357 && t <= 0x384 && t == m_clock_prev - 1;   // (a round's first moments, counting)
 		if (starting || t == 0x384) m_clock_held = true;
 		if (t <= 0 || down(0) || down(1) || (t > m_clock_prev + 1 && t != 0x384)) m_clock_held = false;
 		if (m_clock_held && t < 0x357 && t == m_clock_prev - 1) {
-			ram[0x1285] = 0x57;
-			ram[0x1286] = 0x03;
+			wr16(0x501285, 0x357);
 			m_clock_prev = 0x357;
 		} else m_clock_prev = t;
 	} else m_clock_held = false;
 	if (!infinite && !one_hit) return;
-	const int16_t full = int16_t(ram[0x1186] | ram[0x1187] << 8);
+	const int16_t full = rd16(0x501186);
 	if (full <= 0 || full > 1000) return;
 	for (int p = 0; p < 2; p++) {
-		const uint32_t a = base + p * 0x1800 - 0x2e - 0x500000;
-		int16_t e = int16_t(ram[a] | ram[a + 1] << 8);
+		const uint32_t a = base + p * 0x1800 - 0x2e;
+		int16_t e = rd16(a);
 		if (infinite >> p & 1) e = full;
 		else if (one_hit && e > 1) e = 1;
 		else continue;
-		ram[a] = uint8_t(e);
-		ram[a + 1] = uint8_t(uint16_t(e) >> 8);
+		wr16(a, e);
 	}
 }
 
