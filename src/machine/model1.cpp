@@ -644,12 +644,28 @@ void model1::akira_slot_heads(uint32_t record)
 
 // The fighters' energy (ffc4a0: player n's at [50130c] + n * 0x1800, the energy -2e from there,
 // what hits take off; the full amount for the round at 501186).
-void model1::fight_cheats(int infinite, bool one_hit)
+void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 {
 	auto &ram = m_ram_b;
 	auto rd32 = [&](uint32_t a) { return uint32_t(ram[a] | ram[a + 1] << 8 | ram[a + 2] << 16 | ram[a + 3] << 24); };
 	const uint32_t base = rd32(0x130c);
-	if (base < 0x500000 + 0x2e || base + 0x1800 - 0x500000 > ram.size()) return;   // (not set yet)
+	if (base < 0x500000 + 0x80 || base + 0x1800 - 0x500000 > ram.size()) return;   // (not set yet)
+	// The round's clock (501285): 0x384 as a round starts (fe2152), counted down while neither
+	// fighter is down (fe2190: their -80's bit 0x1b), time up below 0. Other screens count with it
+	// too, so it's only held once a round has started it, at 0x357 (the game marks the round's
+	// first moments by the clock being above that), until a knockout or the game clears it.
+	if (no_time) {
+		const int t = int16_t(ram[0x1285] | ram[0x1286] << 8);
+		const auto down = [&](int p) { return rd32(base + p * 0x1800 - 0x80 - 0x500000) >> 0x1b & 1; };
+		if (t == 0x384) m_clock_held = true;
+		if (t <= 0 || down(0) || down(1) || t > m_clock_prev + 1) m_clock_held = t == 0x384;
+		if (m_clock_held && t < 0x357 && t == m_clock_prev - 1) {
+			ram[0x1285] = 0x57;
+			ram[0x1286] = 0x03;
+			m_clock_prev = 0x357;
+		} else m_clock_prev = t;
+	} else m_clock_held = false;
+	if (!infinite && !one_hit) return;
 	const int16_t full = int16_t(ram[0x1186] | ram[0x1187] << 8);
 	if (full <= 0 || full > 1000) return;
 	for (int p = 0; p < 2; p++) {

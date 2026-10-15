@@ -351,8 +351,9 @@ struct settings
 	int renderer3d = 2;     // the 3D's renderer: 0 the CPU, 1 the GPU, 2 Auto (whichever is quicker here)
 	int akira_slot = 0;     // Cheats: who plays in Akira's place (model1::UNUSED_CHARACTERS; 0 Akira)
 	int infinite_energy = 0;   // Cheats: bit 0 player 1, bit 1 player 2
-	bool one_hit_ko = false, tiny_ring = false;   // Cheats
-	int ring_now() const { return tiny_ring ? 600 : ring; }
+	bool one_hit_ko = false, no_time_limit = false;   // Cheats
+	int ring_cheat = 0;     // Cheats: 0 the arcade's, 1 tiny (600), 2 huge (2000: no ring outs)
+	int ring_now() const { return ring_cheat == 1 ? 600 : ring_cheat == 2 ? 2000 : ring; }
 	std::string auto_3d;    // Auto's findings, per render scale and antialiasing ("3x1:g,2x0:c")
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
@@ -392,7 +393,8 @@ struct settings
 		num("akira_slot", akira_slot, 0, int(std::size(model1::UNUSED_CHARACTERS)) - 1);
 		num("infinite_energy", infinite_energy, 0, 3);
 		flag("one_hit_ko", one_hit_ko);
-		flag("tiny_ring", tiny_ring);
+		flag("no_time_limit", no_time_limit);
+		num("ring_cheat", ring_cheat, 0, 2);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
 		if (auto it = kv.find("roms_folder"); it != kv.end()) roms_folder = it->second;
 		for (int p = 0; p < 2; p++) ctl[p].load(kv, p);
@@ -421,7 +423,8 @@ struct settings
 		if (akira_slot) fprintf(f, "akira_slot = %d\n", akira_slot);
 		if (infinite_energy) fprintf(f, "infinite_energy = %d\n", infinite_energy);
 		if (one_hit_ko) fprintf(f, "one_hit_ko = 1\n");
-		if (tiny_ring) fprintf(f, "tiny_ring = 1\n");
+		if (no_time_limit) fprintf(f, "no_time_limit = 1\n");
+		if (ring_cheat) fprintf(f, "ring_cheat = %d\n", ring_cheat);
 		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\n", auto_3d.c_str());
 		if (!roms_folder.empty()) fprintf(f, "roms_folder = %s\n", roms_folder.c_str());
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
@@ -1562,9 +1565,13 @@ int main(int argc, char **argv)
 		p.items.push_back({ "One-hit KO", "Every fighter (but one with infinite energy) is down to their last bit of energy: any hit wins the round.",
 			[&] { return on_off(cfg.one_hit_ko); },
 			[&](int) { cfg.one_hit_ko = !cfg.one_hit_ko; cfg_dirty = true; } });
-		p.items.push_back({ "Tiny ring", "Half the smallest ring: ring outs everywhere. From the next fight.",
-			[&] { return on_off(cfg.tiny_ring); },
-			[&](int) { cfg.tiny_ring = !cfg.tiny_ring; cfg_dirty = true; m.set_ring_width(cfg.ring_now()); } });
+		p.items.push_back({ "No time limit", "The round's clock stops just after it starts: a round ends by knockout or ring out.",
+			[&] { return on_off(cfg.no_time_limit); },
+			[&](int) { cfg.no_time_limit = !cfg.no_time_limit; cfg_dirty = true; } });
+		static const char *RING[] = { "Normal", "Tiny", "Huge" };
+		p.items.push_back({ "Ring", "Tiny is half the smallest ring: ring outs everywhere. Huge is wider than any stage: no ring outs. From the next fight.",
+			[&] { return std::string(RING[cfg.ring_cheat]); },
+			[&](int d) { cfg.ring_cheat = wrap(cfg.ring_cheat + d, 3); cfg_dirty = true; m.set_ring_width(cfg.ring_now()); } });
 		p.items.push_back(back_item());
 		return p;
 	};
@@ -1932,7 +1939,7 @@ int main(int argc, char **argv)
 				case hotkey::none: break;
 				}
 				if (menu.is_open()) break;
-				if (cfg.infinite_energy || cfg.one_hit_ko) m.fight_cheats(cfg.infinite_energy, cfg.one_hit_ko);
+				if (cfg.infinite_energy || cfg.one_hit_ko || cfg.no_time_limit) m.fight_cheats(cfg.infinite_energy, cfg.one_hit_ko, cfg.no_time_limit);
 				m.run_frame();
 				game_run++;
 				// leaving the service menu: the PC build restarts at once, past the boot screen
