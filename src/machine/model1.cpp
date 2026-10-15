@@ -591,6 +591,46 @@ void model1::set_akira_slot(int which)
 		if (TO[which][i] < 0 || (i >= RIBBON1 && !ribbon)) memcpy(p, akira[i], AT[i].size);
 		else for (int b = 0; b < AT[i].size; b++) p[b] = uint8_t(TO[which][i] >> (8 * b));   // (little-endian)
 	}
+	akira_slot_heads(TO[which][MODEL1] < 0 ? 0 : 0xfd0000 | uint32_t(TO[which][MODEL1]));
+}
+
+// A select portrait for the characters without one (Dural and the Koskol brothers), made from
+// their own head. A record's +72 is its portrait: 9 parts (lists of objects: the face, the eyes and
+// mouth with their frames), at +24 the face's animations by number (ff06ac), at +3c the select's
+// blinking. The fight draws a head from it too (ff06ff), or without one the record's +16, a single
+// object, as those characters have. So the portrait here is that object alone as its first part
+// (a list of it, whatever frame is asked for), no animations, Akira's blinking for the select's
+// (it only moves parts it hasn't): in the fight the same head as before, on the select their face.
+// It goes in the main CPU's empty f80000-fbffff (no ROM there, nothing reads it). Only the
+// character in Akira's place has one; the rest stay as the game made them.
+void model1::akira_slot_heads(uint32_t record)
+{
+	static const uint32_t NO_PORTRAIT[] = { 0xfd369b, 0xfd510f, 0xfd5285, 0xfd53fb };   // Dural, Rekka, Score, Aeon
+	constexpr uint32_t AT = 0xf80000, LIST = AT + 0x80, BLINK_OF = 0xfd3f6f;   // (Akira's record)
+	auto &rom = m_regions.maincpu;
+	if (LIST + 0x80 > rom.size()) return;
+	auto rd = [&](uint32_t a) { return uint32_t(rom[a] | rom[a + 1] << 8 | rom[a + 2] << 16 | rom[a + 3] << 24); };
+	auto wr = [&](uint32_t a, uint32_t v) { for (int b = 0; b < 4; b++) rom[a + b] = uint8_t(v >> (8 * b)); };
+	static bool kept = false, ours[std::size(NO_PORTRAIT)];
+	if (!kept) {
+		for (size_t i = 0; i < std::size(NO_PORTRAIT); i++) ours[i] = rd(NO_PORTRAIT[i] + 0x72) == 0;   // (VF's: none)
+		kept = true;
+	}
+	const uint32_t blink = rd(rd(BLINK_OF + 0x72) + 0x3c);
+	bool made = false;
+	for (size_t i = 0; i < std::size(NO_PORTRAIT); i++) {
+		if (!ours[i]) continue;
+		const bool here = NO_PORTRAIT[i] == record && blink >> 16 == 0xfd;
+		wr(NO_PORTRAIT[i] + 0x72, here ? AT : 0);
+		if (!here) continue;
+		std::fill(&rom[AT], &rom[LIST + 0x80], 0);
+		wr(AT, LIST);                                     // the first part: the head
+		wr(AT + 0x3c, blink);
+		const uint32_t head = rd(record + 0x16);
+		for (uint32_t k = 0; k < 0x80; k += 4) wr(LIST + k, head);   // (every frame the same)
+		made = true;
+	}
+	if (!made) std::fill(&rom[AT], &rom[LIST + 0x80], 0xff);   // (as it was: no ROM)
 }
 
 static std::vector<std::pair<uint32_t, std::vector<uint8_t>>> s_free_play_text;   // the bytes hide_free_play_text replaced

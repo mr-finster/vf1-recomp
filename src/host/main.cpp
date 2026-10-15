@@ -1540,7 +1540,7 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Akira's place",
 			"Characters cut from the game but left in it: choose Akira on the select screen to play as one (a computer Akira is them too). "
 			"They're unfinished: a few borrowed moves and no throws, and Siba's pursuit attack can jump across the ring. "
-			"The Koskol brothers were to be the final bosses, and use Dural's moves. None of the bosses has a select portrait.",
+			"The Koskol brothers were to be the final bosses, and use Dural's moves. The bosses never had a select portrait: theirs is made from their fight head.",
 			[&] { return std::string(model1::UNUSED_CHARACTERS[cfg.akira_slot]); },
 			[&](int d) {
 				cfg.akira_slot = wrap(cfg.akira_slot + d, N_CHARS);

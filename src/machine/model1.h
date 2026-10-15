@@ -97,6 +97,7 @@ public:
 	static constexpr const char *UNUSED_CHARACTERS[] = { "Akira", "Siba (Majido)", "Jeff", "Takeru (early Akira)",
 														 "Rekka (Koskol brother)", "Score (Koskol brother)", "Aeon (Koskol brother)", "Dural" };
 	void set_akira_slot(int which);
+	void akira_slot_heads(uint32_t record);   // (set_akira_slot: a select portrait for a head without one)
 	// Replaces n bytes of the main CPU program, if their CRC-32 is `crc` (guards against other sets).
 	bool patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to);
 	// Blanks the FREE PLAY notices (the attract/title one and the fight's): for the PC build,
