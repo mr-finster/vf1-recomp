@@ -566,6 +566,7 @@ void model1::set_akira_slot(int which)
 		{ 0x510f, 0x510f, -1, -1, -1, -1 },                         // Rekka
 		{ 0x5285, 0x5285, -1, -1, -1, -1 },                         // Score
 		{ 0x53fb, 0x53fb, -1, -1, -1, -1 },                         // Aeon
+		{ 0x369b, 0x369b, -1, -1, -1, -1 },                         // Dural (TCRF's second costume with Aeon)
 	};
 	auto &rom = m_regions.maincpu;
 	if (AT[0].addr + 4 > rom.size()) return;
