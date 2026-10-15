@@ -95,7 +95,7 @@ public:
 	// play in Akira's place: his entries in the character tables point at theirs. 0 is Akira; the
 	// rest are UNUSED_CHARACTERS. Read as a fight loads, so a change wants a restart.
 	static constexpr const char *UNUSED_CHARACTERS[] = { "Akira", "Siba (Majido)", "Jeff", "Takeru (early Akira)",
-														 "Koskol brothers 1 + 2", "Koskol brother 3 + Dural" };
+														 "Rekka (Koskol brother)", "Score (Koskol brother)", "Aeon (Koskol brother)" };
 	void set_akira_slot(int which);
 	// Replaces n bytes of the main CPU program, if their CRC-32 is `crc` (guards against other sets).
 	bool patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to);

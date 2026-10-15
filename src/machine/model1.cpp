@@ -561,8 +561,11 @@ void model1::set_akira_slot(int which)
 		{ 0x33af, 0x4843, 0x001d1a8f, 0x0b37, 0x14f7, 0xd773 },     // Majido (Siba)
 		{ 0x3c7b, 0x4ca5, 0x001d1a8f, 0x09ff, 0x11eb, 0xc95b },     // Jeff (Majido's portrait)
 		{ 0x3df9, 0x4e23, -1, -1, -1, 0xb437 },                     // Takeru, the early Akira
-		{ 0x510f, 0x5285, -1, -1, -1, -1 },                         // the Koskol brothers: Rekka, Score
-		{ 0x53fb, 0x369b, -1, -1, -1, -1 },                         // Aeon, and Dural for the second costume
+		// the Koskol brothers, one outfit each (0x176 apart, after Akira's), in both of his costumes'
+		// places: TCRF's cheats put two in at once (Rekka + Score, Aeon + Dural), one per costume
+		{ 0x510f, 0x510f, -1, -1, -1, -1 },                         // Rekka
+		{ 0x5285, 0x5285, -1, -1, -1, -1 },                         // Score
+		{ 0x53fb, 0x53fb, -1, -1, -1, -1 },                         // Aeon
 	};
 	auto &rom = m_regions.maincpu;
 	if (AT[0].addr + 4 > rom.size()) return;
