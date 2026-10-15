@@ -511,8 +511,9 @@ struct screen_record { const char *name; uint32_t hash; };
 // (portrait on the right: player 2 starting from the demo) and both (VS: a challenger joining).
 // Cheats' Siba (Majido) in Akira's place changes the map (his own select icon): its first frame
 // and player 1 alone, as a7c660d4 and fa5cc994 are Akira's.
+// 46ffddc5: the select's very first frame, before its first layout (its sides came a frame late).
 const screen_record SCREEN_RECORDS[] = { { "title", 0x6e31a62b }, { "select", 0xfa5cc994 },
-										 { "select", 0x282467f8 }, { "select", 0xa7c660d4 },
+										 { "select", 0x282467f8 }, { "select", 0xa7c660d4 }, { "select", 0x46ffddc5 },
 										 { "select", 0x14d0cd96 }, { "select", 0x0bc13456 } };
 } // namespace
 

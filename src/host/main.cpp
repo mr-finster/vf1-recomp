@@ -352,8 +352,8 @@ struct settings
 	int akira_slot = 0;     // Cheats: who plays in Akira's place (model1::UNUSED_CHARACTERS; 0 Akira)
 	int infinite_energy = 0;   // Cheats: bit 0 player 1, bit 1 player 2
 	bool one_hit_ko = false, no_time_limit = false;   // Cheats
-	int ring_cheat = 0;     // Cheats: 0 the arcade's, 1 tiny (600), 2 huge (2000: no ring outs)
-	int ring_now() const { return ring_cheat == 1 ? 600 : ring_cheat == 2 ? 2000 : ring; }
+	int ring_cheat = 0;     // Cheats: 0 the arcade's, 1 tiny (600), 2 huge (5000: no ring outs)
+	int ring_now() const { return ring_cheat == 1 ? 600 : ring_cheat == 2 ? 5000 : ring; }
 	std::string auto_3d;    // Auto's findings, per render scale and antialiasing ("3x1:g,2x0:c")
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
@@ -1367,7 +1367,7 @@ int main(int argc, char **argv)
 	// Reset (the menu, F3): the menu closes, a paused game unpauses, and the screen goes black at
 	// once while the boot runs unseen (a few seconds on a slow machine), not the last picture held.
 	// the arcade settings as their page opened (and the ring): see arcade_page
-	std::optional<std::array<int, 7>> assign_before;
+	std::optional<std::array<int, 8>> assign_before;
 	auto reset_game = [&](bool keep_coins = true) {
 		assign_before.reset();   // a restart applies them
 		if (keep_coins) keep_arcade_coins();     // (Arcade: as the service menu may have left them)
@@ -1504,12 +1504,13 @@ int main(int argc, char **argv)
 	// so closing the menu after changing one restarts it (only if something is different) ----
 	using ga = model1::game_assignment;
 	constexpr int N_ASSIGN = 5;
-	static_assert(std::tuple_size_v<decltype(assign_before)::value_type> == N_ASSIGN + 2);
+	static_assert(std::tuple_size_v<decltype(assign_before)::value_type> == N_ASSIGN + 3);
 	auto assignments_now = [&] {
-		std::array<int, N_ASSIGN + 2> v;
+		std::array<int, N_ASSIGN + 3> v;
 		for (int i = 0; i < N_ASSIGN; i++) v[i] = m.assignment(ga(i));
 		v[N_ASSIGN] = cfg.ring;
 		v[N_ASSIGN + 1] = cfg.akira_slot;   // (Cheats: read as a fight loads, so it restarts too)
+		v[N_ASSIGN + 2] = cfg.ring_cheat;
 		return v;
 	};
 	auto arcade_page = [&] {
@@ -1569,7 +1570,7 @@ int main(int argc, char **argv)
 			[&] { return on_off(cfg.no_time_limit); },
 			[&](int) { cfg.no_time_limit = !cfg.no_time_limit; cfg_dirty = true; } });
 		static const char *RING[] = { "Normal", "Tiny", "Huge" };
-		p.items.push_back({ "Ring", "Tiny is half the smallest ring: ring outs everywhere. Huge is wider than any stage: no ring outs. From the next fight.",
+		p.items.push_back({ "Ring", "Tiny is half the smallest ring: ring outs everywhere. Huge is far wider than the stage: no ring outs.",
 			[&] { return std::string(RING[cfg.ring_cheat]); },
 			[&](int d) { cfg.ring_cheat = wrap(cfg.ring_cheat + d, 3); cfg_dirty = true; m.set_ring_width(cfg.ring_now()); } });
 		p.items.push_back(back_item());

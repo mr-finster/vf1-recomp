@@ -543,7 +543,7 @@ bool model1::set_ring_width(int width)
 	auto &rom = m_regions.maincpu;
 	if (TABLE + 12 > rom.size() || memcmp(&rom[TABLE + 4], ENERGY, 8)) return false;
 	for (int i = 0; i < 4; i++)
-		if (rom[TABLE + i] < 25 || rom[TABLE + i] > 100) return false;   // not VF's table (or ours: Cheats' tiny ring is 600)
+		if (rom[TABLE + i] < 25 || rom[TABLE + i] > 250) return false;   // not VF's table (or ours: Cheats' rings, 600 and 5000)
 	for (int i = 0; i < 4; i++) rom[TABLE + i] = width ? uint8_t(width / 20) : ARCADE[i];
 	return true;
 }
@@ -635,10 +635,11 @@ void model1::akira_slot_heads(uint32_t record)
 	// select camera (fd278b: x, y, z, then 3 angles, per character) moves it back to the middle,
 	// a little further away so the chin isn't cut off, while he's in Akira's place.
 	constexpr uint32_t CAMERA = 0xfd278b;
-	static const float AKIRA_CAM[3] = { 0.0f, -0.1f, 0.9f }, DURAL_CAM[3] = { -0.04f, -0.07f, 1.0f };
+	static const float AKIRA_CAM[3] = { 0.0f, -0.1f, 0.9f }, DURAL_CAM[3] = { -0.04f, -0.06f, 1.1f };
 	float cam[3];
 	memcpy(cam, &rom[CAMERA], sizeof cam);
-	const bool vf_cam = !memcmp(cam, AKIRA_CAM, sizeof cam) || !memcmp(cam, DURAL_CAM, sizeof cam);
+	static const float DURAL_CAM_V1[3] = { -0.04f, -0.07f, 1.0f };   // (an earlier build's)
+	const bool vf_cam = !memcmp(cam, AKIRA_CAM, sizeof cam) || !memcmp(cam, DURAL_CAM, sizeof cam) || !memcmp(cam, DURAL_CAM_V1, sizeof cam);
 	if (vf_cam) memcpy(&rom[CAMERA], record == 0xfd369b && made ? DURAL_CAM : AKIRA_CAM, sizeof cam);
 }
 
@@ -648,8 +649,18 @@ void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 {
 	auto &ram = m_ram_b;
 	auto rd32 = [&](uint32_t a) { return uint32_t(ram[a] | ram[a + 1] << 8 | ram[a + 2] << 16 | ram[a + 3] << 24); };
+	// (the fields are below the pointer: player 2's last one read is at +0x1800 - 0x2e)
 	const uint32_t base = rd32(0x130c);
-	if (base < 0x500000 + 0x80 || base + 0x1800 - 0x500000 > ram.size()) return;   // (not set yet)
+	const bool ok = base >= 0x500000 + 0x80 && base + 0x1800 - 0x2e + 2 - 0x500000 <= ram.size();
+	static int told = 0;
+	if (told < 2 && (ok ? told == 1 || told == 0 : told == 0)) {   // (log.txt: what the cheats found, once each way)
+		fprintf(stderr, "cheats: players at %06x%s, energy %d/%d %d/%d, clock %d\n", base, ok ? "" : " (not set yet)",
+				ok ? int16_t(ram[base - 0x2e - 0x500000] | ram[base - 0x2d - 0x500000] << 8) : 0, int16_t(ram[0x1186] | ram[0x1187] << 8),
+				ok ? int16_t(ram[base + 0x1800 - 0x2e - 0x500000] | ram[base + 0x1800 - 0x2d - 0x500000] << 8) : 0, int16_t(ram[0x1186] | ram[0x1187] << 8),
+				int16_t(ram[0x1285] | ram[0x1286] << 8));
+		told = ok ? 2 : 1;
+	}
+	if (!ok) return;
 	// The round's clock (501285): 0x384 as a round starts (fe2152), counted down while neither
 	// fighter is down (fe2190: their -80's bit 0x1b), time up below 0. Other screens count with it
 	// too, so it's only held once a round has started it, at 0x357 (the game marks the round's
@@ -657,8 +668,9 @@ void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 	if (no_time) {
 		const int t = int16_t(ram[0x1285] | ram[0x1286] << 8);
 		const auto down = [&](int p) { return rd32(base + p * 0x1800 - 0x80 - 0x500000) >> 0x1b & 1; };
-		if (t == 0x384) m_clock_held = true;
-		if (t <= 0 || down(0) || down(1) || t > m_clock_prev + 1) m_clock_held = t == 0x384;
+		const bool starting = t > 0x357 && t <= 0x384 && t == m_clock_prev - 1;   // (a round's first moments, counting)
+		if (starting || t == 0x384) m_clock_held = true;
+		if (t <= 0 || down(0) || down(1) || (t > m_clock_prev + 1 && t != 0x384)) m_clock_held = false;
 		if (m_clock_held && t < 0x357 && t == m_clock_prev - 1) {
 			ram[0x1285] = 0x57;
 			ram[0x1286] = 0x03;
