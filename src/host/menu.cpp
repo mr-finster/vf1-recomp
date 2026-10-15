@@ -75,7 +75,7 @@ void game_menu::set_fps(const std::string &text)
 	if (!m->overlay || text == m_fps) return;
 	m_fps = text;
 	if (Rml::Element *e = m->overlay->GetElementById("fps")) e->SetInnerRML(escape(text));
-	if (text.empty()) m->overlay->Hide(); else m->overlay->Show();
+	if (text.empty() || m_open) m->overlay->Hide(); else m->overlay->Show();   // (not over the menu)
 }
 
 void game_menu::set_footer(const std::string &text)
@@ -116,6 +116,7 @@ void game_menu::open(menu_page root)
 	m_sel = first_selectable(m_stack.back());
 	build();
 	m->doc->Show();
+	if (m->overlay) m->overlay->Hide();   // the FPS: not over the menu
 	m_open = true;
 	SDL_ShowCursor();
 }
@@ -126,6 +127,7 @@ void game_menu::close()
 	m_capture = nullptr;
 	m->doc->Hide();
 	m_open = false;
+	if (m->overlay && !m_fps.empty()) m->overlay->Show();
 	m_stack.clear();
 	SDL_HideCursor();
 }
