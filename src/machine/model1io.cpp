@@ -32,6 +32,7 @@ void model1io::reset()
 	m_secondary = false;
 	m_ee = EE_RESET;
 	m_cs = m_clk = m_di = 0;
+	m_adc_shift = 0;
 	m_locked = true;
 	m_time = m_ready_at = m_cs_rise = 0;   // the Z80's cycle count starts again from 0
 }
@@ -56,7 +57,12 @@ uint8_t model1io::mem_r(uint16_t a)
 	if (a < 0x4000) return m_rom[a];
 	if (a < 0x6000) return m_ram[a - 0x4000];
 	if (a >= 0x8000 && a < 0x8010) return io_r(a & 0xf);
-	if (a >= 0xc000 && a < 0xc004) return 0x00;      // MSM6253 ADC: VF has no analog controls
+	if (a >= 0xc000 && a < 0xc004) {
+		// The MSM6253 latches on address_w and shifts its sample out MSB-first on D0.
+		const uint8_t bit = m_adc_shift >> 7;
+		m_adc_shift <<= 1;
+		return uint8_t(0xfe | bit);
+	}
 	return 0;
 }
 
@@ -65,6 +71,8 @@ void model1io::mem_w(uint16_t a, uint8_t v)
 	m_time = m_cpu.cyc;
 	if (a >= 0x4000 && a < 0x6000) m_ram[a - 0x4000] = v;
 	else if (a >= 0x8000 && a < 0x8010) io_w(a & 0xf, v);
+	else if (a >= 0xc000 && a < 0xc004)
+		m_adc_shift = analog_inputs[(a & 3) + (m_secondary ? 4 : 0)];
 }
 
 // ---- 315-5338A (MAME: sega_315_5338a_device::read/write) ----

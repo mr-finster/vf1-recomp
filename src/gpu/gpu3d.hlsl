@@ -1,7 +1,7 @@
 // The 3D on the GPU, SDL_GPU's compute (src/gpu/gpu3d_sdlgpu.cpp): Vulkan (SPIR-V) and Direct3D 12
 // (DXIL), gpu3d_metal.mm's kernels in HLSL. The rows' spans above 1x are model1::fill_quad_hd's
 // (ours); the pixels' rule is the rasterizer's (model1_video.cpp: draw_hline, draw_hline_moired and
-// fill_quad_hd's fighter's shadow).
+// fill_quad_hd's model shadow).
 //
 // The one float sum (an edge's crossing, ax + (yc - ay) * dx / dy) as an x86-64 build has it: each
 // step rounded on its own (`precise`), the division correctly rounded (fdiv: a GPU's divide is
@@ -79,8 +79,8 @@ struct poly {
 struct span { uint poly; int y; int xa; int xb; };
 #define SHADOW 1u
 #define CHECKER 2u
-#define FIGHTER 4u
-#define STAGE 8u
+#define MODEL_SHADOW 4u
+#define SCENERY 8u
 #define LINE 32u
 #define L 8u   // the threads a span (each every L-th pixel of it: neighbours write neighbours)
 #define KEY 0xff000000u
@@ -172,7 +172,7 @@ void main(uint3 tid : SV_DispatchThreadID)
 	const uint row = uint(s.y) * k_W;
 	const uint v = s.poly + 1u;
 	uint was;
-	if (!(f & (CHECKER | LINE))) {   // (the polygons a fighter's shadow looks under: model1::s_owner's)
+	if (!(f & (CHECKER | LINE))) {   // (the polygons a model's shadow looks under: model1::s_owner's)
 		for (int x = s.xa + lane; x <= s.xb; x += int(L)) { owner.InterlockedMax((row + uint(x)) * 4u, v, was); depth.InterlockedMax((row + uint(x)) * 4u, v, was); }
 		return;
 	}
@@ -200,16 +200,16 @@ void main(uint3 tid : SV_DispatchThreadID)
 	if (s.xa > s.xb) return;
 	const poly q = polys.Load<poly>((s.poly) * sizeof(poly));
 	if (!(q.flags & SHADOW)) return;
-	const bool fighter = (q.flags & FIGHTER) != 0u;
+	const bool mshadow = (q.flags & MODEL_SHADOW) != 0u;
 	const uint at = uint(s.y) * k_W;
 	uint was;
 	for (int x = s.xa; x <= s.xb; x++) {
 		const uint o = LD(owner, at + uint(x));
 		if (o > s.poly) continue;                 // a solid polygon (or line) drawn after it
-		const uint d = fighter ? LD(depth, at + uint(x)) : 0u;
-		if (d) {                                  // a fighter's shadow: not over a fighter's polygon in its own list
+		const uint d = mshadow ? LD(depth, at + uint(x)) : 0u;
+		if (d) {                                  // a model's shadow: not over a model's polygon in its own list
 			const poly u = polys.Load<poly>((d - 1u) * sizeof(poly));
-			if (u.batch == q.batch && !(u.flags & STAGE)) continue;
+			if (u.batch == q.batch && !(u.flags & SCENERY)) continue;
 		}
 		shade.InterlockedMin((at + uint(x)) * 4u, s.poly, was);
 	}

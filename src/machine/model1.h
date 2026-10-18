@@ -1,4 +1,4 @@
-// Sega Model 1, as Virtua Fighter uses it: memory map, interrupts, the TGP coprocessor as
+// Sega Model 1: memory map, interrupts, the TGP coprocessor as
 // C functions (MAME 0.210's simulation) and the polygon rasterizer (MAME's model1_v.cpp).
 // Ported from MAME's Model 1 driver, BSD-3-Clause, copyright-holders: Olivier Galibert.
 #pragma once
@@ -10,7 +10,10 @@
 #include <array>
 #include <future>
 #include <functional>
+#include <memory>
+#include <span>
 #include <string>
+#include "../games/game.h"
 
 #include "mame_lite.h"
 #include <map>
@@ -33,12 +36,13 @@ public:
 
 	struct regions
 	{
-		std::vector<uint8_t> maincpu, copro_tables, polygons, sndcpu, pcm1, pcm2;
+		std::vector<uint8_t> maincpu, copro_tables, copro_data, polygons, sndcpu, pcm1, pcm2;
 		std::vector<uint8_t> tgp_program;   // 315-5724.bin, when the set has it
 		std::vector<uint8_t> ioboard;       // epr-14869b.25 (model1io), when there
+		game::id title;                 // the game (src/games: its own code and data)
 	};
 
-	// Testing (the host's VF_TRACE): the one-off work done since the counts were last cleared.
+	// Testing (the host's M1_TRACE): the one-off work done since the counts were last cleared.
 	struct work_trace {
 		int tiles_full = 0, layers = 0, sky_build = 0, sky_scale = 0, sky_scale_sync = 0, padded = 0;
 		uint64_t tiles_ns = 0, layers_ns = 0, sky_build_ns = 0, sky_scale_ns = 0, padded_ns = 0, edge_ns = 0;
@@ -46,6 +50,7 @@ public:
 	static uint64_t trace_ns();
 
 	explicit model1(regions &&r);
+	game::id title() const { return m_regions.title; }
 	void reset();
 	// One video frame: CPU time, the vblank IRQ, the display-list scan and the render.
 	void run_frame();
@@ -53,6 +58,8 @@ public:
 	// Runs the TGP from its own program (315-5724.bin) instead of MAME 0.210's simulation.
 	bool use_tgp_program(const std::vector<uint8_t> &rom);
 	bool tgp_is_lle() const { return bool(m_lle); }
+	bool tgp_has_hle() const { return bool(m_tgp_hle_reset); }
+	uint64_t tgp_cycles_executed() const;
 	// Renders the 3D at `scale` times the arcade's 496x384 (1 = the arcade picture, exact).
 	void set_render_scale(int scale);
 	// Widescreen: `aspect` is the picture's width/height (4/3 = the arcade's). The 3D view and the
@@ -63,89 +70,31 @@ public:
 	int frame_w() const { return m_bitmap.width(); }
 	int frame_h() const { return m_bitmap.height(); }
 	v60_device &cpu() { return m_maincpu; }
+	bool set_analog_input(int channel, uint8_t value);
 	// Battery-backed RAM (0x400000-0x40ffff) and the I/O board's EEPROM (the real board's 93C46,
 	// or the stand-in's image in the dual-port RAM at 0x100-0x17f).
 	std::vector<uint8_t> &nvram() { return m_ram_a; }
 	std::vector<uint8_t> &work_ram() { return m_ram_b; }   // 500000-53ffff
 	uint16_t tile_word(uint32_t o) const { return m_tiles.tile_r(o); }   // 700000 + 2*o
+	// For the games' own code (src/games): their ROM patches, tiles, characters, colours, state
+	std::vector<uint8_t> &program_rom() { return m_regions.maincpu; }
+	void tile_write(uint32_t o, uint16_t v) { m_tiles.tile_w(o, v, 0xffff); }
+	uint16_t char_word(uint32_t o) const { return m_tiles.char_r(o); }
+	void char_write(uint32_t o, uint16_t v) { m_tiles.char_w(o, v, 0xffff); }
+	uint16_t palette_word(uint32_t i) const { return m_paletteram16[i]; }
+	void palette_write(uint32_t i, uint16_t v) { model1_paletteram_w(i, v, 0xffff); }
+	const std::shared_ptr<game::gameplay_state> &game_state() const { return m_gameplay.state; }
+	// Screen art for a screen the game names (game::gameplay_callbacks::screen_hashes)
+	bool load_screen(const std::string &name, std::vector<uint32_t> xrgb, int w, int h);
 	uint16_t peek16(uint32_t a) { return bus_read16(a); }               // the V60's view (ROM, RAM)
 	uint32_t bank_base() const { return m_bank_base; }                   // ROM offset of 100000-1fffff
 	// Tile map entries (w x h) drawn with the current tiles and palette, for exporting artwork.
 	void render_tiles(const uint16_t *e, int w, int h, uint32_t *out) { m_tiles.update(m_pens); m_tiles.render_entries(e, w, h, out); }
 	// Tile map l (0-3) as a 512x512 picture in the current palette, for exporting the artwork.
 	void tilemap_image(int l, std::vector<uint32_t> &out) { out.resize(512 * 512); m_tiles.update(m_pens); m_tiles.render_map(l, out.data()); }
-	// Sets the game's coin/credit setting to FREE PLAY in the real I/O board's EEPROM (read at
-	// boot: reset afterwards). False when it already was, or there are no settings yet.
-	bool force_free_play() { return set_coin_setting(FREE_PLAY); }
-	// The coin/credit setting itself (word 8's high byte, then word 10's): -1 before the game has
-	// written its settings; set_ is false when nothing changed. 0: the game's own first setting
-	// (1 coin 1 credit, "CREDIT 0" on screen).
-	static constexpr int FREE_PLAY = 0x1901;
-	int coin_setting();
-	bool set_coin_setting(int v);
-	// The test mode's GAME ASSIGNMENTS, in the same EEPROM (read at boot: reset after a change).
-	// -1 when the game hasn't written its settings yet; set_ is false when nothing changed.
-	enum class game_assignment { match_1p, match_vs, difficulty, advertise_sound, continues };
-	int assignment(game_assignment a);
-	bool set_assignment(game_assignment a, int v);
-	// The ring's width (1200-1500) whatever the difficulty, or 0 for the arcade's (by difficulty,
-	// which the test mode shows as STAGE WIDTH). From the next match; false if the table isn't VF's.
-	bool set_ring_width(int width);
-	// The unused characters left in the game (TCRF: Jeff, Majido, Takeru, the Koskol brothers)
-	// play in Akira's place: his entries in the character tables point at theirs. 0 is Akira; the
-	// rest are UNUSED_CHARACTERS. Read as a fight loads, so a change wants a restart.
-	static constexpr const char *UNUSED_CHARACTERS[] = { "Akira", "Siba (Majido)", "Jeff", "Takeru (early Akira)",
-														 "Rekka (Koskol brother)", "Score (Koskol brother)", "Aeon (Koskol brother)", "Dural" };
-	void set_akira_slot(int which);
-	void akira_slot_heads(uint32_t record);   // (set_akira_slot: a select portrait for a head without one)
-	// The select's icon for the character in Akira's place, in his icon's tiles (56 x 64 pixels,
-	// xRGB, 15 colours at most; nullptr: his own). Returns false for a picture it can't show.
-	bool set_akira_icon(const uint32_t *xrgb);
-	static const char *const SECRET_ICON_NAMES[];   // (by UNUSED_CHARACTERS: assets/icons/NAME.png, nullptr: none)
-	// Cheats, before each frame: energy kept full for the players in `infinite` (bit 0 player 1,
-	// bit 1 player 2), the rest left with 1 when `one_hit` (any hit a knockout), and the round's
-	// clock stopped when `no_time`.
-	void fight_cheats(int infinite, bool one_hit, bool no_time);
-	bool set_no_time_limit(bool on);   // (true: the game's code changed, to be recompiled)
-	bool m_clock_held = false;
-	struct secret_icon {
-		bool on = false, active = false;   // a picture set; in the tiles now
-		uint32_t at = 0;                   // where the icon's map is (tile RAM word)
-		std::vector<uint16_t> chars, pal, map;            // ours: the tiles, the colours, the map
-		std::vector<uint16_t> keep_chars, keep_pal, keep_map;   // VF's own, put back after
-	} m_icon;
-	void secret_icon_frame();
-	// Cheats: a random fighter in Akira's place, a patchwork of the cast's (and the cut characters')
-	// body parts, a pair of limbs from one of them, and a head of one, made afresh each time the
-	// player select comes up. Both of Akira's costumes (player 1's and player 2's) get their own.
-	void set_random_fighter(bool on, bool moves = false, bool cpu = false);   // moves: each command's move from a random fighter too; cpu: every opponent random too
-	bool m_random_fighter = false, m_random_moves = false, m_random_cpu = false, m_select_seen = false;
-	static constexpr uint32_t RECORD_SIZE = 0x176, MOVE_COUNT = 187;
-	struct random_cast {
-		bool made = false;
-		std::map<uint32_t, std::vector<uint8_t>> orig;   // each record's own
-		std::vector<uint32_t> recs, heads, tables;       // the records, those with a head list, the moves tables
-	} m_random_cast;
-	uint32_t m_random_seen[2] = { 0, 0 };   // (each player's fighter last seen in their block)
-	random_cast &random_fighter_cast();
-	uint32_t random_next(uint32_t n);
-	void random_fighter_make(uint32_t rec);
-	void random_fighter_strands(bool restore);
-	std::vector<uint8_t> m_strands_orig;   // (the fight's swinging-strand list, fda917, as VF has it)
-	int64_t m_pick_at = -1;   // (the frame the select came up: the random fighter is picked for the players)
-	uint32_t m_random_state = 0;
-	void random_fighter_roll();
-	void random_fighter_frame();
-	bool random_select_showing() const { return m_random_fighter && m_select_seen; }
-	// Replaces n bytes of the main CPU program, if their CRC-32 is `crc` (guards against other sets).
-	bool patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to);
-	// Blanks the FREE PLAY notices (the attract/title one and the fight's): for the PC build,
-	// which is always free play. Returns how many it found.
-	int hide_free_play_text();
-	void show_free_play_text();          // (puts back what hide_free_play_text changed)
 	// Hi-res replacements for the stage skies (model1_sky.cpp), drawn above 1x. The names are
 	// the background export's (stage_<name>.png); false for a name it doesn't know.
-	static std::vector<std::string> sky_names();
+	std::vector<std::string> sky_names() const;
 	bool load_sky(const std::string &name, std::vector<uint32_t> xrgb, int w, int h);
 	// The stages' own skies above 1x: softened and smoothly enlarged, or the original pixels.
 	void set_sky_filter(bool smooth);
@@ -155,14 +104,11 @@ public:
 	bool edge_aa() const { return m_edge_aa; }
 	uint32_t backdrop_hash() const;
 	int sky_identity();                 // the stage sky in the map (-1: none known), see model1_sky.cpp
-	// The full-screen 4:3 pictures (title, player select) with their sides filled for widescreen:
-	// <name>.png at the size of the 16:9 canvas the export made (the arcade picture in the middle).
-	// The middle stays the game's own pixels; the picture fills the sides. False for an unknown name.
-	static std::vector<std::string> screen_names();
-	bool load_screen(const std::string &name, std::vector<uint32_t> xrgb, int w, int h);
 
 	// The boot is over (the game has sent its first camera: the attract has started).
 	bool past_boot() const;
+	// Work RAM survives a reset: the last camera forgotten, so past_boot waits for the new boot's.
+	void forget_camera() { std::fill_n(&m_ram_b[m_profile->camera_ram], 4, 0); }
 	// Frames run without drawing them (the display lists' uploads still happen, as MAME's skip).
 	void set_drawing(bool on) { m_draw = on; }
 	// Draws the picture last shown again, at the current settings (a change of scale, shape or
@@ -222,7 +168,7 @@ public:
 	void set_parts_mode(bool on) { m_parts_mode = on; }
 	// the host has the game stopped (paused, the menu): no frames run until it goes on
 	void set_stopped(bool on) { m_stopped = on; }
-	// testing (VF_TRACE): the last smooth picture's blend, and the two lists' frames it was between
+	// testing (M1_TRACE): the last smooth picture's blend, and the two lists' frames it was between
 	void smooth_state(float &alpha, int &older, int &newer, float *place = nullptr) const;
 	float m_last_alpha = 1;
 	float m_pic_place[3] = { 0, 0, 0 };                // testing: the 3D's mean place in the picture last drawn (the trace)
@@ -236,9 +182,13 @@ public:
 
 	// Polygons drawn in the last frame, and the camera the game last sent (0 between scenes).
 	int frame_quads() const { return m_last_quads; }
-	uint32_t camera() const { const uint8_t *p = &m_ram_b[0x17f0]; return p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24; }
-	uint8_t game_mode() const { return m_ram_b[0x3002]; }   // 3 in its TEST MENU, but also for a moment in attract
+	uint32_t camera() const { const uint8_t *p = &m_ram_b[m_profile->camera_ram]; return p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24; }
+	// the profile's test_menu_mode in its TEST MENU (VF: 3), but also for a moment in attract
+	uint8_t game_mode() const { return m_ram_b[m_profile->mode_ram]; }
+	bool in_test_menu_mode() const { return game_mode() == m_profile->test_menu_mode; }
+	// Raw board EEPROM image for persistence; words are available only on the real I/O board.
 	uint8_t *eeprom() { return m_ioboard ? reinterpret_cast<uint8_t *>(m_ioboard->eeprom) : &m_dpram[0x100]; }
+	uint16_t *eeprom_words() { return m_ioboard ? m_ioboard->eeprom : nullptr; }
 	static constexpr size_t EEPROM_SIZE = 0x80;
 	bool real_ioboard() const { return bool(m_ioboard); }
 	const std::vector<uint8_t> &maincpu_rom() const { return m_regions.maincpu; }   // for the recompiler
@@ -253,8 +203,9 @@ public:
 
 	// Dual-port RAM shared with the I/O board (inputs, coin, EEPROM), offsets as the V60 sees them.
 	uint8_t m_dpram[0x800]{};
-	// I/O board inputs, active low, as MAME's vf ports: [0] coins/service/start, [1] P1, [2] P2.
+	// Active-low Model 1 I/O input registers: [0] system/coin inputs, [1] P1, [2] P2.
 	uint8_t m_inputs[3] = { 0xff, 0xff, 0xff };
+	std::array<uint8_t, 8> m_analog_inputs{};
 	uint8_t m_lamps = 0;
 	// Sound: the board runs alongside when enabled; its output (stereo, m1audio::OUT_RATE)
 	// collects here until the host takes it.
@@ -310,14 +261,17 @@ public:
 
 private:
 	regions m_regions;
+	std::function<void()> m_tgp_hle_reset;
+	game::gameplay_callbacks m_gameplay;
+	const game::video_traits *m_video = nullptr;   // the game's data the video code works from
+	const game::profile *m_profile = nullptr;      // (its RAM layout)
 	v60_device m_maincpu;
 	segas24_tile m_tiles;
 	bitmap_rgb32 m_bitmap;
 	int m_scale = 1;
 	int m_ext = 0;                   // extra arcade pixels each side in widescreen
 	bool m_wide_frame = true;        // this frame uses the extra width (the fight); else 4:3 in the middle
-	bool m_fight_cam = true;         // the last camera sent was the fight's (kept at 4:3 too)
-	bool fight_camera() const;
+	bool m_camera_wide = true;       // last camera selected a wide scene (before screen art overrides it)
 	struct slot {
 		float mat[12] = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 };
 		std::vector<uint32_t> polys;
@@ -398,7 +352,7 @@ private:
 		int pending_count = 0;
 	};
 	std::vector<sky_art> m_skies;
-	struct screen_art { std::string name; std::vector<uint32_t> hashes; std::vector<uint32_t> px; int w = 0, h = 0; };
+	struct screen_art { std::string name; std::vector<uint32_t> px; int w = 0, h = 0; };
 	std::vector<screen_art> m_screens;
 	const screen_art *m_screen_now = nullptr;
 	void draw_screen_sides(bitmap_rgb32 &bitmap);
@@ -495,11 +449,12 @@ public:
 	static int32_t s_owner_base;
 	static int s_depth_w;
 	static thread_local int s_cur_quad;   // per thread: the polygons are drawn in row bands at once
-	static thread_local bool s_cur_fshadow;   // the polygon being drawn is a fighter's shadow
-	static std::vector<uint8_t> s_qstage;   // each polygon: whether the stage's
-	static bool stage_model(uint32_t poly_adr) { return (poly_adr & 0x7fffff) < 0x80000; }
-	// (the stages' own see-through polygons keep the arcade's order: the floor covers them)
-	static bool fighter_shadow(const quad_t &q) { return (q.col & 0x01000000) && !stage_model(q.obj); }   // 0x01000000: MOIRE
+	static thread_local bool s_cur_mshadow;   // the polygon being drawn is a moving model's shadow
+	static std::vector<uint8_t> s_qscenery;   // each polygon: whether it is part of
+	// the game's scenery (the shadows' floor; game::video_traits::scenery_polys_end)
+	bool scenery_model(uint32_t poly_adr) const { return (poly_adr & 0x7fffff) < m_video->scenery_polys_end; }
+	// (the scenery's own see-through polygons keep the arcade's order: the floor covers them)
+	bool model_shadow(const quad_t &q) const { return (q.col & 0x01000000) && !scenery_model(q.obj); }   // 0x01000000: MOIRE
 	static int s_depth_pass;       // 1 while painting with the shadow test
 
 	// ---- the 3D on the GPU (src/gpu/gpu3d.h; the host's Display > 3D renderer) ----
@@ -529,7 +484,7 @@ public:
 	// Auto's measure (model1_video.cpp); differ: also the test picture drawn once more each way and
 	// compared, its pixels that differ
 	bool bench3d(int reps, double &cpu_ms, double &gpu_ms, long long *differ = nullptr);
-	int m_gpu3d_check = 0;     // tests (VF_GPU3D_CHECK=n): every n-th GPU picture drawn by the CPU too and compared
+	int m_gpu3d_check = 0;     // tests (M1_GPU3D_CHECK=n): every n-th GPU picture drawn by the CPU too and compared
 private:
 	uint64_t m_frame = 0;
 
@@ -587,6 +542,7 @@ private:
 	struct tgp_lle;
 	struct tgp_lle_deleter { void operator()(tgp_lle *) const; };
 	std::unique_ptr<tgp_lle, tgp_lle_deleter> m_lle;
+	uint64_t m_tgp_cycles = 0;
 	void lle_reset();
 	u16 lle_v60_r(uint32_t a);
 	void lle_v60_w(uint32_t a, uint16_t data, uint16_t mem_mask);
@@ -636,10 +592,6 @@ private:
 	// TGP FIFOs and simulation
 	u32_fifo m_copro_fifo_in_q, m_copro_fifo_out_q;
 	u32_fifo *m_copro_fifo_in = &m_copro_fifo_in_q, *m_copro_fifo_out = &m_copro_fifo_out_q;
-	void    fifoout_push(uint32_t data);
-	void    fifoout_push_f(float data);
-	uint32_t  fifoin_pop();
-	float   fifoin_pop_f();
 	uint16_t  ram_get_i();
 	float   ram_get_f();
 	u32 m_v60_copro_fifo_r = 0, m_v60_copro_fifo_w = 0;
@@ -649,44 +601,38 @@ public:
 	// result FIFO (by V60 address).
 	std::map<int, uint64_t> m_tgp_calls, m_tgp_missing;
 	std::map<uint32_t, uint64_t> m_tgp_underflow;
-private:
-	// MAME's simulation answers an unknown function (f100) with random numbers; per machine and
-	// seeded, so runs repeat.
-	uint32_t m_rng = 1;
-	int m_rand() { m_rng = m_rng * 1103515245 + 12345; return int((m_rng >> 16) & 0x7fff); }
-	u32 m_copro_hle_active_list_pos = 0, m_copro_hle_active_list_length = 0;
-	void copro_hle_vf();
 
+	// The TGP simulation's operations (MAME 0.210's), for a game's HLE command table
+	// (src/games/*/tgp_hle.cpp): the operations below by member pointer, and for a table's own
+	// commands the FIFOs, the current matrix, the TGP's RAM and the V60 address that called.
 	typedef void (model1::*tgp_func)();
-	struct function
-	{
-		tgp_func cb;
-		int count;
-	};
+	void    fifoout_push(uint32_t data);
+	void    fifoout_push_f(float data);
+	uint32_t  fifoin_pop();
+	float   fifoin_pop_f();
+	u32_fifo &tgp_input() { return *m_copro_fifo_in; }
+	const float *tgp_matrix() const { return m_cmat; }
+	void tgp_ram_write(uint32_t i, uint32_t v) { m_copro_ram_data[i] = v; }
+	std::span<const uint32_t> tgp_data() const { return m_copro_data->d; }
+	offs_t tgp_caller() const { return m_pushpc; }
 	static float tsin(s16 angle);
 	static float tcos(s16 angle);
-	static const struct function ftab_vf[];
+private:
 
-	uint32_t  m_copro_hle_list_length = 0;
 	float   m_cmat[12]{};
 	float   m_mat_stack[MAT_STACK_SIZE][12]{};
 	float   m_mat_vector[21][12]{};
 	int32_t   m_mat_stack_pos = 0;
 	float   m_acc = 0;
-	float   m_tgp_vf_xmin = 0, m_tgp_vf_xmax = 0, m_tgp_vf_zmin = 0, m_tgp_vf_zmax = 0;
-	float   m_tgp_vf_ygnd = 0, m_tgp_vf_yflr = 0, m_tgp_vf_yjmp = 0;
-	float   m_tgp_vr_circx = 0, m_tgp_vr_circy = 0, m_tgp_vr_circrad = 0;
-	float   m_tgp_vr_cbox[12]{};
-	int     m_tgp_vr_select = 0;
 	float   m_tgp_int_px = 0, m_tgp_int_py = 0, m_tgp_int_pz = 0;
 	uint32_t  m_tgp_int_adr = 0;
 	uint16_t  m_v60_copro_ram_adr = 0;
 	uint16_t  m_v60_copro_ram_latch[2]{};
 	uint16_t  m_copro_hle_ram_scan_adr = 0;
 	std::unique_ptr<uint32_t[]> m_copro_ram_data;
-	float   m_tgp_vr_base[4]{};
 	int     m_ccount = 0;
 
+public:
 	TGP_FUNCTION( fadd );
 	TGP_FUNCTION( fsub );
 	TGP_FUNCTION( fmul );
@@ -700,8 +646,6 @@ private:
 	TGP_FUNCTION( triangle_normal );
 	TGP_FUNCTION( normalize );
 	TGP_FUNCTION( acc_seti );
-	TGP_FUNCTION( track_select );
-	TGP_FUNCTION( load_base );
 	TGP_FUNCTION( transpose );
 	TGP_FUNCTION( anglep );
 	TGP_FUNCTION( matrix_ident );
@@ -711,7 +655,6 @@ private:
 	TGP_FUNCTION( matrix_rotx );
 	TGP_FUNCTION( matrix_roty );
 	TGP_FUNCTION( matrix_rotz );
-	TGP_FUNCTION( track_read_quad );
 	TGP_FUNCTION( intercept );
 	TGP_FUNCTION( transform_point );
 	TGP_FUNCTION( fcos_m1 );
@@ -731,30 +674,21 @@ private:
 	TGP_FUNCTION( xyz2rqf );
 	TGP_FUNCTION( f43 );
 	TGP_FUNCTION( f43_swa );
-	TGP_FUNCTION( track_read_tri );
 	TGP_FUNCTION( matrix_sdir );
 	TGP_FUNCTION( fsqrt );
-	TGP_FUNCTION( vlength );
 	TGP_FUNCTION( f47 );
-	TGP_FUNCTION( track_read_info );
-	TGP_FUNCTION( colbox_set );
-	TGP_FUNCTION( colbox_test );
 	TGP_FUNCTION( f49_swa );
 	TGP_FUNCTION( f50_swa );
 	TGP_FUNCTION( f52 );
 	TGP_FUNCTION( matrix_rdir );
-	TGP_FUNCTION( track_lookup );
 	TGP_FUNCTION( f56 );
 	TGP_FUNCTION( int_normal );
 	TGP_FUNCTION( matrix_readt );
 	TGP_FUNCTION( acc_geti );
 	TGP_FUNCTION( int_point );
-	TGP_FUNCTION( col_setcirc );
-	TGP_FUNCTION( col_testpt );
 	TGP_FUNCTION( push_and_ident );
 	TGP_FUNCTION( catmull_rom );
 	TGP_FUNCTION( distance );
-	TGP_FUNCTION( car_move );
 	TGP_FUNCTION( cpa );
 	TGP_FUNCTION( vmat_store );
 	TGP_FUNCTION( vmat_restore );
@@ -766,25 +700,17 @@ private:
 	TGP_FUNCTION( vmat_save );
 	TGP_FUNCTION( vmat_load );
 	TGP_FUNCTION( ram_setadr );
-	TGP_FUNCTION( groundbox_test );
-	TGP_FUNCTION( f89 );
 	TGP_FUNCTION( f92 );
 	TGP_FUNCTION( f93 );
 	TGP_FUNCTION( f94 );
 	TGP_FUNCTION( vmat_flatten );
 	TGP_FUNCTION( vmat_load1 );
 	TGP_FUNCTION( ram_trans );
-	TGP_FUNCTION( f98_load );
-	TGP_FUNCTION( f98 );
 	TGP_FUNCTION( f99 );
-	TGP_FUNCTION( f100 );
-	TGP_FUNCTION( groundbox_set );
 	TGP_FUNCTION( f102 );
 	TGP_FUNCTION( f103 );
-	TGP_FUNCTION( dump );
-	TGP_FUNCTION( function_get_vf );
-	TGP_FUNCTION( function_get_swa );
 
+private:
 	// Rendering
 	void video_start();
 	u16 model1_listctl_r(offs_t offset);
@@ -950,7 +876,7 @@ private:
 		glm::vec3 light{};
 		bool spec_enable = false;
 		uint8_t camera[4]{};
-		bool fight_cam = true;
+		bool camera_wide = true;
 		sky_art *sky_now = nullptr, *sky_last = nullptr;
 		int sky_base = 0, sky_last_tx0 = 0;
 	} m_still;
@@ -1021,6 +947,6 @@ public:
 		return d.big <= colour && d.cover <= cover;
 	}
 	gpu_diff m_bench_diff;   // (bench3d's picture each way, compared)
-	// tests: VF_GPU3D_TEST_DIFF=n, a check's picture counted n pixels more apart (-1: all of them)
-	static long long gpu_test_diff(long long d, long long px) { const char *t = getenv("VF_GPU3D_TEST_DIFF"); if (!t) return d; const long long k = atoll(t); return k < 0 ? px : std::min(px, d + k); }
+	// tests: M1_GPU3D_TEST_DIFF=n, a check's picture counted n pixels more apart (-1: all of them)
+	static long long gpu_test_diff(long long d, long long px) { const char *t = getenv("M1_GPU3D_TEST_DIFF"); if (!t) return d; const long long k = atoll(t); return k < 0 ? px : std::min(px, d + k); }
 };

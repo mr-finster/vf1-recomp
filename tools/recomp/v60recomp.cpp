@@ -1,4 +1,4 @@
-// V60 -> C++ static recompiler for Virtua Fighter, the analysis half (src/rt/analyse.cpp):
+// V60 -> C++ static recompiler for Model 1, the analysis half (src/rt/analyse.cpp):
 //
 //   v60recomp <maincpu.bin> <hints.txt[,hints2.txt...]> <listing.txt> [map.txt]
 //

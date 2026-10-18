@@ -19,8 +19,9 @@ public:
 	// Runs the Z80 for `usec` microseconds.
 	void run(double usec);
 
-	// Inputs, active low, as MAME's vf ports: [0] coins/service/start, [1] P1, [2] P2.
+	// Active-low inputs wired by the host: system/coin inputs, player 1, player 2.
 	uint8_t inputs[3] = { 0xff, 0xff, 0xff };
+	uint8_t analog_inputs[8] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 	uint8_t outputs = 0;                      // lamps and coin counters
 
 	// The EEPROM's 64 16-bit words (the board's settings), for saving.
@@ -42,6 +43,7 @@ private:
 	uint8_t m_port_value[7]{}, m_port_config = 0, m_serial_output = 0, m_cmd = 0;
 	uint16_t m_address = 0;
 	bool m_secondary = false;
+	uint8_t m_adc_shift = 0;
 	uint8_t io_r(int offset);
 	void io_w(int offset, uint8_t data);
 	uint8_t port_in(int port);

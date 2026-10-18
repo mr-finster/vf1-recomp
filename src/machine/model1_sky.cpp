@@ -7,27 +7,14 @@
 // screen: the map columns the game streamed are matched against the record's own columns (the
 // ones that occur once in the panorama), which gives the panorama position of the screen's left
 // edge; the rows come from where the tile chip drew each line from. The replacement is then
-// drawn across the whole width, so widescreen shows the real panorama to the sides.
+// drawn across the whole width, so widescreen shows the real panorama to the sides. The records,
+// and where the game streams them, are the game's own (game::video_traits).
 #include "model1.h"
 #include <future>
 #include <memory>
 #include <thread>
 
 namespace {
-
-// The records' places in the program ROM (all in the bank at 1100000), by the export's names.
-// `top`: a record of one row the game streams over the panorama's top row (0: none). Wolf's stage
-// has one (in ROMX at 2e7aa4): the dithered blend from the sky's colour into the clouds. Drawn from
-// the panorama's own top row instead, the clouds started at a hard line above 1x.
-struct sky_record { const char *name; uint32_t rom; uint32_t top = 0; };
-const sky_record SKY_RECORDS[] = {
-	{ "beach_clouds", 0x110002c }, { "canyon_mesas", 0x11117a8 }, { "night_city", 0x1134370 },
-	{ "lake_mountain", 0x114c878 }, { "desert_dunes", 0x11655b4 }, { "karst_mountains", 0x116af60 },
-	{ "dusk_clouds", 0x118a0e8 },
-	{ "sunset_clouds", 0x11190b8, 0x2e7aa4 },   // Wolf's stage
-};
-constexpr uint32_t SKY_BANK = 0x1100000;
-constexpr int SKY_MAP = 2, SKY_ROW0 = 6;    // streamed into tile map 2 from row 6 (704300)
 
 // A streamed column's identity: its tiles from the second row down. (Wolf's stage writes over the
 // top row of every column it streams, so whole columns never matched his sky's record.)
@@ -41,10 +28,10 @@ uint64_t column_hash(const uint16_t *e, int stride, int rows)
 
 } // namespace
 
-std::vector<std::string> model1::sky_names()
+std::vector<std::string> model1::sky_names() const
 {
 	std::vector<std::string> n;
-	for (const auto &r : SKY_RECORDS) n.push_back(r.name);
+	for (const auto &r : m_video->skies) n.emplace_back(r.name);
 	return n;
 }
 
@@ -53,11 +40,11 @@ std::vector<std::string> model1::sky_names()
 void model1::init_skies()
 {
 	if (!m_skies.empty()) return;
-	m_skies.reserve(std::size(SKY_RECORDS));      // stable: the current sky is kept by pointer
+	m_skies.reserve(m_video->skies.size());      // stable: the current sky is kept by pointer
 	const auto &rom = m_regions.maincpu;
 	auto rd16 = [&](uint32_t o) { return o + 1 < rom.size() ? uint16_t(rom[o] | rom[o + 1] << 8) : uint16_t(0); };
 	auto rd32 = [&](uint32_t o) { return uint32_t(rd16(o)) | uint32_t(rd16(o + 2)) << 16; };
-	for (const auto &rec : SKY_RECORDS) {
+	for (const auto &rec : m_video->skies) {
 		sky_art a;
 		a.name = rec.name;
 		for (int b = 0; b < 8; b++) {
@@ -163,7 +150,7 @@ void model1::find_sky()
 	m_sky_now = nullptr;
 	const int tw = m_tile_tmp.width();
 	const uint32_t c0 = m_tile_coord[size_t(SCREEN_H / 2) * tw + m_ext];
-	if (c0 == ~0u || (c0 >> 18) != SKY_MAP) return;
+	if (c0 == ~0u || (c0 >> 18) != uint32_t(m_video->sky_tile_map)) return;
 	const int tx0 = int(c0 & 511);                   // map x at the picture's left edge
 	int best_votes = 0, best_base = 0;
 	sky_art *best = nullptr;
@@ -173,7 +160,7 @@ void model1::find_sky()
 			const int xs = (t * 8 - tx0) & 511;           // where map column t is on the screen
 			if (xs > SCREEN_W - 8) continue;              // off screen: may be stale
 			uint16_t col[48];
-			for (int r = 0; r < a.rows; r++) col[r] = m_tiles.tile_r((SKY_MAP << 12) | ((SKY_ROW0 + r) * 64 + t));
+			for (int r = 0; r < a.rows; r++) col[r] = m_tiles.tile_r((m_video->sky_tile_map << 12) | ((m_video->sky_first_row + r) * 64 + t));
 			auto it = a.unique.find(column_hash(col, 1, a.rows));
 			if (it != a.unique.end()) votes[(it->second * 8 - xs) & (a.period * 8 - 1)]++;
 		}
@@ -211,7 +198,7 @@ int model1::sky_identity()
 		int n = 0;
 		for (int t = 0; t < 64; t++) {
 			uint16_t col[48];
-			for (int r = 0; r < a.rows; r++) col[r] = m_tiles.tile_r((SKY_MAP << 12) | ((SKY_ROW0 + r) * 64 + t));
+			for (int r = 0; r < a.rows; r++) col[r] = m_tiles.tile_r((m_video->sky_tile_map << 12) | ((m_video->sky_first_row + r) * 64 + t));
 			n += a.unique.count(column_hash(col, 1, a.rows)) != 0;
 		}
 		if (n > best_n) { best_n = n; best = int(k); }
@@ -227,7 +214,7 @@ bool model1::sky_agrees(const sky_art &a, int tx0, int base) const
 		const int xs = (t * 8 - tx0) & 511;
 		if (xs > SCREEN_W - 8 || ((base + xs) & 7)) continue;
 		uint16_t col[48];
-		for (int r = 0; r < a.rows; r++) col[r] = m_tiles.tile_r((SKY_MAP << 12) | ((SKY_ROW0 + r) * 64 + t));
+		for (int r = 0; r < a.rows; r++) col[r] = m_tiles.tile_r((m_video->sky_tile_map << 12) | ((m_video->sky_first_row + r) * 64 + t));
 		const int p = ((base + xs) & 2047) / 8;
 		checked++;
 		same += column_hash(col, 1, a.rows) == column_hash(&a.entries[p], 256, a.rows);
@@ -387,7 +374,7 @@ bool model1::sky_ready(const sky_art &a)
 		m_sky_job_for = &a; m_sky_job_s = m_scale; m_sky_job_smooth = m_sky_smooth; m_sky_job_version = version;
 		m_sky_job_frame = m_frame;
 		m_sky_job_gen = ++m_sky_gen_next;
-		if (getenv("VF_DBG_SKY")) fprintf(stderr, "DBG sky job frame %llu art %p s %d smooth %d version %llx\n", (unsigned long long)m_frame, (const void *)&a, m_scale, int(m_sky_smooth), (unsigned long long)version);
+		if (getenv("M1_DBG_SKY")) fprintf(stderr, "DBG sky job frame %llu art %p s %d smooth %d version %llx\n", (unsigned long long)m_frame, (const void *)&a, m_scale, int(m_sky_smooth), (unsigned long long)version);
 		auto art = std::make_shared<sky_art>();
 		art->px = a.px; art->w = a.w; art->h = a.h; art->rows = a.rows; art->original = a.original;
 		const int s = m_scale;
@@ -447,8 +434,8 @@ void model1::draw_sky(bitmap_rgb32 &bitmap, float sdx, float sdy)
 	int ref_y = -1, ref_ty = 0;
 	for (int y = 0; y < SCREEN_H && ref_y < 0; y++) {
 		const uint32_t c = m_tile_coord[size_t(y) * tw + m_ext + SCREEN_W / 2];
-		if (c == ~0u || (c >> 18) != SKY_MAP) continue;
-		const int ty = int((c & 0x3ffff) >> 9) - SKY_ROW0 * 8;
+		if (c == ~0u || (c >> 18) != uint32_t(m_video->sky_tile_map)) continue;
+		const int ty = int((c & 0x3ffff) >> 9) - m_video->sky_first_row * 8;
 		if (ty >= 0 && ty < a.rows * 8) { ref_y = y; ref_ty = ty; }
 	}
 	if (ref_y < 0) return;
@@ -456,7 +443,7 @@ void model1::draw_sky(bitmap_rgb32 &bitmap, float sdx, float sdy)
 	// in arcade pixels, drawn at full resolution)
 	const int ox = sky_shift_x(sdx, s), oy = sky_shift_y(sdy, s);
 	const int x_off = (((m_sky_base - m_ext) * s + ox) % W + W) % W;
-	static const bool log = getenv("VF_LOG_SKY") != nullptr;
+	static const bool log = getenv("M1_LOG_SKY") != nullptr;
 	if (log && !m_redrawing) {
 		const sky_sample &cs = m_sky_hist[(m_frame - 1) % SKY_HIST];
 		fprintf(stderr, "K %.3f base %d dx %.3f x %.3f dy %.3f h %d v %d read %d%d hx %.3f vy %.3f next %d f %llu\n", m_draw_time, m_sky_base, sdx, m_sky_base + sdx, sdy,
@@ -501,38 +488,12 @@ void model1::draw_sky(bitmap_rgb32 &bitmap, float sdx, float sdy)
 	});
 }
 
-// ---- the full-screen pictures: title and player select ----
-
-namespace {
-// Each picture's backdrop map (layers 4 and 5), by backdrop_hash(): the same whatever the palette
-// does, so the sides fade with the picture.
-struct screen_record { const char *name; uint32_t hash; };
-// The player select has three layouts: player 1 alone (portrait on the left), player 2 alone
-// (portrait on the right: player 2 starting from the demo) and both (VS: a challenger joining).
-// Cheats' Siba (Majido) in Akira's place changes the map (his own select icon): its first frame
-// and player 1 alone, as a7c660d4 and fa5cc994 are Akira's.
-// 46ffddc5: the select's very first frame, before its first layout (its sides came a frame late).
-const screen_record SCREEN_RECORDS[] = { { "title", 0x6e31a62b }, { "select", 0xfa5cc994 },
-										 { "select", 0x282467f8 }, { "select", 0xa7c660d4 }, { "select", 0x46ffddc5 },
-										 { "select", 0x14d0cd96 }, { "select", 0x0bc13456 } };
-} // namespace
-
-std::vector<std::string> model1::screen_names()
-{
-	std::vector<std::string> n;
-	for (const auto &r : SCREEN_RECORDS)
-		if (std::find(n.begin(), n.end(), r.name) == n.end()) n.push_back(r.name);
-	return n;
-}
-
 bool model1::load_screen(const std::string &name, std::vector<uint32_t> xrgb, int w, int h)
 {
-	std::vector<uint32_t> hashes;                  // (the select: one per layout, the same picture)
-	for (const auto &r : SCREEN_RECORDS)
-		if (name == r.name) hashes.push_back(r.hash);
+	const std::vector<uint32_t> hashes = m_gameplay.screen_hashes ? m_gameplay.screen_hashes(name) : std::vector<uint32_t>{};
 	if (hashes.empty() || w <= 0 || h <= 0) return false;
 	std::erase_if(m_screens, [&](const screen_art &a) { return a.name == name; });
-	m_screens.push_back({ name, std::move(hashes), std::move(xrgb), w, h });
+	m_screens.push_back({ name, std::move(xrgb), w, h });
 	m_screen_now = nullptr;
 	return true;
 }

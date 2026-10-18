@@ -1,10 +1,14 @@
 #!/bin/sh
-# Writes LICENSES.txt for the download: the notices of everything built into the program.
+# Writes build/LICENSES.txt, every download's: the notices of everything built into the program
+# (the sources tools/release/deps.sh fetches must be in build/deps: release_deps).
 cd "$(dirname "$0")/../.."
-D=build/deps
+. tools/release/deps.sh
+OUT=${LICENSES_OUT:-build/LICENSES.txt}
 sec() { printf '\n\n==============================================================================\n%s\n==============================================================================\n\n' "$1"; }
 {
-echo "Third-party software in Virtua Fighter Recomp, and its licences."
+# the games with downloads (tools/games/<game>/release/game.sh): "A, B and C"
+TITLES=$(for g in tools/games/*/release/game.sh; do (R=; . ./$g; echo "$TITLE"); done | awk '{ t[NR] = $0 } END { for (i = 1; i <= NR; i++) { sep = ", "; if (i == NR - 1) sep = " and "; if (i == NR) sep = ""; printf "%s%s", t[i], sep } }')
+echo "Third-party software in $TITLES, and its licences."
 sec "MAME: the NEC V60 core and disassembler, the Fujitsu MB86233 (TGP) core, the MultiPCM, and the Model 1 machine, video, coprocessor and sound board code it is based on (BSD-3-Clause)"
 cat <<'BSD'
 Copyright-holders: Farfetch'd, R. Belmont, Olivier Galibert, Miguel Angel Horna, and the MAME
@@ -38,9 +42,9 @@ sec "Z80 core, Nicolas Allemand"; cat third_party/z80/LICENSE
 sec "RmlUi"; cat third_party/rmlui/LICENSE.txt
 sec "GLM"; cat third_party/glm/copying.txt
 sec "stb_image, Sean Barrett (MIT option)"; sed -n '/ALTERNATIVE A - MIT License/,/^SOFTWARE\.$/p' third_party/stb/stb_image.h
-sec "SDL 3 (zlib)"; cat $D/SDL3-3.4.18/LICENSE.txt
+sec "SDL 3 (zlib)"; cat $SDL_SRC/LICENSE.txt
 sec "FreeType (FreeType License)"
 echo "Portions of this software are copyright (c) The FreeType Project (www.freetype.org). All rights reserved."
-echo; cat $D/freetype-2.14.3/docs/FTL.TXT
+echo; cat $FT_SRC/docs/FTL.TXT
 sec "Barlow Condensed font (SIL Open Font License 1.1)"; cat assets/fonts/OFL.txt
-} > build/release/LICENSES.txt
+} > "$OUT"

@@ -2,7 +2,6 @@
 // Follows MAME's src/mame/sega/model1.cpp (BSD-3-Clause, copyright-holders: Olivier Galibert).
 #include <chrono>
 #include "model1.h"
-#include <zlib.h>
 
 namespace {
 constexpr int CPU_CLOCK = 16000000;          // 32 MHz XTAL / 2
@@ -19,25 +18,32 @@ model1::model1(regions &&r)
 	, m_display_list0_ram(0x8000), m_display_list1_ram(0x8000)
 	, m_paletteram16_ram(0x2000), m_color_xlat_ram(0x6000)
 {
+	m_video = &game::get_video(m_regions.title);
+	m_profile = &game::get(m_regions.title);
 	m_display_list0 = m_display_list0_ram.data();
 	m_display_list1 = m_display_list1_ram.data();
 	m_paletteram16 = m_paletteram16_ram.data();
 	m_color_xlat = m_color_xlat_ram.data();
+	m_analog_inputs = game::get_io_profile(m_regions.title).analog_neutral;
 	m_poly_rom = reinterpret_cast<uint32_t *>(m_regions.polygons.data());
 	m_copro_tables = reinterpret_cast<uint32_t *>(m_regions.copro_tables.data());
 	m_copro_ram_data = std::make_unique<u32[]>(0x8000);
 	m_maincpu.irq_vector = [this] { return irq_callback(); };
-	m_copro_fifo_in_q.m_on_push = [this] { copro_hle_vf(); };
+	m_gameplay = game::make_gameplay(m_regions.title, *this);
+	auto tgp_hle = game::make_tgp_hle(m_regions.title, *this);
+	m_tgp_hle_reset = std::move(tgp_hle.reset);
+	m_copro_fifo_in_q.m_on_push = std::move(tgp_hle.fifo_push);
 	m_bitmap.allocate(SCREEN_W, SCREEN_H);
 	video_start();
-	if (!m_regions.tgp_program.empty() && !getenv("VF_TGP_SIM"))
+	if (!m_regions.tgp_program.empty() && !getenv("M1_TGP_SIM"))
 		use_tgp_program(m_regions.tgp_program);
-	if (!m_regions.ioboard.empty() && !getenv("VF_IO_STANDIN"))
+	if (!m_regions.ioboard.empty() && !getenv("M1_IO_STANDIN"))
 		m_ioboard = std::make_unique<model1io>(m_regions.ioboard, m_dpram);
 }
 
 void model1::reset()
 {
+	m_tgp_cycles = 0;
 	for (auto &c : m_layer_cache) c.frame = ~0ull;   // a new game: nothing drawn is current
 	m_shown = m_unshown = false;                      // nor shown
 	m_tiles_updated = ~0ull;
@@ -45,11 +51,9 @@ void model1::reset()
 	m_bank_base = 0x1000000;
 	m_maincpu.set_irq_line(CLEAR_LINE);
 	copro_reset();
+	if (m_tgp_hle_reset) m_tgp_hle_reset();
 	m_acc = 0;
 	m_mat_stack_pos = 0;
-	m_copro_hle_active_list_length = 0;
-	m_copro_hle_active_list_pos = 0;
-	m_copro_hle_list_length = 0;
 	memset(m_cmat, 0, sizeof(m_cmat));
 	m_cmat[0] = m_cmat[4] = m_cmat[8] = 1.0f;
 	m_copro_fifo_in_q.clear();
@@ -84,19 +88,8 @@ void model1::copro_reset()
 
 void model1::run_frame()
 {
-	// Random fighter: the select picks for the players, Akira (whose place the fighter has), player
-	// 1 first then player 2 (picking after player 1's same fighter gives player 2 Akira's other
-	// costume, so a fighter of their own). The cursors are in the players' blocks (40749c, 4074b0,
-	// 4074b3; player 2's 0x80 on); kick picks.
-	const uint8_t inputs_were[3] = { m_inputs[0], m_inputs[1], m_inputs[2] };   // (the presses below are this frame's only)
-	if (m_random_fighter && m_pick_at >= 0) {
-		const int64_t f = int64_t(m_frame) - m_pick_at, ph = f % 40;
-		if (ph >= 6 && ph <= 8 && m_ram_a.size() > 0x7600)
-			for (uint32_t pl = 0; pl < 2; pl++)
-				for (uint32_t a : { 0x749cu, 0x74b0u, 0x74b3u }) m_ram_a[a + pl * 0x80] = 0;
-		if (ph >= 10 && ph < 16) m_inputs[1] &= ~0x02;
-		if (ph >= 30 && ph < 36) m_inputs[2] &= ~0x02;
-	}
+	const uint8_t inputs_were[3] = { m_inputs[0], m_inputs[1], m_inputs[2] };
+	if (m_gameplay.frame_begin) m_gameplay.frame_begin();
 
 	// the picture on screen was drawn from the state this frame is about to change: keep that
 	if (m_smooth && m_shown && m_shown_frame == m_frame) keep_still();
@@ -120,8 +113,7 @@ void model1::run_frame()
 			m_audio->run(CYCLES_PER_LINE * 1e6 / CPU_CLOCK, m_audio_out);
 		if (on_line) on_line(line);
 	}
-	if (m_icon.on) secret_icon_frame();
-	if (m_random_fighter) random_fighter_frame();
+	if (m_gameplay.frame_end) m_gameplay.frame_end();
 	memcpy(m_inputs, inputs_were, sizeof m_inputs);
 	// MAME draws the screen when vblank ends (VIDEO_UPDATE_AFTER_VBLANK): the 2D layers are
 	// as the vblank handler left them
@@ -240,6 +232,17 @@ void model1::set_volumes(float music, float effects)
 	if (m_audio) m_audio->set_volumes(music, effects);
 }
 
+bool model1::set_analog_input(int channel, uint8_t value)
+{
+	const auto &profile = game::get_io_profile(m_regions.title);
+	if (channel < 0 || channel >= int(profile.analog_controls.size()) ||
+		profile.analog_controls[channel].empty() || !m_ioboard)
+		return false;
+	m_analog_inputs[channel] = value;
+	m_ioboard->analog_inputs[channel] = value;
+	return true;
+}
+
 // ---- timers (MAME: 0x800 CPU clocks per count; VF leaves them stopped) ----
 
 u16 model1::timer_r(offs_t offset)
@@ -277,7 +280,7 @@ void model1::bank_w(offs_t, u16 data, u16 mem_mask)
 
 // ---- I/O board stand-in ----
 // Byte offsets in the dual-port RAM (V60 address = 0xc00000 + 2 * offset), from MAME 0.190:
-//   00-07 analog inputs (VF has none), 08-0a digital inputs, 0f lamps,
+//   00-07 analog inputs (unconfigured in the stand-in), 08-0a digital inputs, 0f lamps,
 //   20 command to the board (cleared when done; 3 = EEPROM write), 21 status (0x40),
 //   100-17f the EEPROM image, kept in the shared RAM.
 
@@ -310,6 +313,7 @@ void model1::io_board_tick(int cycles)
 {
 	if (m_ioboard) {
 		std::copy(std::begin(m_inputs), std::end(m_inputs), m_ioboard->inputs);
+		std::copy(m_analog_inputs.begin(), m_analog_inputs.end(), std::begin(m_ioboard->analog_inputs));
 		m_ioboard->run(cycles * 1e6 / CPU_CLOCK);
 		m_lamps = m_ioboard->outputs;
 		return;
@@ -359,9 +363,9 @@ uint16_t model1::bus_read16(uint32_t a)
 void model1::bus_write16(uint32_t a, uint16_t v, uint16_t mask)
 {
 	a &= 0xfffffe;
-	static uint32_t watch_lo = 1, watch_hi = 0;      // debug: VF_WATCHW=addr or lo-hi (hex)
+	static uint32_t watch_lo = 1, watch_hi = 0;      // debug: M1_WATCHW=addr or lo-hi (hex)
 	static const bool watch_init = [] {
-		if (const char *w = getenv("VF_WATCHW")) {
+		if (const char *w = getenv("M1_WATCHW")) {
 			char *end;
 			watch_lo = watch_hi = strtoul(w, &end, 16);
 			if (*end == '-') watch_hi = strtoul(end + 1, nullptr, 16);
@@ -430,7 +434,7 @@ void model1::set_render_scale(int scale)
 {
 	m_scale = std::clamp(scale, 1, 12);       // up to 6x, or less with antialiasing on top
 	s_moire_blend = m_scale > 1;
-	s_hd_raster = m_scale > 1 && !getenv("VF_MAME_RASTER");
+	s_hd_raster = m_scale > 1 && !getenv("M1_MAME_RASTER");
 	resize_frame();
 }
 
@@ -464,643 +468,6 @@ void model1::resize_frame()
 	m_overlay_hud_snapshot.reset();
 }
 
-// VF's settings in the 93C46: "SEGA" in words 0-1, a CRC-16 (XMODEM, of words 8-63 high byte
-// first) in word 4 stored low byte first, and the coin/credit setting in word 8's high byte:
-// setting #26 (0x19) is FREE PLAY, with word 10's high byte set.
-// edit(e) changes the words and says whether it did; false too when the game hasn't written its
-// settings yet (its first boot does).
-template <class F>
-static bool edit_settings(uint16_t *ioboard, uint8_t *standin, F edit)
-{
-	// The real I/O board's 93C46 holds 16-bit words; the stand-in's image (without model1io.zip)
-	// is the same settings with each word's bytes the other way round.
-	uint16_t words[64];
-	if (standin)
-		for (int i = 0; i < 64; i++) words[i] = uint16_t(standin[2 * i] << 8 | standin[2 * i + 1]);
-	uint16_t *e = ioboard ? ioboard : words;
-	if (e[0] != 0x5345 || e[1] != 0x4741 || !edit(e)) return false;
-	uint16_t crc = 0;
-	for (int i = 8; i < 64; i++)
-		for (uint8_t byte : { uint8_t(e[i] >> 8), uint8_t(e[i]) }) {
-			crc ^= uint16_t(byte << 8);
-			for (int b = 0; b < 8; b++) crc = (crc & 0x8000) ? uint16_t((crc << 1) ^ 0x1021) : uint16_t(crc << 1);
-		}
-	e[4] = uint16_t(crc << 8 | crc >> 8);
-	if (standin)
-		for (int i = 0; i < 64; i++) { standin[2 * i] = uint8_t(words[i] >> 8); standin[2 * i + 1] = uint8_t(words[i]); }
-	return true;
-}
-
-int model1::coin_setting()
-{
-	int v = -1;
-	edit_settings(m_ioboard ? m_ioboard->eeprom : nullptr, m_ioboard ? nullptr : eeprom(), [&](uint16_t *e) {
-		v = (e[8] & 0xff00) | (e[10] >> 8);
-		return false;
-	});
-	return v;
-}
-
-// (both bytes: a coin setting of #26 with word 10's left as it was isn't free play, and was taken
-// for it, so PC mode kept the credits)
-bool model1::set_coin_setting(int v)
-{
-	return edit_settings(m_ioboard ? m_ioboard->eeprom : nullptr, m_ioboard ? nullptr : eeprom(), [&](uint16_t *e) {
-		if (((e[8] & 0xff00) | (e[10] >> 8)) == v) return false;
-		e[8] = uint16_t((e[8] & 0x00ff) | (v & 0xff00));
-		e[10] = uint16_t((e[10] & 0x00ff) | ((v & 0xff) << 8));
-		return true;
-	});
-}
-
-// GAME ASSIGNMENTS in the 93C46 (found by changing each in test mode): the word, and the byte in it
-static constexpr struct { int word, shift, lo, hi; } ASSIGNMENTS[] = {
-	{ 24, 8, 2, 5 },   // MATCH COUNT (1P): rounds to win
-	{ 24, 0, 2, 5 },   // MATCH COUNT (VS)
-	{ 16, 8, 0, 3 },   // DIFFICULTY: EASY, NORMAL, HARD, HARDEST
-	{ 29, 8, 0, 1 },   // ADVERTISE SOUND
-	{ 27, 0, 0, 1 },   // CONTINUE
-};
-
-int model1::assignment(game_assignment a)
-{
-	const auto &s = ASSIGNMENTS[int(a)];
-	int v = -1;
-	edit_settings(m_ioboard ? m_ioboard->eeprom : nullptr, m_ioboard ? nullptr : eeprom(), [&](uint16_t *e) {
-		v = std::clamp((e[s.word] >> s.shift) & 0xff, s.lo, s.hi);
-		return false;
-	});
-	return v;
-}
-
-bool model1::set_assignment(game_assignment a, int v)
-{
-	const auto &s = ASSIGNMENTS[int(a)];
-	v = std::clamp(v, s.lo, s.hi);
-	return edit_settings(m_ioboard ? m_ioboard->eeprom : nullptr, m_ioboard ? nullptr : eeprom(), [&](uint16_t *e) {
-		if (((e[s.word] >> s.shift) & 0xff) == v) return false;
-		e[s.word] = uint16_t((e[s.word] & ~(0xff << s.shift)) | v << s.shift);
-		return true;
-	});
-}
-
-bool model1::patch_program(uint32_t addr, size_t n, uint32_t crc, const uint8_t *to)
-{
-	auto &rom = m_regions.maincpu;
-	if (addr + n > rom.size() || ::crc32(0, &rom[addr], uInt(n)) != crc) return false;
-	memcpy(&rom[addr], to, n);
-	return true;
-}
-
-// The ring's width for EASY..HARDEST in 20s (1500, 1400, 1300, 1200), read as each match starts;
-// the energy for each (16-bit) follows it.
-bool model1::set_ring_width(int width)
-{
-	constexpr uint32_t TABLE = 0xfcc9f6;
-	static const uint8_t ARCADE[4] = { 75, 70, 65, 60 }, ENERGY[8] = { 0xdc, 0, 0xc8, 0, 0xb4, 0, 0xa0, 0 };
-	auto &rom = m_regions.maincpu;
-	if (TABLE + 12 > rom.size() || memcmp(&rom[TABLE + 4], ENERGY, 8)) return false;
-	for (int i = 0; i < 4; i++)
-		if (rom[TABLE + i] < 25 || rom[TABLE + i] > 250) return false;   // not VF's table (or ours: Cheats' rings, 600 and 5000)
-	for (int i = 0; i < 4; i++) rom[TABLE + i] = width ? uint8_t(width / 20) : ARCADE[i];
-	return true;
-}
-
-// Akira's entries (from mountainmanjed's MAME cheats, tcrf.net/Virtua_Fighter_(Arcade)): his two
-// slots in the table of characters (fd2e8f: 26 pointers into an array of 0x176-byte records), his
-// select portrait, his name on the select screen for each side, and his bio. An unused character
-// takes as many as it has; the rest stay Akira's.
-// The strands that swing (hair, braids, Akira's headband ribbon) are listed by slot, not by record,
-// for the select's portrait (fd2b33, read at fce947) and for the fight (fda917, read at ffc4b6, by
-// the player's slot): a slot number and its strands' data, to ff. A character in Akira's slots
-// would wear his ribbon, so his entries there get a slot no player has (0x19, the last boss's).
-void model1::set_akira_slot(int which)
-{
-	enum { MODEL1, MODEL2, PORTRAIT, NAME_P1, NAME_P2, BIO, RIBBON1, RIBBON2, RIBBON3, RIBBON4, N };
-	static const struct { uint32_t addr; int size; } AT[N] = {
-		{ 0xfd2ee7, 2 }, { 0xfd2ebb, 2 }, { 0xfd2a73, 4 }, { 0xfd2a93, 2 }, { 0xfd2ab3, 2 }, { 0xfd2ad3, 2 },
-		{ 0xfd2b60, 1 }, { 0xfd2b5b, 1 }, { 0xfda944, 1 }, { 0xfda93f, 1 } };
-	constexpr int NO = 0x19;   // (no ribbon)
-	static const int64_t TO[std::size(UNUSED_CHARACTERS)][N] = {     // -1: Akira's own
-		{ -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
-		{ 0x33af, 0x4843, 0x001d1a8f, 0x0b37, 0x14f7, 0xd773, NO, NO, NO, NO },     // Majido (Siba)
-		{ 0x3c7b, 0x4ca5, -1, 0x09ff, 0x11eb, 0xc95b, NO, NO, NO, NO },             // Jeff (TCRF's has Majido's icon: a made one instead)
-		{ 0x3df9, 0x4e23, -1, -1, -1, 0xb437, -1, -1, -1, -1 },                     // Takeru, the early Akira (his ribbon)
-		// the Koskol brothers, one each, in both of Akira's slots: TCRF's cheats put two in at once
-		// (Rekka + Score, Aeon + Dural), one per slot
-		{ 0x510f, 0x510f, -1, -1, -1, -1, NO, NO, NO, NO },                         // Rekka
-		{ 0x5285, 0x5285, -1, -1, -1, -1, NO, NO, NO, NO },                         // Score
-		{ 0x53fb, 0x53fb, -1, -1, -1, -1, NO, NO, NO, NO },                         // Aeon
-		{ 0x369b, 0x369b, -1, -1, -1, -1, NO, NO, NO, NO },                         // Dural (TCRF's second with Aeon)
-	};
-	auto &rom = m_regions.maincpu;
-	if (AT[0].addr + 4 > rom.size()) return;
-	static uint8_t akira[N][4];
-	static bool kept = false, ribbon = false;
-	if (!kept) {
-		for (int i = 0; i < N; i++) memcpy(akira[i], &rom[AT[i].addr], AT[i].size);
-		ribbon = akira[RIBBON1][0] == 0x16 && akira[RIBBON2][0] == 0x0b &&   // (VF's lists as expected)
-				 akira[RIBBON3][0] == 0x16 && akira[RIBBON4][0] == 0x0b;
-		kept = true;
-	}
-	which = std::clamp(which, 0, int(std::size(UNUSED_CHARACTERS)) - 1);
-	for (int i = 0; i < N; i++) {
-		uint8_t *p = &rom[AT[i].addr];
-		if (TO[which][i] < 0 || (i >= RIBBON1 && !ribbon)) memcpy(p, akira[i], AT[i].size);
-		else for (int b = 0; b < AT[i].size; b++) p[b] = uint8_t(TO[which][i] >> (8 * b));   // (little-endian)
-	}
-	akira_slot_heads(TO[which][MODEL1] < 0 ? 0 : 0xfd0000 | uint32_t(TO[which][MODEL1]));
-	// Dural is the game's own in Akira's place, not her record in Akira's slots: the fight looks a
-	// fighter up by slot (the select's character, 0-8, through fd2f1b for player 1 and fd2f24 for
-	// player 2: Akira's slots 0x16 and 0x0b, Dural's 5), and the game checks for her by slot, as
-	// for the metal clank of a hit on her (ffb8d8: 9e0f7f), which a record in Akira's slots never
-	// made. Akira's entry is her slot instead.
-	static const uint32_t SLOT_TABLES[2] = { 0xfd2f1b, 0xfd2f24 };
-	static const uint8_t AKIRA_SLOT[2] = { 0x16, 0x0b };
-	for (int t = 0; t < 2; t++) {
-		uint8_t *e = &rom[SLOT_TABLES[t]];
-		if (SLOT_TABLES[t] + 9 > rom.size() || e[8] != 5 || (e[0] != AKIRA_SLOT[t] && e[0] != 5)) continue;   // (not VF's)
-		e[0] = which == 7 ? 5 : AKIRA_SLOT[t];
-	}
-	// Siba's pounce (Up + Punch at a downed opponent): his moves table (fc78c4, his record's +4)
-	// has move 259 there, a placeholder's record (fc2722, five other moves': a jump with no jump in
-	// it), so the game planned a jump of 0 + 2 frames, the whole way in 2, and he flew on at that
-	// speed for his pounce's 26: across the ring, often out of it. Lau's pounce (381) in its place,
-	// as his table has it (Siba's moves are mostly Lau's).
-	constexpr uint32_t SIBA_POUNCE = 0xfc78c4 + 130 * 4;
-	if (SIBA_POUNCE + 4 <= rom.size() && (rom[SIBA_POUNCE + 1] == 0x01) && (rom[SIBA_POUNCE] == 0x03 || rom[SIBA_POUNCE] == 0x7d))
-		rom[SIBA_POUNCE] = which == 1 ? 0x7d : 0x03;   // (381 = 0x17d; 259 = 0x103)
-	// The select's camera for Akira's spot (fd278b: x, y, z, then 3 angles, a camera per place in
-	// the row): each head sits differently in its own frame (its origin, how it's turned), so each
-	// has its own: the eyes at the cast's height (a little below the middle), the face across the
-	// middle, the head the cast's size, the neck running off the bottom. Dural's head (the fight's)
-	// is turned and tilted down besides: hers turns it to face as the rest. (Found by rendering
-	// each against the cast's.)
-	struct cam { float x, y, z; int16_t a, b, c; };
-	static const cam CAMS[std::size(UNUSED_CHARACTERS)] = {
-		{ 0, 0, 0, 0, 0, 0 },                                   // Akira: his own
-		{ -0.028f, -0.075f, 1.0f, 17400, 32000, -23549 },        // Siba
-		{ -0.019f, -0.103f, 1.0f, 17400, 32000, -23549 },        // Jeff
-		{ -0.025f, -0.1f, 0.9f, 17400, 32000, -23549 },          // Takeru
-		{ -0.003f, -0.085f, 0.95f, 17400, 32000, -23549 },       // Rekka
-		{ -0.003f, -0.085f, 0.95f, 17400, 32000, -23549 },       // Score
-		{ -0.018f, -0.0995f, 0.95f, 17400, 32000, -23549 },      // Aeon
-		{ -0.025f, -0.08f, 0.88f, 15400, 32000, -22800 },        // Dural
-	};
-	constexpr uint32_t CAMERA = 0xfd278b;
-	static uint8_t akira_cam[18];
-	static bool cam_kept = false;
-	if (!cam_kept) { memcpy(akira_cam, &rom[CAMERA], sizeof akira_cam); cam_kept = true; }
-	memcpy(&rom[CAMERA], akira_cam, sizeof akira_cam);
-	if (which) {
-		const cam &c = CAMS[which];
-		const float f[3] = { c.x, c.y, c.z };
-		const int16_t h[3] = { c.a, c.b, c.c };
-		memcpy(&rom[CAMERA], f, sizeof f);       // (little-endian, as VF's)
-		memcpy(&rom[CAMERA + 12], h, sizeof h);
-	}
-}
-
-// A select portrait for the characters without one (Dural and the Koskol brothers), made from
-// their own head. A record's +72 is its portrait: 9 parts (lists of objects: the face, the eyes and
-// mouth with their frames), at +24 the face's animations by number (ff06ac), at +3c the select's
-// blinking. The fight draws a head from it too (ff06ff), or without one the record's +16, a single
-// object, as those characters have. So the portrait here is that object alone as its first part
-// (a list of it, whatever frame is asked for), no animations, Akira's blinking for the select's
-// (it only moves parts it hasn't): in the fight the same head as before, on the select their face.
-// It goes in the main CPU's empty f80000-fbffff (no ROM there, nothing reads it). Only the
-// character in Akira's place has one; the rest stay as the game made them.
-void model1::akira_slot_heads(uint32_t record)
-{
-	static const uint32_t NO_PORTRAIT[] = { 0xfd369b, 0xfd510f, 0xfd5285, 0xfd53fb };   // Dural, Rekka, Score, Aeon
-	constexpr uint32_t AT = 0xf80000, LIST = AT + 0x80, BLINK_OF = 0xfd3f6f;   // (Akira's record)
-	auto &rom = m_regions.maincpu;
-	if (LIST + 0x80 > rom.size()) return;
-	auto rd = [&](uint32_t a) { return uint32_t(rom[a] | rom[a + 1] << 8 | rom[a + 2] << 16 | rom[a + 3] << 24); };
-	auto wr = [&](uint32_t a, uint32_t v) { for (int b = 0; b < 4; b++) rom[a + b] = uint8_t(v >> (8 * b)); };
-	static bool kept = false, ours[std::size(NO_PORTRAIT)];
-	if (!kept) {
-		for (size_t i = 0; i < std::size(NO_PORTRAIT); i++) ours[i] = rd(NO_PORTRAIT[i] + 0x72) == 0;   // (VF's: none)
-		kept = true;
-	}
-	const uint32_t blink = rd(rd(BLINK_OF + 0x72) + 0x3c);
-	bool made = false;
-	for (size_t i = 0; i < std::size(NO_PORTRAIT); i++) {
-		if (!ours[i]) continue;
-		const bool here = NO_PORTRAIT[i] == record && blink >> 16 == 0xfd;
-		wr(NO_PORTRAIT[i] + 0x72, here ? AT : 0);
-		if (!here) continue;
-		std::fill(&rom[AT], &rom[LIST + 0x80], 0);
-		wr(AT, LIST);                                     // the first part: the head
-		wr(AT + 0x3c, blink);
-		const uint32_t head = rd(record + 0x16);
-		for (uint32_t k = 0; k < 0x80; k += 4) wr(LIST + k, head);   // (every frame the same)
-		made = true;
-	}
-	if (!made) std::fill(&rom[AT], &rom[LIST + 0x80], 0xff);   // (as it was: no ROM)
-}
-
-// Cheats' random fighter. A fighter's record (0x176 bytes) holds its body parts' models: torso
-// +12, hips +32, the near arm +1a/+1e, the far one +26/+2a, the front leg +36/+3a/+3e, the back
-// one +42/+46/+4a, the hands' poses +5e, +62 and +76 on (64 of them); and at +72 the list of its
-// head's models (the blinks), which the select's portrait draws too. The cast share a skeleton,
-// so any part sits on any body: the animation stays Akira's (or his place's), the parts are
-// anyone's. Akira's records: fd4f99 (player 1's costume) and fd3f6f (player 2's).
-void model1::set_random_fighter(bool on, bool moves, bool cpu)
-{
-	m_random_fighter = on;
-	m_random_moves = on && moves;
-	m_random_cpu = on && cpu;
-	m_select_seen = false;
-	random_fighter_roll();
-}
-
-// The records random fighters are made from and into: every record the slots point at, Akira's
-// two (fd4f99 player 1's costume, fd3f6f player 2's) and the Koskol brothers'. Their own data is
-// kept: the parts always come from the cast as they are, and Off puts them all back.
-model1::random_cast &model1::random_fighter_cast()
-{
-	static constexpr uint32_t SLOTS = 0xfd2e8f, KOSKOLS[3] = { 0xfd510f, 0xfd5285, 0xfd53fb };
-	random_cast &c = m_random_cast;
-	if (c.made) return c;
-	c.made = true;
-	auto &rom = m_regions.maincpu;
-	if (SLOTS + 26 * 4 > rom.size()) return c;
-	auto rd = [&](uint32_t a) { return uint32_t(rom[a] | rom[a + 1] << 8 | rom[a + 2] << 16 | uint32_t(rom[a + 3]) << 24); };
-	auto model = [&](uint32_t r, uint32_t o) { return (rd(r + o) >> 16) == 0x2d; };
-	auto add = [&](uint32_t r) {
-		if ((r >> 16) != 0xfd || r + RECORD_SIZE > rom.size() || c.orig.count(r)) return;
-		if (!model(r, 0x12) || !model(r, 0x1a) || !model(r, 0x36)) return;
-		c.orig[r].assign(&rom[r], &rom[r] + RECORD_SIZE);
-		c.recs.push_back(r);
-		if ((rd(r + 0x72) >> 16) == 0xfd) c.heads.push_back(r);
-		const uint32_t t = rd(r + 4);
-		if ((t >> 16) == 0xfc && t + MOVE_COUNT * 4 <= rom.size() && std::find(c.tables.begin(), c.tables.end(), t) == c.tables.end()) c.tables.push_back(t);
-	};
-	// Akira's two by name: the slots may hold a secret character in his place just now (Cheats'
-	// Secret character, set before Random fighter was turned on), and this list is made once
-	add(0xfd4f99);
-	add(0xfd3f6f);
-	for (int i = 0; i < 26; i++) add(rd(SLOTS + 4 * i));
-	for (uint32_t r : KOSKOLS) add(r);
-	return c;
-}
-
-uint32_t model1::random_next(uint32_t n)
-{
-	uint32_t &x = m_random_state;   // xorshift, seeded from the frame and the clock
-	if (!x) x = uint32_t(m_frame * 2654435761u) ^ uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^ 0x9e3779b9u;
-	x ^= x << 13; x ^= x >> 17; x ^= x << 5;
-	return n ? x % n : 0;
-}
-
-// One record made a random fighter: each group of parts (a pair of limbs as one) from a random
-// fighter's own, a random head (+72, the select's portrait too), and with random moves a moves
-// table of its own (in the ROM's empty space, f81000 on: 0x300 bytes a record), each command's
-// entry from a random fighter's table. The moves are numbered alike for everyone (Siba's are
-// mostly Lau's) and the cast share a skeleton, so any part and move fits anyone.
-void model1::random_fighter_make(uint32_t rec)
-{
-	random_cast &c = random_fighter_cast();
-	auto &rom = m_regions.maincpu;
-	auto it = c.orig.find(rec);
-	if (it == c.orig.end() || c.recs.empty() || c.heads.empty()) return;
-	auto orig = [&](uint32_t r, uint32_t o) { const auto &b = c.orig.at(r); return uint32_t(b[o] | b[o + 1] << 8 | b[o + 2] << 16 | uint32_t(b[o + 3]) << 24); };
-	auto wr = [&](uint32_t a, uint32_t v) { for (int b = 0; b < 4; b++) rom[a + b] = uint8_t(v >> (8 * b)); };
-	auto model = [&](uint32_t r, uint32_t o) { return (orig(r, o) >> 16) == 0x2d; };
-	memcpy(&rom[rec], it->second.data(), RECORD_SIZE);
-	static const std::vector<std::vector<uint32_t>> GROUPS = [] {
-		std::vector<std::vector<uint32_t>> g = { { 0x12 }, { 0x32 }, { 0x1a, 0x26 }, { 0x1e, 0x2a }, { 0x36, 0x42 }, { 0x3a, 0x46 }, { 0x3e, 0x4a }, { 0x5e, 0x62 } };
-		for (uint32_t o = 0x76; o < 0x176; o += 4) g.back().push_back(o);   // (the hands' poses: one hand set)
-		return g;
-	}();
-	for (const auto &g : GROUPS) {
-		const uint32_t src = c.recs[random_next(uint32_t(c.recs.size()))];
-		for (uint32_t o : g)
-			if (model(src, o) && model(rec, o)) wr(rec + o, orig(src, o));
-	}
-	if ((orig(rec, 0x72) >> 16) == 0xfd) wr(rec + 0x72, orig(c.heads[random_next(uint32_t(c.heads.size()))], 0x72));
-	if (m_random_moves && !c.tables.empty()) {
-		const uint32_t at = 0xf81000 + 0x300 * uint32_t(std::find(c.recs.begin(), c.recs.end(), rec) - c.recs.begin());
-		if (at + MOVE_COUNT * 4 > 0xfc0000 || at + MOVE_COUNT * 4 > rom.size()) return;
-		for (uint32_t k = 0; k < MOVE_COUNT; k++) {
-			const uint32_t t = c.tables[random_next(uint32_t(c.tables.size()))];
-			memcpy(&rom[at + 4 * k], &rom[t + 4 * k], 4);
-		}
-		wr(rec + 4, at);
-	}
-}
-
-// All of the cast as they are, then Akira's two made random (Akira's place), and with random
-// opponents every other record too (the computer's next one is made afresh as it comes in:
-// random_fighter_frame).
-void model1::random_fighter_roll()
-{
-	static constexpr uint32_t AKIRA[2] = { 0xfd4f99, 0xfd3f6f };
-	random_cast &c = random_fighter_cast();
-	auto &rom = m_regions.maincpu;
-	for (const auto &[r, b] : c.orig) memcpy(&rom[r], b.data(), RECORD_SIZE);
-	if (!m_random_fighter) { random_fighter_strands(true); return; }
-	for (uint32_t r : AKIRA) random_fighter_make(r);
-	if (m_random_cpu)
-		for (uint32_t r : c.recs)
-			if (r != AKIRA[0] && r != AKIRA[1]) random_fighter_make(r);
-}
-
-// The strands that swing (Sarah's ponytail, Pai's and Lau's braids, Akira's headband ribbon) are
-// listed by the player's slot, not by record (fda917: a slot byte and a pointer to its strands,
-// 5 bytes each, to ff; read for each fighter at ffc4b6 by its block's slot, -4c). With random
-// heads they'd hang where the slot's own head was: the list is made afresh for the two players
-// each frame, each slot with the strands of the head its record wears now (none for a head
-// without), and put back as VF has it when Random fighter goes off.
-void model1::random_fighter_strands(bool restore)
-{
-	static constexpr uint32_t LIST = 0xfda917, SLOTS = 0xfd2e8f;
-	auto &rom = m_regions.maincpu;
-	if (LIST + 80 > rom.size() || m_ram_a.size() < 0x1f00) return;
-	if (m_strands_orig.empty()) {
-		size_t n = 0;
-		while (n < 75 && rom[LIST + n] != 0xff) n += 5;
-		if (n >= 75) return;   // (not VF's list)
-		m_strands_orig.assign(&rom[LIST], &rom[LIST] + n + 1);
-	}
-	auto put = [&](const std::vector<uint8_t> &b) { if (memcmp(&rom[LIST], b.data(), b.size())) memcpy(&rom[LIST], b.data(), b.size()); };
-	if (restore || !m_random_fighter) { put(m_strands_orig); return; }
-	random_cast &c = random_fighter_cast();
-	auto rd = [&](const uint8_t *p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); };
-	auto orig_strands = [&](uint8_t slot) -> uint32_t {   // a slot's own, or 0
-		for (size_t i = 0; i + 5 <= m_strands_orig.size(); i += 5)
-			if (m_strands_orig[i] == slot) return rd(&m_strands_orig[i + 1]);
-		return 0;
-	};
-	// a head list -> the strands of the slot whose own record wears it
-	auto strands_of_head = [&](uint32_t head, uint8_t slot) -> uint32_t {
-		for (uint32_t s = 0; s < 26; s++) {
-			const uint32_t r = rd(&rom[SLOTS + 4 * s]);
-			auto it = c.orig.find(r);
-			if (it != c.orig.end() && rd(&it->second[0x72]) == head) return orig_strands(uint8_t(s));
-		}
-		for (const auto &[r, b] : c.orig)   // (Akira's two, not in the slots while a secret character is)
-			if (rd(&b[0x72]) == head) return orig_strands(r == 0xfd4f99 ? 0x16 : r == 0xfd3f6f ? 0x0b : 0xff);
-		return orig_strands(slot);
-	};
-	std::vector<uint8_t> list;
-	for (int pl = 0; pl < 2; pl++) {
-		const uint32_t block = 0x700 + 0x1800 * pl;
-		const uint8_t slot = m_ram_a[block - 0x4c];
-		const uint32_t rec = rd(&m_ram_a[block - 0x50]);
-		if ((rec >> 16) != 0xfd || rec + RECORD_SIZE > rom.size()) continue;
-		const uint32_t head = rd(&rom[rec + 0x72]);
-		const uint32_t st = (head >> 16) == 0xfd ? strands_of_head(head, slot) : orig_strands(slot);
-		bool dup = false;
-		for (size_t i = 0; i < list.size(); i += 5) dup |= list[i] == slot;
-		if (!st || dup) continue;
-		list.push_back(slot);
-		for (int b = 0; b < 4; b++) list.push_back(uint8_t(st >> (8 * b)));
-	}
-	list.push_back(0xff);
-	if (list.size() <= m_strands_orig.size()) put(list);
-}
-
-// A new player select: a new fighter (the select's own Akira icon, b080, comes into the tiles)
-void model1::random_fighter_frame()
-{
-	bool select = false;
-	for (uint32_t i = 0; i < 0x4000 - 8 * 64 && !select; i++)
-		select = m_tiles.tile_r(i) == 0xb080 && m_tiles.tile_r(i + 1) == 0xb081 && m_tiles.tile_r(i + 64) == 0xb087;
-	if (select && !m_select_seen) { random_fighter_roll(); m_pick_at = int64_t(m_frame); }
-	random_fighter_strands(false);
-	// Random opponents: each player's fighter is in its block (player 1's at 4006b0, player 2's
-	// 0x1800 on), set as a match loads: a new one there (the computer's next opponent) is made
-	// afresh, so even the same character twice comes in new.
-	if (m_random_cpu && m_ram_a.size() > 0x1eb4)
-		for (int pl = 0; pl < 2; pl++) {
-			const uint32_t o = 0x6b0 + 0x1800 * pl;
-			const uint32_t r = uint32_t(m_ram_a[o] | m_ram_a[o + 1] << 8 | m_ram_a[o + 2] << 16 | uint32_t(m_ram_a[o + 3]) << 24);
-			if (r != m_random_seen[pl]) {
-				m_random_seen[pl] = r;
-				if (r != 0xfd4f99 && r != 0xfd3f6f && !select) random_fighter_make(r);
-			}
-		}
-	if (!select) m_pick_at = -1;
-	m_select_seen = select;
-}
-
-// The select's icons for the characters without one (all but Siba, whose is in the ROM): pictures
-// made from their heads (tools/icons), shown in Akira's icon's tiles while one is in his place.
-// His icon (map at 2ff5ec: 7 x 8 tiles, 8 x 8 pixels at 4 bits, colour 0x61, its own) is drawn on the
-// select as entries b080-b0b1, two of them used more than once (the left edge's b087, and b0a5):
-// those cells get tiles of their own, b0b2-b0b7 (unused there). While the icon is on screen its
-// tiles, colours and map are ours, VF's own kept and put back as it goes; when the game writes
-// them again, what it wrote is kept instead.
-const char *const model1::SECRET_ICON_NAMES[] = { nullptr, nullptr, "jeff", "takeru", "rekka", "score", "aeon", "dural" };
-
-namespace {
-constexpr int ICON_W = 7, ICON_H = 8, ICON_COLOUR = 0x61;
-constexpr uint16_t ICON_FIRST = 0xb080;
-// VF's map of the icon, and ours (the repeated cells moved to b0b2-b0b7)
-uint16_t icon_entry(int x, int y, bool ours)
-{
-	static const uint8_t VF[ICON_H][ICON_W] = {
-		{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 }, { 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d },
-		{ 0x07, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13 }, { 0x07, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19 },
-		{ 0x07, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f }, { 0x07, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25 },
-		{ 0x07, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x25 }, { 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31 } };
-	if (ours && x == 0 && y >= 2 && y <= 6) return ICON_FIRST + 0x32 + (y - 2);
-	if (ours && x == 6 && y == 6) return ICON_FIRST + 0x37;
-	return ICON_FIRST + VF[y][x];
-}
-}
-
-bool model1::set_akira_icon(const uint32_t *xrgb)
-{
-	if (m_icon.active) { m_icon.on = false; secret_icon_frame(); }   // (VF's own back first)
-	if (!xrgb) { m_icon.on = false; return true; }
-	constexpr int W = ICON_W * 8, H = ICON_H * 8;
-	std::vector<uint32_t> cols;
-	std::vector<uint8_t> idx(W * H);
-	for (int i = 0; i < W * H; i++) {
-		const uint32_t c = xrgb[i] & 0xffffff;
-		auto it = std::find(cols.begin(), cols.end(), c);
-		if (it == cols.end()) { if (cols.size() == 15) return false; cols.push_back(c); it = cols.end() - 1; }
-		idx[i] = uint8_t(1 + (it - cols.begin()));   // (0: see-through, unused)
-	}
-	m_icon.pal.assign(16, 0x8000);
-	for (size_t i = 0; i < cols.size(); i++) {
-		const uint32_t c = cols[i];
-		m_icon.pal[1 + i] = uint16_t(0x8000 | ((c & 0xff) >> 3) << 10 | ((c >> 8 & 0xff) >> 3) << 5 | (c >> 16 & 0xff) >> 3);   // (xBGR 555)
-	}
-	m_icon.map.resize(ICON_W * ICON_H);
-	m_icon.chars.assign(0x38 * 16, 0);
-	for (int ty = 0; ty < ICON_H; ty++)
-		for (int tx = 0; tx < ICON_W; tx++) {
-			const uint16_t e = icon_entry(tx, ty, true);
-			m_icon.map[ty * ICON_W + tx] = e;
-			uint16_t *c = &m_icon.chars[(e - ICON_FIRST) * 16];
-			for (int y = 0; y < 8; y++) {
-				uint32_t row = 0;
-				for (int x = 0; x < 8; x++) row |= uint32_t(idx[(ty * 8 + y) * W + tx * 8 + x]) << (28 - 4 * x);
-				c[y * 2] = uint16_t(row >> 16); c[y * 2 + 1] = uint16_t(row);
-			}
-		}
-	m_icon.on = true;
-	return true;
-}
-
-void model1::secret_icon_frame()
-{
-	// where the icon is: its first row, VF's or ours
-	uint32_t at = ~0u;
-	if (m_icon.on)
-		for (uint32_t i = 0; i < 0x4000 - ICON_H * 64 && at == ~0u; i++) {
-			if (m_tiles.tile_r(i) != ICON_FIRST) continue;
-			bool row = true;
-			for (int x = 1; x < ICON_W && row; x++) row = m_tiles.tile_r(i + x) == ICON_FIRST + x;
-			for (int y = 1; y < ICON_H && row; y++) row = (m_tiles.tile_r(i + y * 64 + 1) & 0xff80) == ICON_FIRST;
-			if (row) at = i;
-		}
-	const uint32_t code0 = ICON_FIRST & 0x3fff, pal0 = ICON_COLOUR * 16;
-	if (m_icon.active && at != m_icon.at) {   // gone (or moved): VF's own back
-		for (size_t i = 0; i < m_icon.chars.size(); i++)
-			if (m_tiles.char_r(code0 * 16 + i) == m_icon.chars[i]) m_tiles.char_w(code0 * 16 + i, m_icon.keep_chars[i], 0xffff);
-		for (int i = 1; i < 16; i++)
-			if (m_paletteram16[pal0 + i] == m_icon.pal[i]) model1_paletteram_w(pal0 + i, m_icon.keep_pal[i], 0xffff);
-		for (int y = 0; y < ICON_H; y++)
-			for (int x = 0; x < ICON_W; x++) {
-				const uint32_t o = m_icon.at + y * 64 + x;
-				if (m_tiles.tile_r(o) == m_icon.map[y * ICON_W + x]) m_tiles.tile_w(o, m_icon.keep_map[y * ICON_W + x], 0xffff);
-			}
-		m_icon.active = false;
-	}
-	if (at == ~0u) return;
-	if (!m_icon.active) {   // VF's as it is now
-		m_icon.keep_chars.resize(m_icon.chars.size());
-		for (size_t i = 0; i < m_icon.chars.size(); i++) m_icon.keep_chars[i] = m_tiles.char_r(code0 * 16 + i);
-		m_icon.keep_pal.assign(m_paletteram16 + pal0, m_paletteram16 + pal0 + 16);
-		m_icon.keep_map.resize(ICON_W * ICON_H);
-		for (int y = 0; y < ICON_H; y++)
-			for (int x = 0; x < ICON_W; x++) m_icon.keep_map[y * ICON_W + x] = m_tiles.tile_r(at + y * 64 + x);
-		m_icon.at = at;
-		m_icon.active = true;
-	}
-	for (size_t i = 0; i < m_icon.chars.size(); i++) {
-		const uint16_t now = m_tiles.char_r(code0 * 16 + i);
-		if (now != m_icon.chars[i]) { m_icon.keep_chars[i] = now; m_tiles.char_w(code0 * 16 + i, m_icon.chars[i], 0xffff); }
-	}
-	for (int i = 1; i < 16; i++) {
-		const uint16_t now = m_paletteram16[pal0 + i];
-		if (now != m_icon.pal[i]) { m_icon.keep_pal[i] = now; model1_paletteram_w(pal0 + i, m_icon.pal[i], 0xffff); }
-	}
-	for (int y = 0; y < ICON_H; y++)
-		for (int x = 0; x < ICON_W; x++) {
-			const uint32_t o = at + y * 64 + x;
-			const uint16_t now = m_tiles.tile_r(o), ours = m_icon.map[y * ICON_W + x];
-			if (now != ours) { m_icon.keep_map[y * ICON_W + x] = now; m_tiles.tile_w(o, ours, 0xffff); }
-		}
-}
-
-// No time limit: the round's clock is counted down at fe2190 (dec.h 501285[PC]), and the picture
-// is drawn after, so a clock put back each frame still showed a tick off its start (29.96). That
-// instruction becomes test.h of the same (the opcode d2 to f2, the same length): the clock stays
-// at its start. It's the game's code, so the change needs a recompile (or the interpreter).
-bool model1::set_no_time_limit(bool on)
-{
-	constexpr uint32_t AT = 0xfe2190;
-	static const uint8_t REST[5] = { 0xf2, 0xf5, 0xf0, 0x51, 0xff };   // (its operand)
-	auto &rom = m_regions.maincpu;
-	if (AT + 6 > rom.size() || memcmp(&rom[AT + 1], REST, 5) || (rom[AT] != 0xd2 && rom[AT] != 0xf2)) return false;
-	const uint8_t op = on ? 0xf2 : 0xd2;
-	if (rom[AT] == op) return false;
-	rom[AT] = op;
-	return true;
-}
-
-// The fighters' energy (ffc4a0: player n's at [50130c] + n * 0x1800, the energy -2e from there,
-// what hits take off; the full amount for the round at 501186).
-void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
-{
-	// a 16- or 32-bit value at a main CPU address in either RAM: the fighters' data is in the
-	// battery-backed one (seen at 400700), the round's numbers in work RAM
-	auto at = [&](uint32_t a, int n) -> uint8_t * {
-		if (a >= 0x500000 && a + n - 0x500000 <= m_ram_b.size()) return &m_ram_b[a - 0x500000];
-		if (a >= 0x400000 && a + n - 0x400000 <= m_ram_a.size()) return &m_ram_a[a - 0x400000];
-		return nullptr;
-	};
-	auto rd16 = [&](uint32_t a) { const uint8_t *p = at(a, 2); return p ? int16_t(p[0] | p[1] << 8) : int16_t(0); };
-	auto rd32 = [&](uint32_t a) { const uint8_t *p = at(a, 4); return p ? uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24) : 0u; };
-	auto wr16 = [&](uint32_t a, int16_t v) { if (uint8_t *p = at(a, 2)) { p[0] = uint8_t(v); p[1] = uint8_t(uint16_t(v) >> 8); } };
-	// (the fields are below the pointer: player 2's at +0x1800, down to -0x80)
-	const uint32_t base = rd32(0x50130c);
-	const bool ok = at(base - 0x80, 0x80) && at(base + 0x1800 - 0x80, 0x80);
-	static int told = 0;
-	if (told < 2 && (ok ? told == 1 || told == 0 : told == 0)) {   // (log.txt: what the cheats found, once each way)
-		fprintf(stderr, "cheats: players at %06x%s, energy %d %d of %d, clock %d\n", base, ok ? "" : " (not set yet)",
-				ok ? rd16(base - 0x2e) : 0, ok ? rd16(base + 0x1800 - 0x2e) : 0, rd16(0x501186), rd16(0x501285));
-		told = ok ? 2 : 1;
-	}
-	if (!ok) return;
-	// The round's clock (501285): 0x384 as a round starts (fe2152), counted down while neither
-	// fighter is down (fe2190, which set_no_time_limit stops: their -80's bit 0x1b), time up below
-	// 0. Other screens count with it too, so this is only once a round has started it. At the end
-	// of a round the game files its replay by the clock (fe2617: a round over while it's still
-	// above 0x357, its first moments, goes another way), so as a fighter goes down it's let go at
-	// 0x356, a round's time like any other. (Put back each frame too, should the code be VF's own.)
-	if (no_time) {
-		const int t = rd16(0x501285);
-		const bool down = (rd32(base - 0x80) | rd32(base + 0x1800 - 0x80)) >> 0x1b & 1;
-		if (t == 0x384 && !down) m_clock_held = true;
-		if (m_clock_held && (down || t <= 0 || t > 0x384)) {
-			m_clock_held = false;
-			if (down && t > 0x356) wr16(0x501285, 0x356);
-		}
-		if (m_clock_held && t < 0x384) wr16(0x501285, 0x384);
-	} else m_clock_held = false;
-	if (!infinite && !one_hit) return;
-	const int16_t full = rd16(0x501186);
-	if (full <= 0 || full > 1000) return;
-	for (int p = 0; p < 2; p++) {
-		const uint32_t a = base + p * 0x1800 - 0x2e;
-		int16_t e = rd16(a);
-		if (infinite >> p & 1) e = full;
-		else if (one_hit && e > 1) e = 1;
-		else continue;
-		wr16(a, e);
-	}
-}
-
-static std::vector<std::pair<uint32_t, std::vector<uint8_t>>> s_free_play_text;   // the bytes hide_free_play_text replaced
-
-void model1::show_free_play_text()
-{
-	for (const auto &[addr, bytes] : s_free_play_text) memcpy(&m_regions.maincpu[addr], bytes.data(), bytes.size());
-	s_free_play_text.clear();
-}
-
-int model1::hide_free_play_text()
-{
-	if (!s_free_play_text.empty()) return 0;
-	auto keep = [&](uint32_t addr, size_t n) {
-		auto &rom = m_regions.maincpu;
-		if (addr + n <= rom.size()) s_free_play_text.push_back({ addr, std::vector<uint8_t>(&rom[addr], &rom[addr] + n) });
-	};
-	keep(0x13c01c2, 40);
-	keep(0xfd080f, 9);
-	int found = 0;
-	// The italic FREE PLAY (attract, title): a 14x2 tile image drawn by the routine at ff39a3
-	// from a record (base tile, flags, rows, columns, then a byte per tile). Base tile 0x0020,
-	// the blank the text layer is cleared with, and every byte 0: blank cells.
-	uint8_t blank_image[12 + 28] = { 0x20, 0x00, 0, 0, 2, 0, 0, 0, 14, 0, 0, 0 };
-	found += patch_program(0x13c01c2, sizeof blank_image, 0x71d41cda, blank_image);
-	// The fight's "FREE PLAY" (top right, between PUSH START BUTTON): a padded string.
-	const uint8_t spaces[9] = { ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ' };
-	found += patch_program(0xfd080f, sizeof spaces, 0x9dbd988f, spaces);
-	return found;
-}
-
-// Widescreen is for the fight. VF keeps a pointer to the camera it last sent to the display list
-// at 5017f0: the fight's camera (also used by the attract demo, the win and continue screens) is
-// at 5020f0; the title and the player select use others and stay 4:3. The pointer is cleared
-// every other frame (forcing a resend), so 0 keeps the last choice.
 void model1::redraw()
 {
 	const auto render_done = m_render_done;     // emulation state: drawing again mustn't touch it
@@ -1128,16 +495,8 @@ void model1::redraw()
 
 bool model1::past_boot() const
 {
-	const uint8_t *p = &m_ram_b[0x17f0];
+	const uint8_t *p = &m_ram_b[m_profile->camera_ram];
 	return (p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24) != 0;
-}
-
-bool model1::fight_camera() const
-{
-	const uint8_t *p = &m_ram_b[0x17f0];
-	uint32_t cam = p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24;
-	if (cam == 0) return m_fight_cam;
-	return cam == 0x5020f0;
 }
 
 // A layer at the arcade's resolution (and the widescreen sides), drawn once a game frame, with each
@@ -1192,7 +551,7 @@ void model1::prepare_layers()
 // The 2D layers are drawn at the arcade's resolution and scaled up to the render's.
 void model1::draw_tiles(bitmap_rgb32 &bitmap, const rectangle &cliprect, int layer, int flags)
 {
-	static const int skip = getenv("VF_TILE_SKIP") ? strtol(getenv("VF_TILE_SKIP"), nullptr, 16) : 0;
+	static const int skip = getenv("M1_TILE_SKIP") ? strtol(getenv("M1_TILE_SKIP"), nullptr, 16) : 0;
 	if (skip & (1 << layer)) return;
 	if (m_scale == 1 && m_ext == 0) {
 		m_tiles.m_ox = 0;
@@ -1225,8 +584,9 @@ void model1::draw_tiles(bitmap_rgb32 &bitmap, const rectangle &cliprect, int lay
 		layer_cache &c = cached_layer(layer, flags);
 		tmp = &c.px; rx0 = c.x0.data(); rx1 = c.x1.data();
 	}
-	// Widescreen: the opaque layers are VF's sky, which only holds the visible part of its
-	// panorama; stretch it across the width. The rest (text, HUD) stays in the middle 4:3.
+	// Widescreen: the opaque layers are the game's backdrop (VF's sky), which only holds the
+	// visible part of its panorama; stretch it across the width. The rest (text, HUD) stays in
+	// the middle 4:3.
 	const bool stretch = m_ext && m_wide_frame && (flags & segas24_tile::DRAW_OPAQUE);
 	const int s = m_scale;
 	const int out_w = bitmap.width();
@@ -1324,38 +684,40 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 	}
 	if (m_parts) parts_begin(bitmap);                // the GPU fills it, and the 3D goes over nothing
 	else { bitmap.fill(m_pens[0], cliprect); m_bitmap_whole = true; }
-	static const bool log_scroll = getenv("VF_LOG_SCROLL") != nullptr;
+	static const bool log_scroll = getenv("M1_LOG_SCROLL") != nullptr;
 	if (log_scroll)
 		fprintf(stderr, "frame %llu tm2 h %04x v %04x tm3 h %04x v %04x ctrl %04x %04x\n", (unsigned long long)m_frame,
 				m_tiles.tile_r(0x5002), m_tiles.tile_r(0x5006), m_tiles.tile_r(0x5003), m_tiles.tile_r(0x5007),
 				m_tiles.tile_r(0x5004), m_tiles.tile_r(0x5006));
-	m_fight_cam = fight_camera();
+	const uint32_t camera = this->camera();
 	// A screen with painted sides, known by its backdrop: 4:3 from its first frame. (Between scenes the
 	// camera reads none, and the last one's kept: a fight's, for a few frames into the select.)
 	const screen_art *known = nullptr;
+	const uint32_t h = m_ext && m_gameplay.screen_name ? backdrop_hash() : 0;
 	if (m_ext && !m_screens.empty()) {
-		const uint32_t h = backdrop_hash();
-		for (const auto &a : m_screens)
-			if (std::find(a.hashes.begin(), a.hashes.end(), h) != a.hashes.end()) known = &a;
+		const auto name = m_gameplay.screen_name ? m_gameplay.screen_name(h) : std::nullopt;
+		if (name)
+			for (const auto &a : m_screens)
+				if (a.name == *name) { known = &a; break; }
 	}
-	const bool no_cam = !(m_ram_b[0x17f0] | m_ram_b[0x17f1] | m_ram_b[0x17f2] | m_ram_b[0x17f3]);
-	if (known && no_cam) m_fight_cam = false;
 	if (m_ext) {
-		bool wide = m_fight_cam;
-		static const bool log_wide = getenv("VF_LOG_WIDE") != nullptr;
+		if (m_gameplay.wide_scene) m_camera_wide = m_gameplay.wide_scene(camera, m_camera_wide);
+		bool wide = m_camera_wide;
+		if (known && !camera) wide = false;
+		static const bool log_wide = getenv("M1_LOG_WIDE") != nullptr;
 		if (log_wide && wide != m_wide_frame)
 			fprintf(stderr, "frame %llu: %s\n", (unsigned long long)m_frame, wide ? "wide" : "4:3");
 		m_wide_frame = wide;
 	}
 
-	static const bool log_backdrop = getenv("VF_LOG_BACKDROP") != nullptr;
+	static const bool log_backdrop = getenv("M1_LOG_BACKDROP") != nullptr;
 	if (log_backdrop) {
 		static uint32_t last = 0;
-		const uint32_t h = backdrop_hash();
-		if (h != last)
-			fprintf(stderr, "frame %llu backdrop %08x scroll %04x %04x cam %02x%02x%02x%02x\n", (unsigned long long)m_frame, h,
-					m_tiles.tile_r(0x5002), m_tiles.tile_r(0x5006), m_ram_b[0x17f3], m_ram_b[0x17f2], m_ram_b[0x17f1], m_ram_b[0x17f0]);
-		last = h;
+		const uint32_t backdrop = backdrop_hash();
+		if (backdrop != last)
+			fprintf(stderr, "frame %llu backdrop %08x scroll %04x %04x cam %08x\n", (unsigned long long)m_frame, backdrop,
+					m_tiles.tile_r(0x5002), m_tiles.tile_r(0x5006), this->camera());
+		last = backdrop;
 	}
 	m_screen_now = m_wide_frame ? nullptr : known;
 	draw_tiles(bitmap, cliprect, 6, segas24_tile::DRAW_OPAQUE);
@@ -1388,7 +750,7 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 		draw_tiles(bitmap, cliprect, 0, 0);
 	}
 
-	static const bool no_polys = getenv("VF_NO_POLYS") != nullptr;   // debug: the 2D layers alone
+	static const bool no_polys = getenv("M1_NO_POLYS") != nullptr;   // debug: the 2D layers alone
 	m_above_hud_seen = false;
 	m_frame_quads = 0;
 	// (Low antialiasing, a picture drawn whole: what's under the 3D marked, to tell the 3D's pixels by)
@@ -1500,11 +862,9 @@ void model1::clear_moire_marks(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 // is up (title, player select, ranking), whatever its palette is doing.
 uint32_t model1::backdrop_hash() const
 {
-	// (a secret character's select icon in Akira's: its cells counted as VF's own, so the select is
-	// known by the same hash and keeps its widescreen sides)
 	auto entry = [&](uint32_t o) -> uint16_t {
-		if (m_icon.active && o >= m_icon.at && o < m_icon.at + 8 * 64 && (o - m_icon.at) % 64 < 7)
-			return m_icon.keep_map[((o - m_icon.at) / 64) * 7 + (o - m_icon.at) % 64];
+		if (m_gameplay.backdrop_tile)
+			if (auto tile = m_gameplay.backdrop_tile(o)) return *tile;
 		return m_tiles.tile_r(o);
 	};
 	uint32_t h = 2166136261u;

@@ -1,12 +1,13 @@
-// Clean scene changes. When VF changes scene, its pieces arrive on different frames: the 3D
-// goes first (a few frames of sky alone), the new 2D layers are written over a frame or two, and
-// the new scene's 3D builds up (the floor, then the fighters a game frame later, with the sky
-// jumping into place). This holds the picture only while it would be wrong, for as little as it
-// can:
+// Clean scene changes. When a game changes scene, its pieces arrive on different frames (worked
+// out on Virtua Fighter): the 3D goes first (a few frames of sky alone), the new 2D layers are
+// written over a frame or two, and the new scene's 3D builds up (the floor, then the fighters a
+// game frame later, with the sky jumping into place). This holds the picture only while it would
+// be wrong, for as little as it can:
 //   - frames with no 3D at all (the scene taken down, a curtain, a 2D screen) are shown as they
 //     come, as on the arcade;
 //   - when 3D arrives after a frame with none, it is held until the polygon count has settled
-//     (compared with two frames before: VF's logic runs at 30 Hz), two frames as a rule;
+//     (compared with two frames before: a game's logic may run at 30 Hz, as VF's does), two
+//     frames as a rule;
 //   - a cut between stages (the ending's replays) brings the new stage's sky a few frames before
 //     its 3D, with the old stage's 3D still up in between: a sky that turns into another stage's
 //     holds too, and while the sky has changed but the polygons are still the old scene's (within

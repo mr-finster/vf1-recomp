@@ -12,6 +12,7 @@ struct model1::tgp_lle : mb86233_bus
 {
 	model1 &m;
 	std::vector<u32> prog;               // 0x800 words
+	const std::vector<uint8_t> &data_rom;
 	u32 ram0[0x100]{}, ram1[0x200]{};    // internal RAM banks at 0x000 and 0x200
 	std::vector<u32> copro_ram;          // shared with the V60, 0x2000 words
 	u32 ram_adr[4]{};
@@ -19,7 +20,8 @@ struct model1::tgp_lle : mb86233_bus
 	std::deque<u32> fifo_in, fifo_out;
 	mb86233_device cpu{*this};
 
-	tgp_lle(model1 &mm, const std::vector<uint8_t> &rom) : m(mm), prog(0x800), copro_ram(0x2000)
+	tgp_lle(model1 &mm, const std::vector<uint8_t> &rom, const std::vector<uint8_t> &data)
+		: m(mm), prog(0x800), data_rom(data), copro_ram(0x2000)
 	{
 		memcpy(prog.data(), rom.data(), std::min(rom.size(), size_t(0x2000)));
 	}
@@ -39,7 +41,7 @@ struct model1::tgp_lle : mb86233_bus
 	void sync()
 	{
 		for (int guard = 0; guard < 64; guard++) {
-			cpu.run(100000);
+			m.m_tgp_cycles += cpu.run(100000);
 			if (cpu.stalled())
 				return;
 		}
@@ -87,7 +89,13 @@ struct model1::tgp_lle : mb86233_bus
 		if (a >= 0x24 && a < 0x28) return atan_r();
 		if (a >= 0x28 && a < 0x2a) return inv_r(a - 0x28);
 		if (a >= 0x2a && a < 0x2c) return isqrt_r(a - 0x2a);
-		if (a >= 0x8000) return 0;    // copro_data: Virtua Racing's track ROMs, none on VF
+		if (a >= 0x8000) {
+			if (data_rom.size() < 4) return 0;
+			const size_t words = data_rom.size() / 4;
+			const size_t index = ((data_base & ~0x7fffu) | (a & 0x7fffu)) & (words - 1);
+			const uint8_t *p = data_rom.data() + index * 4;
+			return u32(p[0]) | (u32(p[1]) << 8) | (u32(p[2]) << 16) | (u32(p[3]) << 24);
+		}
 		return 0;
 	}
 
@@ -175,12 +183,14 @@ bool model1::use_tgp_program(const std::vector<uint8_t> &rom)
 {
 	if (rom.size() < 0x2000)
 		return false;
-	m_lle.reset(new tgp_lle(*this, rom));
+	m_lle.reset(new tgp_lle(*this, rom, m_regions.copro_data));
 	m_lle->reset();
 	return true;
 }
 
 void model1::lle_reset() { if (m_lle) m_lle->reset(); }
+
+uint64_t model1::tgp_cycles_executed() const { return m_tgp_cycles; }
 
 // V60 side, as MAME's model1_m.cpp with the TGP brought up to date first.
 u16 model1::lle_v60_r(uint32_t a)

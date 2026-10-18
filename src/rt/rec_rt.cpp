@@ -9,6 +9,7 @@
 #define TICK() do { if ((rec::cycles -= 8) <= 0 || rec::cpu->irq_line_up()) rec::after_insn_slow(); } while (0)
 #include <algorithm>
 #include <set>
+#include <string>
 
 namespace rec {
 
@@ -19,6 +20,7 @@ int cycles;
 static coro_ctx host_ctx, game_ctx;
 static std::vector<uint8_t> game_stack;
 static bool started;
+static std::string entries_path;
 
 static void yield() { coro_switch(&game_ctx, &host_ctx); }
 
@@ -46,8 +48,10 @@ static void interpret_until_return(uint32_t addr)
 {
 	static std::set<uint32_t> logged;
 	if (logged.insert(addr).second) {
-		// remembered for the next recompile (v60recomp reads build/cov/*.txt)
-		if (FILE *f = fopen("build/cov/runtime_entries.txt", "a")) {
+		// remembered for the next recompile (the Makefile hands v60recomp build/cov/<game>/)
+		const char *path = getenv("REC_RUNTIME_ENTRIES");
+		if (!path) path = entries_path.c_str();
+		if (FILE *f = fopen(path, "a")) {
 			fprintf(f, "entry %06x\n", addr);
 			fclose(f);
 		}
@@ -69,11 +73,29 @@ static void interpret_until_return(uint32_t addr)
 
 static const rec_entry *g_table = rec_table;
 static size_t g_table_size = rec_table_size;
+static size_t g_fallback_count;
+static uint32_t g_first_fallback = 0xffffffff;
 
 void use_table(const rec_entry *t, size_t n)
 {
 	g_table = t;
 	g_table_size = n;
+}
+
+size_t fallback_count()
+{
+	return g_fallback_count;
+}
+
+uint32_t first_fallback_address()
+{
+	return g_first_fallback;
+}
+
+void reset_fallbacks()
+{
+	g_fallback_count = 0;
+	g_first_fallback = 0xffffffff;
 }
 
 void call(uint32_t addr)
@@ -82,8 +104,11 @@ void call(uint32_t addr)
 		[](const rec_entry &a, uint32_t v) { return a.addr < v; });
 	if (e != g_table + g_table_size && e->addr == addr)
 		e->fn(*cpu);
-	else
+	else {
+		if (!g_fallback_count) g_first_fallback = addr;
+		g_fallback_count++;
 		interpret_until_return(addr);
+	}
 }
 
 void leave(uint32_t fn, uint32_t to)
@@ -111,12 +136,14 @@ static void game_main(void *)
 		call(PC);
 }
 
-void attach(v60_device &c)
+void attach(v60_device &c, std::string_view game)
 {
+	entries_path = "build/cov/" + std::string(game) + "/runtime_entries.txt";
 	cpu = &c;
 	pc = &c.pc_ref();
 	cycles = 0;
 	c.m_cycles = &cycles;
+	reset_fallbacks();
 	game_stack.assign(256 << 20, 0);   // deep: tail jumps between functions nest C frames
 	coro_init(&game_ctx, game_stack.data(), game_stack.size(), game_main, nullptr);
 	started = true;

@@ -1,7 +1,7 @@
 // The recompile done on the player's machine: the V60 program, found with the shipped address map
 // (src/rt/analyse.h), is turned into native code (ARM64 or x86-64) with sljit when the game
 // starts. Nothing made from the ROM ships; this is the same job tools/recomp does into C++ for
-// our own builds, and the lockstep check (vflock --native) covers it the same way.
+// our own builds, and the lockstep check (model1lock --native) covers it the same way.
 #pragma once
 #include "analyse.h"
 #include "rec_rt.h"

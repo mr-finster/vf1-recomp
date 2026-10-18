@@ -234,23 +234,6 @@ TGP_FUNCTION( model1::acc_seti )
 	m_acc = a;
 }
 
-TGP_FUNCTION( model1::track_select )
-{
-	int32_t a = fifoin_pop();
-	M1_LOG(0, "TGP track_select %d (%x)\n", a, m_pushpc);
-	m_tgp_vr_select = a;
-}
-
-TGP_FUNCTION( model1::load_base )
-{
-	m_tgp_vr_base[0] = fifoin_pop_f();
-	m_tgp_vr_base[1] = fifoin_pop_f();
-	m_tgp_vr_base[2] = fifoin_pop_f();
-	m_tgp_vr_base[3] = fifoin_pop_f();
-
-	M1_LOG(0, "TGP load_base %f, %f, %f, %f (%x)\n", m_tgp_vr_base[0], m_tgp_vr_base[1], m_tgp_vr_base[2], m_tgp_vr_base[3], m_pushpc);
-}
-
 TGP_FUNCTION( model1::transpose )
 {
 	M1_LOG(0, "TGP transpose (%x)\n", m_pushpc);
@@ -395,28 +378,6 @@ TGP_FUNCTION( model1::matrix_rotz )
 	t2 = m_cmat[5];
 	m_cmat[2] = c*t1-s*t2;
 	m_cmat[5] = s*t1+c*t2;
-}
-
-TGP_FUNCTION( model1::track_read_quad )
-{
-	u32 a = fifoin_pop();
-	int offd;
-
-	M1_LOG(0, "TGP track_read_quad %d (%x)\n", a, m_pushpc);
-
-	offd = m_copro_data->as_u32(0x20+m_tgp_vr_select) + 16*a;
-	fifoout_push(m_copro_data->as_u32(offd));
-	fifoout_push(m_copro_data->as_u32(offd+1));
-	fifoout_push(m_copro_data->as_u32(offd+2));
-	fifoout_push(m_copro_data->as_u32(offd+3));
-	fifoout_push(m_copro_data->as_u32(offd+4));
-	fifoout_push(m_copro_data->as_u32(offd+5));
-	fifoout_push(m_copro_data->as_u32(offd+6));
-	fifoout_push(m_copro_data->as_u32(offd+7));
-	fifoout_push(m_copro_data->as_u32(offd+8));
-	fifoout_push(m_copro_data->as_u32(offd+9));
-	fifoout_push(m_copro_data->as_u32(offd+10));
-	fifoout_push(m_copro_data->as_u32(offd+11));
 }
 
 TGP_FUNCTION( model1::intercept )
@@ -611,7 +572,6 @@ TGP_FUNCTION( model1::f42 )
 	(void)b;
 	(void)c;
 	M1_LOG(0, "TGP f42 %f, %f, %f (%x)\n", a, b, c, m_pushpc);
-	//  fifoout_push_f((m_rand() % 1000) - 500);
 	fifoout_push_f(0);
 	fifoout_push_f(0);
 	fifoout_push_f(0);
@@ -691,19 +651,6 @@ TGP_FUNCTION( model1::f43_swa )
 	fifoout_push_f(0);
 }
 
-TGP_FUNCTION( model1::track_read_tri )
-{
-	u32 a = fifoin_pop();
-	int offd;
-
-	M1_LOG(0, "TGP track_read_tri %d (%x)\n", a, m_pushpc);
-
-	offd = m_copro_data->as_u32(0x20+m_tgp_vr_select) + 16*a;
-	fifoout_push(m_copro_data->as_u32(offd+12));
-	fifoout_push(m_copro_data->as_u32(offd+13));
-	fifoout_push(m_copro_data->as_u32(offd+14));
-}
-
 TGP_FUNCTION( model1::matrix_sdir )
 {
 	float a = fifoin_pop_f();
@@ -759,19 +706,6 @@ TGP_FUNCTION( model1::fsqrt )
 	fifoout_push_f(sqrtf(a));
 }
 
-TGP_FUNCTION( model1::vlength )
-{
-	float x = fifoin_pop_f();
-	float y = fifoin_pop_f();
-	float z = fifoin_pop_f();
-	M1_LOG(0, "TGP vlength %f, %f, %f (%x)\n", x, y, z, m_pushpc);
-
-	x -= m_tgp_vr_base[0];
-	y -= m_tgp_vr_base[1];
-	z -= m_tgp_vr_base[2];
-	fifoout_push_f(sqrtf(x*x + y*y + z*z) - m_tgp_vr_base[3]);
-}
-
 TGP_FUNCTION( model1::f47 )
 {
 	float a = fifoin_pop_f();
@@ -780,61 +714,6 @@ TGP_FUNCTION( model1::f47 )
 	M1_LOG(0, "TGP f47 %f, %f, %f (%x)\n", a, b, c, m_pushpc);
 	fifoout_push_f(a+c);
 	fifoout_push_f(b+c);
-}
-
-TGP_FUNCTION( model1::track_read_info )
-{
-	u16 a = fifoin_pop();
-	int offd;
-
-	M1_LOG(0, "TGP track_read_info %d (%x)\n", a, m_pushpc);
-
-	offd = m_copro_data->as_u32(0x20+m_tgp_vr_select) + 16*a;
-	fifoout_push(m_copro_data->as_u32(offd+15));
-}
-
-TGP_FUNCTION( model1::colbox_set )
-{
-	float a = fifoin_pop_f();
-	float b = fifoin_pop_f();
-	float c = fifoin_pop_f();
-	float d = fifoin_pop_f();
-	float e = fifoin_pop_f();
-	float f = fifoin_pop_f();
-	float g = fifoin_pop_f();
-	float h = fifoin_pop_f();
-	float i = fifoin_pop_f();
-	float j = fifoin_pop_f();
-	float k = fifoin_pop_f();
-	float l = fifoin_pop_f();
-	M1_LOG(0, "TGP colbox_set %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f (%x)\n", a, b, c, d, e, f, g, h, i, j, k, l, m_pushpc);
-	m_tgp_vr_cbox[ 0] = a;
-	m_tgp_vr_cbox[ 1] = b;
-	m_tgp_vr_cbox[ 2] = c;
-	m_tgp_vr_cbox[ 3] = d;
-	m_tgp_vr_cbox[ 4] = e;
-	m_tgp_vr_cbox[ 5] = f;
-	m_tgp_vr_cbox[ 6] = g;
-	m_tgp_vr_cbox[ 7] = h;
-	m_tgp_vr_cbox[ 8] = i;
-	m_tgp_vr_cbox[ 9] = j;
-	m_tgp_vr_cbox[10] = k;
-	m_tgp_vr_cbox[11] = l;
-}
-
-TGP_FUNCTION( model1::colbox_test )
-{
-	float a = fifoin_pop_f();
-	float b = fifoin_pop_f();
-	float c = fifoin_pop_f();
-	(void)a;
-	(void)b;
-	(void)c;
-	M1_LOG(0, "TGP colbox_test %f, %f, %f (%x)\n", a, b, c, m_pushpc);
-
-	// #### Wrong, need to check with the tgp_vr_cbox coordinates
-	// Game only test sign, negative = collision
-	fifoout_push_f(-1);
 }
 
 TGP_FUNCTION( model1::f49_swa )
@@ -906,76 +785,6 @@ TGP_FUNCTION( model1::matrix_rdir )
 	m_cmat[2] = a*t1+c*t2;
 }
 
-// A+(B-A)*t1 + (C-A)*t2 = P
-static void tri_calc_pq(float ax, float ay, float bx, float by, float cx, float cy, float px, float py, float *t1, float *t2)
-{
-	float d;
-	bx -= ax;
-	cx -= ax;
-	px -= ax;
-	by -= ay;
-	cy -= ay;
-	py -= ay;
-	d = bx*cy-by*cx;
-	*t1 = (px*cy-py*cx)/d;
-	*t2 = (bx*py-by*px)/d;
-}
-
-TGP_FUNCTION( model1::track_lookup )
-{
-	float a = fifoin_pop_f();
-	u32 b = fifoin_pop();
-	float c = fifoin_pop_f();
-	float d = fifoin_pop_f();
-	int offi, offd, len;
-	float dist;
-	int i;
-	u32 entry;
-	float height;
-
-	M1_LOG(0, "TGP track_lookup %f, 0x%x, %f, %f (%x)\n", a, b, c, d, m_pushpc);
-
-	offi = m_copro_data->as_u32(0x10+m_tgp_vr_select) + b;
-	offd = m_copro_data->as_u32(0x20+m_tgp_vr_select);
-
-	len = m_copro_data->as_u32(offi++);
-
-	dist = -1;
-
-//  behaviour = 0;
-	height = 0.0;
-	entry = 0;
-
-	for(i=0; i<len; i++) {
-		int j;
-		int bpos = m_copro_data->as_u32(offi++);
-		int posd = offd + bpos*0x10;
-		const float *pts = (const float *)&m_copro_data->as_u32(posd);
-		float ax = pts[12];
-		float ay = pts[14];
-		float az = pts[13];
-		for(j=0; j<4; j++) {
-			float t1, t2;
-			int k = (j+1) & 3;
-			tri_calc_pq(ax, ay, pts[3*j], pts[3*j+2], pts[3*k], pts[3*k+2], c, d, &t1, &t2);
-			if(t1 >= 0 && t2 >= 0 && t1+t2 <= 1) {
-				float z = az+t1*(pts[3*j+1]-az)+t2*(pts[3*k+1]-az);
-				float d = (a-z)*(a-z);
-				if(dist == -1 || d<dist) {
-					dist = d;
-//                  behaviour = m_copro_data->as_u32(posd+15);
-					height = z;
-					entry = bpos+i;
-				}
-			}
-		}
-	}
-
-	m_copro_ram_data[0x0000] = 0; // non zero (ffffffff) = still searching
-	m_copro_ram_data[0x0001] = f2u(height);
-	m_copro_ram_data[0x0002] = entry;
-}
-
 TGP_FUNCTION( model1::f56 )
 {
 	float a = fifoin_pop_f();
@@ -1025,28 +834,6 @@ TGP_FUNCTION( model1::int_point )
 	fifoout_push_f(m_tgp_int_px);
 	fifoout_push_f(m_tgp_int_py);
 	fifoout_push_f(m_tgp_int_pz);
-}
-
-TGP_FUNCTION( model1::col_setcirc )
-{
-	float a = fifoin_pop_f();
-	float b = fifoin_pop_f();
-	float c = fifoin_pop_f();
-	M1_LOG(0, "TGP col_setcirc %f, %f, %f (%x)\n", a, b, c, m_pushpc);
-	m_tgp_vr_circx = a;
-	m_tgp_vr_circy = b;
-	m_tgp_vr_circrad = c;
-}
-
-TGP_FUNCTION( model1::col_testpt )
-{
-	float x, y;
-	float a = fifoin_pop_f();
-	float b = fifoin_pop_f();
-	M1_LOG(0, "TGP col_testpt %f, %f (%x)\n", a, b, m_pushpc);
-	x = a - m_tgp_vr_circx;
-	y = b - m_tgp_vr_circy;
-	fifoout_push_f(sqrtf(x*x+y*y) - m_tgp_vr_circrad);
 }
 
 TGP_FUNCTION( model1::push_and_ident )
@@ -1105,24 +892,6 @@ TGP_FUNCTION( model1::distance )
 	c -= a;
 	d -= b;
 	fifoout_push_f(sqrtf(c*c+d*d));
-}
-
-TGP_FUNCTION( model1::car_move )
-{
-	s16 a = fifoin_pop();
-	float b = fifoin_pop_f();
-	float c = fifoin_pop_f();
-	float d = fifoin_pop_f();
-	float dx, dy;
-	M1_LOG(0, "TGP car_move (%d, %f), (%f, %f) (%x)\n", a, b, c, d, m_pushpc);
-
-	dx = b*tsin(a);
-	dy = b*tcos(a);
-
-	fifoout_push_f(dx);
-	fifoout_push_f(dy);
-	fifoout_push_f(c+dx);
-	fifoout_push_f(d+dy);
 }
 
 TGP_FUNCTION( model1::cpa )
@@ -1273,41 +1042,6 @@ TGP_FUNCTION( model1::ram_setadr )
 	M1_LOG(0, "TGP f0 ram_setadr 0x%x (%x)\n", m_copro_hle_ram_scan_adr+0x8000, m_pushpc);
 }
 
-TGP_FUNCTION( model1::groundbox_test )
-{
-	int out_x, out_y, out_z;
-	float x, /*y,*/ z;
-	float a = fifoin_pop_f();
-	float b = fifoin_pop_f();
-	float c = fifoin_pop_f();
-
-	M1_LOG(0, "TGP groundbox_test %f, %f, %f (%x)\n", a, b, c, m_pushpc);
-	x = m_cmat[0]*a+m_cmat[3]*b+m_cmat[6]*c+m_cmat[9];
-	//y = m_cmat[1]*a+m_cmat[4]*b+m_cmat[7]*c+m_cmat[10];
-	z = m_cmat[2]*a+m_cmat[5]*b+m_cmat[8]*c+m_cmat[11];
-
-	out_x = x < m_tgp_vf_xmin || x > m_tgp_vf_xmax;
-	out_z = z < m_tgp_vf_zmin || z > m_tgp_vf_zmax;
-	out_y = 1; // Wrong, but untestable it seems.
-
-	fifoout_push(out_x);
-	fifoout_push(out_y);
-	fifoout_push(out_z);
-}
-
-TGP_FUNCTION( model1::f89 )
-{
-	u32 a = fifoin_pop();
-	u32 b = fifoin_pop();
-	u32 c = fifoin_pop();
-	u32 d = fifoin_pop();
-	(void)a;
-	(void)b;
-	(void)c;
-	M1_LOG(0, "TGP list set base 0x%x, 0x%x, %d, length=%d (%x)\n", a, b, c, d, m_pushpc);
-	m_copro_hle_list_length = d;
-}
-
 TGP_FUNCTION( model1::f92 )
 {
 	float a = fifoin_pop_f();
@@ -1378,45 +1112,9 @@ TGP_FUNCTION( model1::ram_trans )
 	m_cmat[11] += m_cmat[2]*a+m_cmat[5]*b+m_cmat[8]*c;
 }
 
-TGP_FUNCTION( model1::f98 )
-{
-	u32 a = fifoin_pop();
-	(void)a;
-	M1_LOG(0, "TGP load list start %d (%x)\n", a, m_pushpc);
-	m_copro_hle_active_list_length = m_copro_hle_list_length;
-	m_copro_hle_active_list_pos = 0;
-}
-
 TGP_FUNCTION( model1::f99 )
 {
 	M1_LOG(0, "TGP f99 (%x)\n", m_pushpc);
-}
-
-TGP_FUNCTION( model1::f100 )
-{
-	int i;
-	M1_LOG(0, "TGP f100 get list (%x)\n", m_pushpc);
-	for(i=0; i<m_copro_hle_list_length; i++)
-		fifoout_push_f((m_rand() % 1000)/100.0);
-}
-
-TGP_FUNCTION( model1::groundbox_set )
-{
-	float a = fifoin_pop_f();
-	float b = fifoin_pop_f();
-	float c = fifoin_pop_f();
-	float d = fifoin_pop_f();
-	float e = fifoin_pop_f();
-	float f = fifoin_pop_f();
-	float g = fifoin_pop_f();
-	M1_LOG(0, "TGP groundbox_set %f, %f, %f, %f, %f, %f, %f (%x)\n", a, b, c, d, e, f, g, m_pushpc);
-	m_tgp_vf_xmin = e;
-	m_tgp_vf_xmax = d;
-	m_tgp_vf_zmin = g;
-	m_tgp_vf_zmax = f;
-	m_tgp_vf_ygnd = b;
-	m_tgp_vf_yflr = a;
-	m_tgp_vf_yjmp = c;
 }
 
 TGP_FUNCTION( model1::f102 )
@@ -1473,159 +1171,6 @@ TGP_FUNCTION( model1::f103 )
 	m_copro_hle_ram_scan_adr = fifoin_pop() - 0x8000;
 	M1_LOG(0, "TGP f0 mve_setadr 0x%x (%x)\n", m_copro_hle_ram_scan_adr, m_pushpc);
 	ram_get_i();
-}
-
-// Addresses in daytona's and VR's TGP programs
-const struct model1::function model1::ftab_vf[] = {
-	{ &model1::fadd,            2 }, /* 0x00 */ // 0b5 09b
-	{ &model1::fsub,            2 },            // 0ba 0a0
-	{ &model1::fmul,            2 },            // 0bf 0a5
-	{ &model1::fdiv,            2 },            // 0c4 0aa
-	{ nullptr,                        0 },            // 0d2 0b9
-	{ &model1::matrix_push,     0 },            // 0e3 0cc
-	{ &model1::matrix_pop,      0 },            // 0f7 0e0
-	{ &model1::matrix_write,   12 },            // 106 0ef
-	{ &model1::clear_stack,     0 },            // 10a 0f4
-	{ &model1::matrix_mul,     12 },            // 10e 0f8
-	{ &model1::anglev,          2 },            // 154 13f
-	{ nullptr,                        0 },            // 15d 149
-	{ nullptr,                        0 },            // 19f 18a
-	{ &model1::track_select,    1 },            // 1b8 1a5
-	{ &model1::load_base,       4 },            // 1bb 1a8
-	{ &model1::anglep,          4 },            // 1c1 1ae
-
-	{ &model1::matrix_ident,    0 }, /* 0x10 */ // 1d2 1c1
-	{ &model1::matrix_read,     0 },            // 1d9 1c8
-	{ &model1::matrix_trans,    3 },            // 1dd 1d1
-	{ &model1::matrix_scale,    3 },            // 1f3 1e8
-	{ &model1::matrix_rotx,     1 },            // 20a 200
-	{ &model1::matrix_roty,     1 },            // 223 21a
-	{ &model1::matrix_rotz,     1 },            // 23b 233
-	{ nullptr,                        0 },            // 253 24c
-	{ &model1::track_read_quad, 1 },            // 2aa 2a8
-	{ nullptr,                        0 },            // 2b0 2b0
-	{ &model1::transform_point, 3 },            // 2b2 2b4
-	{ &model1::fsin_m1,         1 },            // 2cb 2d7
-	{ &model1::fcos_m1,         1 },            // 2ce 2df
-	{ &model1::fsinm_m1,        2 },            // 2d1 2e7
-	{ &model1::fcosm_m1,        2 },            // 2d7 2f1
-	{ &model1::distance3,       6 },            // 2dd 2fb
-
-	{ nullptr,                        0 }, /* 0x20 */ // 2ff 31e
-	{ nullptr,                        0 },            // 2ff 31e
-	{ nullptr,                        0 },            // 300 31f
-	{ nullptr,                        0 },            // 304 323
-	{ &model1::acc_set,         1 },            // 308 327
-	{ &model1::acc_get,         0 },            // 30a 32a
-	{ &model1::acc_add,         1 },            // 30c 32e
-	{ &model1::acc_sub,         1 },            // 311 333
-	{ &model1::acc_mul,         1 },            // 316 338
-	{ &model1::acc_div,         1 },            // 31b 33d
-	{ &model1::f42,             3 },            // 329 34b
-	{ &model1::f43,             6 },            // 36c 38f
-	{ &model1::track_read_tri,  1 },            // 3c2 3e2
-	{ &model1::fsqrt,           1 },            // 3c7 3e9
-	{ &model1::vlength,         3 },            // 3cf 3f2
-	{ nullptr,                        0 },            // 3ef 411
-
-	{ &model1::track_read_info, 1 }, /* 0x30 */ // 410 431
-	{ &model1::colbox_set,     12 },            // 413 436
-	{ &model1::colbox_test,     3 },            // 417 43b
-	{ nullptr,                        0 },            // 43b 463
-	{ nullptr,                        0 },            // 44d 478
-	{ nullptr,                        0 },            // 452 47d
-	{ &model1::track_lookup,    4 },            // 457 482
-	{ nullptr,                        0 },            // 51a 522
-	{ nullptr,                        0 },            // 521 527
-	{ nullptr,                        0 },            // 52f 535
-	{ nullptr,                        0 },            // 53d 543
-	{ nullptr,                        0 },            // 545 54c
-	{ nullptr,                        0 },            // 558 55e
-	{ nullptr,                        0 },            // 559 55f
-	{ nullptr,                        0 },            // 5c6 5cd
-	{ nullptr,                        0 },            // 5e9 5f4
-
-	{ &model1::col_setcirc,     3 }, /* 0x40 */ // 5f3 5fe
-	{ &model1::col_testpt,      2 },            // 5fa 603
-	{ nullptr,                        0 },            // 615 61e
-	{ &model1::distance,        4 },            // 631 639
-	{ nullptr,                        0 },            // 63f 648
-	{ nullptr,                        0 },            // 643 64e
-	{ nullptr,                        0 },            // 64b 657
-	{ &model1::car_move,        4 },            // 661 66e
-	{ &model1::cpa,            12 },            // 7d9
-	{ nullptr,                        0 },
-	{ &model1::vmat_store,      1 },
-	{ &model1::vmat_restore,    1 },
-	{ nullptr,                        0 },
-	{ &model1::vmat_mul,        2 },
-	{ &model1::vmat_read,       1 },
-	{ &model1::matrix_unrot,    0 },
-
-	{ &model1::f80,             0 }, /* 0x50 */
-	{ nullptr,                        0 },
-	{ &model1::matrix_rtrans,   0 },
-	{ nullptr,                        0 },
-	{ &model1::vmat_save,       1 },
-	{ &model1::vmat_load,       1 },
-	{ &model1::ram_setadr,      1 },
-	{ &model1::groundbox_test,  3 },
-	{ nullptr,                        0 },
-	{ &model1::f89,             4 },
-	{ nullptr,                        0 },
-	{ nullptr,                        0 },
-	{ &model1::f92,             4 },
-	{ &model1::f93,             1 },
-	{ &model1::f94,             1 },
-	{ &model1::vmat_flatten,    0 },
-
-	{ &model1::vmat_load1,      1 }, /* 0x60 */
-	{ &model1::ram_trans,       0 },
-	{ &model1::f98,             1 },
-	{ &model1::f99,             0 },
-	{ &model1::f100,            0 },
-	{ &model1::groundbox_set,   7 },
-	{ &model1::f102,            8 },
-	{ &model1::f103,            1 }
-};
-
-// Used in swa scene 1 and unemulated:
-//   f49_swa
-
-void model1::copro_hle_vf()
-{
-	if(m_copro_hle_active_list_length) {
-		while(m_copro_hle_active_list_pos < m_copro_hle_active_list_length && !m_copro_fifo_in->is_empty()) {
-			u32 v = m_copro_fifo_in->pop();
-			m_copro_hle_active_list_pos++;
-			M1_LOG(0, "TGP load list %d/%d: %08x\n", m_copro_hle_active_list_pos, m_copro_hle_active_list_length, v);
-		}
-		if(m_copro_hle_active_list_pos == m_copro_hle_active_list_length)
-			m_copro_hle_active_list_pos = m_copro_hle_active_list_length = 0;
-		if(m_copro_fifo_in->is_empty())
-			return;
-	}
-
- next:
-	u32 f = m_copro_fifo_in->peek(0) >> 23; // Extracts the exponent of the ieee float
-
-	//  M1_LOG(0, "function %02x size %d/%d\n", f, int(m_copro_fifo_in->size() - 1), ftab_vf[f].count);
-
-	if(f < std::size(ftab_vf) && ftab_vf[f].cb != nullptr) {
-		unsigned np = ftab_vf[f].count;
-		if(m_copro_fifo_in->size() >= np+1) {
-			m_copro_fifo_in->pop();
-			m_tgp_calls[f]++;
-			(this->*ftab_vf[f].cb)();
-			if(!m_copro_fifo_in->is_empty())
-				goto next;
-		}
-
-	} else {
-		M1_LOG(0, "TGP function %d unimplemented (%x)\n", f, m_pushpc);
-		m_tgp_missing[f]++;
-		m_copro_fifo_in->pop();
-	}
 }
 
 u16 model1::v60_copro_ram_adr_r(offs_t offset, u16 mem_mask)

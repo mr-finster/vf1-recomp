@@ -1,75 +1,131 @@
-// The players' controls: keys and pad buttons for each of VF's moves, and which pad each player
-// holds. Edited in the menu (Controls), kept in settings.ini.
+// The players' controls: keys and pad buttons for each game's moves, analog axes, and chosen pads.
+// Edited in the menu (Controls), kept in settings.ini. Each game says what its controls are (a
+// control_profile: src/games/<game>/controls.h).
 #pragma once
 #include <SDL3/SDL.h>
+#include "../games/game.h"
+#include <algorithm>
+#include <array>
+#include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
+// The host's own controls (the directions, which the d-pad and left stick also give, and the
+// cabinet's Start, Coin and Menu), and button slots each game names for its own (its labels and
+// settings.ini names: src/games/<game>/controls.h, as game::vf::C_PUNCH = C_BUTTON_2).
 enum control_action {
-	C_UP, C_DOWN, C_LEFT, C_RIGHT, C_GUARD, C_PUNCH, C_KICK,
-	C_GUARD_PUNCH, C_PUNCH_KICK, C_GUARD_KICK, C_ALL_THREE, C_START, C_COIN, C_MENU, C_COUNT
+	C_UP, C_DOWN, C_LEFT, C_RIGHT,
+	C_BUTTON_1, C_BUTTON_2, C_BUTTON_3, C_BUTTON_4, C_BUTTON_5, C_BUTTON_6, C_BUTTON_7, C_BUTTON_8, C_BUTTON_9,
+	C_START, C_COIN, C_MENU, C_COUNT
 };
 inline const char *const CONTROL_NAMES[C_COUNT] = {
-	"Up", "Down", "Left", "Right", "Guard", "Punch", "Kick",
-	"Guard + Punch", "Punch + Kick", "Guard + Kick", "All three", "Start", "Coin", "Menu" };
+	"Up", "Down", "Left", "Right",
+	"Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6", "Button 7", "Button 8", "Button 9",
+	"Start", "Coin", "Menu" };
 inline const char *const CONTROL_KEYS[C_COUNT] = {
-	"up", "down", "left", "right", "guard", "punch", "kick",
-	"guard_punch", "punch_kick", "guard_kick", "all_three", "start", "coin", "menu" };
+	"up", "down", "left", "right",
+	"button_1", "button_2", "button_3", "button_4", "button_5", "button_6", "button_7", "button_8", "button_9",
+	"start", "coin", "menu" };
 
 // Pad controls: an SDL gamepad button, or one of the triggers.
 enum { PAD_NONE = -1, PAD_LT = 100, PAD_RT = 101 };
 
+// What a game makes of the controls (src/games/<game>/controls.h): the shared host reads the
+// keyboard and pads through it, and the Controls menu shows it.
+struct control_profile
+{
+	game::id title;                                   // (its I/O profile: the analog axes' defaults)
+	std::array<const char *, C_COUNT> labels{};       // the menu's names; none: the game has no such control
+	std::array<const char *, C_COUNT> names{};        // settings.ini's key_<name> and pad_<name>; none: CONTROL_KEYS
+	std::array<const char *, C_COUNT> key_names{};    // key_<name> when it isn't name()
+	std::array<uint8_t, C_COUNT> bits{};              // the player's input byte's bits it presses (active high)
+	std::array<uint8_t, 2> start_bits{};              // each player's start button in the system byte
+	std::array<std::array<SDL_Scancode, C_COUNT>, 2> keys{};   // the defaults, per player
+	std::array<int, C_COUNT> pad;                     // (PAD_NONE until set)
+	std::vector<int> pad_actions;                     // the pad buttons page's, in order (those with bits play)
+	// a key renamed in settings.ini: read from its old name when the new one isn't there, `was` then `now`
+	struct renamed_key { int action; const char *old_name; SDL_Scancode was, now; };
+	std::vector<renamed_key> renamed_keys;
+	// keys on the I/O board's analog channels (player 1): `low`'s key gives 0, `high`'s 255
+	// (-1: none); `dpad`: the d-pad's left and right as well
+	struct analog_key { int channel, low, high; bool dpad; };
+	std::vector<analog_key> analog_keys;
+	const char *pad_page_help = "";                   // after each pad button's help
+	const char *pad_buttons_help = "";                // the player page's Pad buttons
+	const char *analog_help = "";                     // each analog axis
+
+	control_profile() { pad.fill(PAD_NONE); }
+	// a control the game has: its menu label (none: CONTROL_NAMES) and settings name (none: CONTROL_KEYS)
+	void add(int action, const char *label = nullptr, const char *name = nullptr)
+	{
+		labels[action] = label ? label : CONTROL_NAMES[action];
+		names[action] = name;
+	}
+	bool visible(int action) const { return labels[action] != nullptr; }
+	const char *label(int action) const { return labels[action] ? labels[action] : CONTROL_NAMES[action]; }
+	const char *name(int action) const { return names[action] ? names[action] : CONTROL_KEYS[action]; }
+	const char *key_name(int action) const { return key_names[action] ? key_names[action] : name(action); }
+};
+
 struct player_controls
 {
-	SDL_Scancode key[C_COUNT];
-	int pad[C_COUNT];                  // the d-pad and left stick always move as well
+	SDL_Scancode key[C_COUNT] = {};
+	int pad[C_COUNT] = {};
+	std::array<game::host_axis, 8> analog_axis{
+		game::host_axis::none, game::host_axis::none, game::host_axis::none, game::host_axis::none,
+		game::host_axis::none, game::host_axis::none, game::host_axis::none, game::host_axis::none
+	};
 	std::string pad_choice = "auto";   // "auto" (the next free pad), "none", or a pad's GUID
 
-	static player_controls defaults(int player)
+	static player_controls defaults(int player, const control_profile &profile)
 	{
 		player_controls c;
-		static const SDL_Scancode k1[C_COUNT] = {
-			SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
-			SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_C,
-			SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_1, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN };
-		static const SDL_Scancode k2[C_COUNT] = {
-			SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
-			SDL_SCANCODE_B, SDL_SCANCODE_N, SDL_SCANCODE_M,
-			SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_2, SDL_SCANCODE_UNKNOWN, SDL_SCANCODE_UNKNOWN };
-		// Saturn layout: A guard, B punch, C kick on the west, south and east buttons
-		static const int pad[C_COUNT] = {
-			PAD_NONE, PAD_NONE, PAD_NONE, PAD_NONE,
-			SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
-			SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,
-			PAD_RT, SDL_GAMEPAD_BUTTON_START, PAD_NONE, SDL_GAMEPAD_BUTTON_BACK };   // (Coin: none; Menu: View tapped)
 		for (int a = 0; a < C_COUNT; a++) {
-			c.key[a] = (player ? k2 : k1)[a];
-			c.pad[a] = pad[a];
+			c.key[a] = profile.keys[player ? 1 : 0][a];
+			c.pad[a] = profile.pad[a];
 		}
+		c.analog_axis = game::get_io_profile(profile.title).host_axis_defaults;
 		return c;
 	}
 
-	void load(const std::map<std::string, std::string> &kv, int player)
+	void load(const std::map<std::string, std::string> &kv, int player, const control_profile &profile)
 	{
 		const std::string p = player ? "p2_" : "p1_";
 		for (int a = 0; a < C_COUNT; a++) {
-			auto k = kv.find(p + "key_" + CONTROL_KEYS[a]);
-			if (k != kv.end()) key[a] = k->second == "none" ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(k->second.c_str());
-			auto b = kv.find(p + "pad_" + CONTROL_KEYS[a]);
+			if (!profile.visible(a)) continue;
+			auto k = kv.find(p + "key_" + profile.key_name(a));
+			const control_profile::renamed_key *renamed = nullptr;
+			if (k == kv.end())
+				for (const auto &r : profile.renamed_keys)
+					if (r.action == a && (k = kv.find(p + "key_" + r.old_name)) != kv.end()) { renamed = &r; break; }
+			if (k != kv.end()) {
+				key[a] = k->second == "none" ? SDL_SCANCODE_UNKNOWN : SDL_GetScancodeFromName(k->second.c_str());
+				if (renamed && key[a] == renamed->was) key[a] = renamed->now;
+			}
+			auto b = kv.find(p + "pad_" + profile.name(a));
 			if (b != kv.end()) pad[a] = pad_from_name(b->second);
+		}
+		for (size_t channel = 0; channel < analog_axis.size(); channel++) {
+			auto a = kv.find(p + "analog_" + std::to_string(channel));
+			if (a != kv.end()) analog_axis[channel] = axis_from_name(a->second);
 		}
 		auto c = kv.find(p + "pad");
 		if (c != kv.end()) pad_choice = c->second;
 	}
 
-	void save(FILE *f, int player) const
+	void save(FILE *f, int player, const control_profile &profile) const
 	{
 		const char *p = player ? "p2_" : "p1_";
 		fprintf(f, "%spad = %s\n", p, pad_choice.c_str());
 		for (int a = 0; a < C_COUNT; a++)
-			fprintf(f, "%skey_%s = %s\n", p, CONTROL_KEYS[a], key[a] ? SDL_GetScancodeName(key[a]) : "none");
-		for (int a = C_GUARD; a < C_COUNT; a++)
-			fprintf(f, "%spad_%s = %s\n", p, CONTROL_KEYS[a], pad_save_name(pad[a]).c_str());
+			if (profile.visible(a))
+				fprintf(f, "%skey_%s = %s\n", p, profile.key_name(a), key[a] ? SDL_GetScancodeName(key[a]) : "none");
+		for (int a = 0; a < C_COUNT; a++)
+			if (profile.visible(a))
+				fprintf(f, "%spad_%s = %s\n", p, profile.name(a), pad_save_name(pad[a]).c_str());
+		for (size_t channel = 0; channel < analog_axis.size(); channel++)
+			fprintf(f, "%sanalog_%zu = %s\n", p, channel, axis_save_name(analog_axis[channel]));
 	}
 
 	static bool pad_down(SDL_Gamepad *g, int code)
@@ -78,6 +134,56 @@ struct player_controls
 		if (code == PAD_LT) return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000;
 		if (code == PAD_RT) return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000;
 		return SDL_GetGamepadButton(g, SDL_GamepadButton(code));
+	}
+
+	static const char *axis_label(game::host_axis axis)
+	{
+		switch (axis) {
+		case game::host_axis::left_x: return "Left stick X";
+		case game::host_axis::left_y: return "Left stick Y";
+		case game::host_axis::right_x: return "Right stick X";
+		case game::host_axis::right_y: return "Right stick Y";
+		case game::host_axis::left_trigger: return "Left trigger";
+		case game::host_axis::right_trigger: return "Right trigger";
+		default: return "-";
+		}
+	}
+
+	static game::host_axis axis_from_event(SDL_GamepadAxis axis)
+	{
+		switch (axis) {
+		case SDL_GAMEPAD_AXIS_LEFTX: return game::host_axis::left_x;
+		case SDL_GAMEPAD_AXIS_LEFTY: return game::host_axis::left_y;
+		case SDL_GAMEPAD_AXIS_RIGHTX: return game::host_axis::right_x;
+		case SDL_GAMEPAD_AXIS_RIGHTY: return game::host_axis::right_y;
+		case SDL_GAMEPAD_AXIS_LEFT_TRIGGER: return game::host_axis::left_trigger;
+		case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER: return game::host_axis::right_trigger;
+		default: return game::host_axis::none;
+		}
+	}
+
+	static int axis_value(SDL_Gamepad *g, game::host_axis axis)
+	{
+		if (!g) return 0;
+		switch (axis) {
+		case game::host_axis::left_x: return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTX);
+		case game::host_axis::left_y: return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTY);
+		case game::host_axis::right_x: return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_RIGHTX);
+		case game::host_axis::right_y: return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_RIGHTY);
+		case game::host_axis::left_trigger: return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+		case game::host_axis::right_trigger: return SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+		default: return 0;
+		}
+	}
+
+	static uint8_t analog_value(int raw, game::analog_kind kind, uint8_t neutral)
+	{
+		if (kind == game::analog_kind::pedal) {
+			const int value = std::clamp(raw, 0, 32767);
+			return uint8_t(neutral + (value * (255 - neutral) + 16383) / 32767);
+		}
+		const int value = std::clamp(raw, -32768, 32767) + 32768;
+		return uint8_t((value * 255 + 32767) / 65535);
 	}
 
 	// For people: the Xbox-style names most pads (and the Deck) print.
@@ -111,6 +217,26 @@ struct player_controls
 	}
 
 private:
+	static const char *axis_save_name(game::host_axis axis)
+	{
+		switch (axis) {
+		case game::host_axis::left_x: return "left_x";
+		case game::host_axis::left_y: return "left_y";
+		case game::host_axis::right_x: return "right_x";
+		case game::host_axis::right_y: return "right_y";
+		case game::host_axis::left_trigger: return "left_trigger";
+		case game::host_axis::right_trigger: return "right_trigger";
+		default: return "none";
+		}
+	}
+	static game::host_axis axis_from_name(const std::string &name)
+	{
+		for (game::host_axis axis : { game::host_axis::left_x, game::host_axis::left_y,
+									  game::host_axis::right_x, game::host_axis::right_y,
+									  game::host_axis::left_trigger, game::host_axis::right_trigger })
+			if (name == axis_save_name(axis)) return axis;
+		return game::host_axis::none;
+	}
 	static std::string pad_save_name(int code)
 	{
 		if (code == PAD_NONE) return "none";

@@ -1,285 +1,73 @@
-<p align="center"><img src="assets/icon/icon.png" alt="Virtua Fighter Recomp" width="160"></p>
+# Model 1 Recomp
 
-<h1 align="center">Virtua Fighter Recomp</h1>
+This project reimplements Sega's Model 1 arcade hardware as a native desktop runtime. The Model 1 was used by
+multiple games; this repository currently supports Virtua Fighter and has experimental Virtua Racing support.
 
-<p align="center"><b>Virtua Fighter (SEGA, arcade, Model 1, 1993) as a native PC game: the arcade's own V60 code,
-recompiled to native code, with render scales up to 6x, widescreen and smooth motion at any refresh rate.</b></p>
+## Games
 
-<p align="center">
-  <a href="https://github.com/mr-finster/vf1-recomp/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/mr-finster/vf1-recomp?label=release"></a>
-  <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Steam%20Deck%20%2F%20Linux-informational">
-</p>
+| Game | Support | Documentation |
+| --- | --- | --- |
+| Virtua Fighter | Native V60 recompilation; desktop releases for macOS, Windows, and Steam Deck / Linux | [Virtua Fighter guide](src/games/vf/README.md) |
+| Virtua Racing | Interpreter build, with an experimental native-recompilation path | [Virtua Racing guide](src/games/vr/README.md) |
 
-<p align="center">
-  <a href="https://vf1-recomp.pages.dev/">Play</a> ·
-  <a href="https://github.com/mr-finster/vf1-recomp/releases/latest">Download</a> ·
-  <a href="https://youtu.be/mHrTyikhkyg">Trailer</a> ·
-  <a href="https://youtu.be/yranppHYl7A">Secret characters</a> ·
-  <a href="#status">Status</a> ·
-  <a href="#controls">Controls</a> ·
-  <a href="https://github.com/mr-finster/vf1-recomp/issues">Report a bug</a>
-</p>
+Each game requires the player's own MAME ROM set. No game ROMs or ROM-derived program code are included.
 
-<p align="center">
-  <a href="https://vf1-recomp.pages.dev/img/montage.jpg?v=2"><img src="https://vf1-recomp.pages.dev/img/montage.jpg?v=2" alt="Virtua Fighter Recomp at 3x: fights on five stages and the widescreen player select" width="800"></a>
-</p>
+## Shared Model 1 implementation
 
-<p align="center">
-  <a href="https://youtu.be/mHrTyikhkyg"><img src="https://img.youtube.com/vi/mHrTyikhkyg/maxresdefault.jpg" alt="Watch the trailer" width="395"></a>
-  <a href="https://youtu.be/yranppHYl7A"><img src="https://img.youtube.com/vi/yranppHYl7A/maxresdefault.jpg" alt="Watch the secret characters trailer" width="395"></a>
-  <br><sub>Trailer · Secret characters (click to watch on YouTube)</sub>
-</p>
+The shared runtime models the Model 1 board around its main NEC V60 CPU: the Fujitsu MB86233 geometry
+coprocessor (TGP), polygon rasterizer, System 24 tile layers, sound board, and I/O board. The V60 interpreter,
+TGP core, and much of the machine implementation are based on MAME. The SDL 3 host supplies the window, input,
+audio, saves, and menus.
 
-> [!IMPORTANT]
-> No game files are included: no ROMs and nothing made from them. You need your own dump of the game as MAME's
-> `vf` set (`vf.zip`). It is read on your computer, and the game's code is recompiled there when it starts.
-> An unofficial fan project, not made, approved or supported by SEGA, and not affiliated with it.
+The CPU renderer reproduces the arcade's 1x picture. Optional higher render scales, antialiasing, and GPU rendering
+are host-side features. On supported systems, the GPU renderer is checked against the CPU renderer and falls back
+to the CPU if it detects a difference or error.
 
-## About
+The recompiler translates the V60 program at startup using an address-only function map and SLJIT. It reads the
+game program from the user's ROM set; ROM bytes are not shipped. The developer-only ahead-of-time path emits C++
+from analyzed V60 functions and keeps ROM-derived output under `build/`.
 
-Virtua Fighter Recomp runs the arcade game's own NEC V60 program, recompiled to native code on your machine from
-your `vf.zip`, and reimplements the rest of the Model 1 board around it: the TGP geometry coprocessor, the polygon
-rasterizer, the tile layers, the sound board and the I/O board, from MAME's work on the Model 1. At 1x you get the
-arcade's frames pixel for pixel; above it, render scales up to 6x, widescreen and ultrawide, and smooth motion at
-your screen's refresh rate.
+## Build and test
 
-## Status
+Development requires a C++20 compiler, zlib, SDL 3, and FreeType. On macOS, install the latter dependencies with
+`brew install sdl3 freetype`. Virtua Fighter and Virtua Racing have separate build instructions in their guides.
+Every game has the same make targets, made from its `src/games/<game>/game.mk`: `<game>`, `<game>-native`,
+`<game>-regions`, `<game>-coverage`, `<game>-static`, `<game>-lockstep`, and `<game>-native-lockstep`.
 
-| Area | State |
-| --- | --- |
-| The arcade's V60 program, recompiled to native code | Working |
-| TGP, rasterizer, tile layers, sound and I/O boards | Working: reimplemented from MAME's Model 1 code |
-| Render scale up to 6x, widescreen and ultrawide, smooth motion | Working |
-| The 3D drawn on the GPU (Display > 3D renderer: Auto, GPU or CPU) | Working on macOS (Metal), Windows (Direct3D 12 or Vulkan) and Steam Deck / Linux (Vulkan): the same picture as the CPU's, checked when the game starts; Auto uses the GPU unless it's clearly slower, and any difference or error falls back to the CPU |
-| Sarah's stage lighting (the light from below pulsing with the floor) | Working, as on the cabinet |
-| Portable mode, your own ROM folder | Working |
-| Menu, keyboard and gamepads, two players | Working |
-| macOS, Windows, Steam Deck / x86-64 Linux | Working |
-| Painted widescreen sides for the title and player select | Working in the downloads; not in this repository (4:3 without them) |
-| Secret characters and cheats (menu > Cheats) | Working: see below |
-| Online play | Not yet |
+Useful shared checks:
 
-## Secret characters
-
-Menu > Cheats > **Secret character** puts a fighter cut from the arcade ROM in Akira's spot on the player select:
-Siba (Majido), Jeff, Takeru (the early Akira), the Koskol brothers Rekka, Score and Aeon, and Dural. They were never
-finished (borrowed moves, no throws), so expect oddities.
-
-**Portraits and icons made from the game's own models.** Only Siba ever got select art; the rest had none, so the
-select screen showed Akira's (or nothing). Each one now has a portrait and an icon drawn from its real 3D head in the
-ROM, by the game's own renderer:
-
-- **Portraits:** the game's select screen draws a live 3D head in a camera of its own per character. The ones without
-  a portrait get one built from their fight head, and each has its own camera, found by rendering every head against
-  the cast's and measuring: the eyes at the same height, the face in the middle, the head the same size, the neck off
-  the bottom. Dural's is also turned to face the way the others do.
-- **Icons:** the select row's icons are flat pixel art, not 3D. Each new one is the character's head rendered by the
-  game at a three-quarter turn, then fitted to Akira's real icon: the same framing and scale (found by matching a render
-  of Akira's head to his icon), the same brightness, and cut down to 12 colours in his frame, so it sits in the row
-  like the originals. While one is in Akira's spot, the game's tiles for his icon are swapped for it, and put back
-  after. The tools are in `tools/icons`; the icons ship with the downloads, not in this repository.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/fe3dc5a5-1e77-413d-8c21-c08bcd572c8c" alt="The secret characters in action at 3x: Dural, Siba, Jeff, Takeru and Rekka on five stages, and Jeff on the player select" width="800">
-</p>
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/eb2039b9-087b-4d73-8241-af9e0a29efda" alt="The cast's select portraits, and the secret characters' below" width="800">
-</p>
-
-| Character | Select screen | Health bar | Notes |
-| --- | --- | --- | --- |
-| Siba (Majido) | Own portrait, icon and profile; named MAJIDO (P1) or SHIIBA (P2) | MAJIDO | The most complete of them. His pounce is Lau's: his own had no jump in its data and flew him across the ring |
-| Jeff | Own portrait and profile, a made icon; named JEFFERY | JEFF | A handful of Jacky's moves; his hat and shades can be knocked off |
-| Takeru | Akira's name and profile, a made icon | AKIRA | The early Akira, in Akira's headband |
-| Rekka | Made portrait (no blinking) and icon; Akira's name and profile | DURAL | Rekka and Score share a head |
-| Score | Made portrait (no blinking) and icon; Akira's name and profile | DURAL | Looks like Rekka |
-| Aeon | Made portrait (no blinking) and icon; Akira's name and profile | DURAL | |
-| Dural | Made portrait (no blinking) and icon; Akira's name and profile | DURAL | |
-
-They take Akira's place, so arcade mode's CPU Akira is them too, and Akira can't be picked while one is on. The rest
-of Cheats: infinite energy (player 1, 2 or both), one-hit KO, no time limit, and a tiny or huge ring.
-
-### Who they were
-
-From [The Cutting Room Floor](https://tcrf.net/Virtua_Fighter_(Arcade)), whose research (and mountainmanjed's MAME
-cheats) these come from:
-
-- **Siba (Majido Ab Dul)**: seen in pre-release screenshots and on the international cabinet's artwork, as "Shiiba"
-  (on some cabinets mislabelled Akira). Renamed Majido before he was cut, late: he is the only one with his own select
-  icon and voice clips, recorded like the final cast's. His moves are borrowed from Sarah and Lau. He came back as a
-  hidden character, Siba, in Fighters Megamix.
-- **Jeff (Jeffery Buckman)**: a soldier in camo, a cap and shades. His name is likely a tribute to VF1 staff member
-  Jeffrey Buchanan, and "Jeffery" later went to Jeffry; finish the game with him and the rankings call him WILLIE,
-  Jeffry's early name. He looks remarkably like Tekken 2's Prototype Jack, from many of the same designers.
-- **Takeru (Takeru Ryushoji)**: listed just before Akira in the game's character table and fighting under Akira's name,
-  most likely Akira's early design, but with his own unused bio and nameplate, and TAKERU on the rankings when you
-  finish with him. (Akira himself was once Akira Ryuzaki.)
-- **The Koskol brothers, Rekka, Score and Aeon**: listed just after Akira, with Dural's name and moves. Early design
-  documents name them as the game's three final bosses, perhaps meant to be fought a round each; with the same moves
-  and IDs, they're in effect one character with three outfits.
-- **Dural**: the game's real final boss, never selectable. An early, unused select screen in the code has a portrait
-  for Dural (and one for a Koskol brother), so she may once have been meant to be playable.
-
-## Play
-
-From the [latest release](https://github.com/mr-finster/vf1-recomp/releases/latest), or the
-[site](https://vf1-recomp.pages.dev/):
-
-| System | Download |
-| --- | --- |
-| macOS 11+ (Apple silicon and Intel) | `VirtuaFighterRecomp-mac.zip` |
-| Windows 10 or 11 (64-bit) | `VirtuaFighterRecomp-windows.zip` |
-| Steam Deck / x86-64 Linux | `VirtuaFighterRecomp-deck.tar.gz` |
-
-**Mac and Windows**
-
-1. Unzip it (Mac: move **Virtua Fighter Recomp** to Applications; Windows: the VirtuaFighter folder anywhere, not inside Program Files).
-2. Open it (Windows: `VirtuaFighter.exe`).
-3. Choose your `vf.zip` when it asks. A copy is kept, so you only do this once.
-
-**Steam Deck**
-
-1. Copy the download to the Deck (e.g. Downloads) and unpack it there: in Desktop Mode, right-click it in the file
-   manager > Extract > Extract archive here. (Unpacking on Windows, or copying the folder through a USB stick, can
-   lose the files' permissions, and then nothing launches.)
-2. Put your `vf.zip` in the `VirtuaFighter/roms` folder.
-3. Desktop Mode: Steam > Games > Add a Non-Steam Game to My Library > Browse, set the file type filter to "All
-   files", pick the `vf` file in the VirtuaFighter folder, Add Selected Programs. In its Properties, set Start In to
-   the VirtuaFighter folder (e.g. `/home/deck/Downloads/VirtuaFighter/`), and under Compatibility leave "Force the
-   use of a specific Steam Play compatibility tool" off: it's a native Linux game, and Proton stops it launching.
-4. Back in Game Mode, launch it from your Library with the default Gamepad layout.
-
-The Windows download also runs on the Deck under Proton (add `VirtuaFighter.exe` instead, with Proton forced on),
-but the native Linux build above is the one to use.
-
-**Portable mode:** put a file named `portable.txt` next to the program (Windows: beside `VirtuaFighter.exe`; Mac:
-beside the app, in the same folder; Steam Deck / Linux: in the VirtuaFighter folder) and the game keeps everything in
-that folder: settings, saves, screenshots, `log.txt` and the copy of your `vf.zip` (in its `roms` folder), with
-nothing in your user data folder (`%APPDATA%`, `~/Library/Application Support`, `~/.local/share`).
-
-**Your own ROM folder** (e.g. Batocera's `/userdata/roms/ports/vf`, or any folder an update won't touch): start the
-game with `--roms <folder>` (or `--roms=<folder>`), set the environment variable `VF_ROMS`, or add
-`roms_folder = <folder>` to `settings.ini`; the command line wins, then `VF_ROMS`, then `settings.ini`. `~` is your home
-folder, and a relative path in `settings.ini` is from its folder. The game looks there first for `vf.zip` (and `model1io.zip`, if you have it) and
-only reads it (no copy is kept anywhere else); `log.txt` names the folder it used. If the zip isn't there, the log
-says where it looked and the game carries on as without the option; a zip you then choose with the file picker is
-copied into your ROM folder, so the next start finds it there. Examples: Windows `VirtuaFighter.exe --roms "D:\ROMs\vf"`;
-Mac `open "Virtua Fighter Recomp.app" --args --roms ~/ROMs/vf`; Linux / Batocera
-`./VirtuaFighter.sh --roms /userdata/roms/ports/vf`.
-
-> [!NOTE]
-> The Mac and Windows builds aren't signed. On macOS, open it once, close the message, then System Settings >
-> Privacy & Security > Open Anyway. On Windows, if SmartScreen warns, choose More info > Run anyway.
-
-## Controls
-
-Change them in the menu (<kbd>Esc</kbd>, or View / Select on a pad).
-
-| Key | Does |
-| --- | --- |
-| <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> | Player 1: move |
-| <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> | Player 1: guard, punch, kick |
-| <kbd>1</kbd> | Player 1: start |
-| <kbd>I</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> | Player 2: move |
-| <kbd>B</kbd> <kbd>N</kbd> <kbd>M</kbd> | Player 2: guard, punch, kick |
-| <kbd>2</kbd> | Player 2: start |
-| <kbd>Esc</kbd> | Menu: display (render scale, picture shape, antialiasing, 3D renderer...), sound, game, controls, cheats (the unused characters), quit |
-| <kbd>P</kbd> | Pause |
-| <kbd>F3</kbd> | Reset |
-| <kbd>F5</kbd> / <kbd>F6</kbd> | Render scale / picture shape |
-| <kbd>F9</kbd> | Frame timings |
-| <kbd>F11</kbd> | Fullscreen |
-| <kbd>F12</kbd> | Screenshot |
-
-Gamepad (Xbox layout): d-pad or stick to move, X guard, A punch, B kick, Y guard + punch (throws), RB punch + kick,
-LB guard + kick, RT all three, Start to start. View (tap), L3 + R3 or the touchpad click opens the menu (Menu can be
-moved in Controls); View + LB / RB change the render scale / picture shape. In Arcade mode, set Coin in Controls (View
-works) for a coin button.
-
-## How it works
-
-When it starts, the game's V60 program from your `vf.zip` is recompiled to native code with SLJIT
-(`src/rt/native.cpp`), guided by `assets/vf_map.txt`: a list of where the program's functions start, addresses only,
-no bytes from the ROM. Around it runs a reimplementation of the Model 1 board: memory map and interrupts, the
-Fujitsu MB86233 TGP, the rasterizer, the System 24 tile chip, the sound board (68000, MultiPCM, YM3438) and the I/O
-board, all from MAME's code. An SDL 3 host draws the picture at any scale and shape and fills in the frames between
-the arcade's for smooth motion.
-
-The 3D can also be drawn on the GPU (`src/gpu`): Metal on a Mac, and SDL_GPU compute (Direct3D 12 or Vulkan) on
-Windows and Linux. The GPU doesn't use the usual depth buffer: the polygons are drawn in the game's own order, the
-order standing in for depth, by a compute rasteriser that follows the CPU renderer's arithmetic step for step
-(integer division, no fused multiply-adds, float-to-integer conversion as on x86), so its picture is the CPU's pixel
-for pixel. When the game starts it draws a test scene both ways and compares them, then checks its first pictures of
-the game itself; any difference, error or missing driver and it uses the CPU for that run. Auto (the default)
-then picks the GPU unless it's clearly slower than the CPU on that machine.
+```sh
+make test-model1io-adc
+make test-vf-profile test-vr-profile test-vr-gameplay test-vr-tgp-track
+```
 
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| `src/core` | the NEC V60 interpreter and the Fujitsu MB86233 (TGP) core, from MAME |
-| `src/machine` | Model 1: memory map, interrupts, TGP, rasterizer, tile chip, sound and I/O boards, smooth motion |
-| `src/rt` | the recompiler's runtime, and the recompile done on the player's machine (SLJIT) |
-| `src/host` | the SDL 3 host: window, input, pacing, the RmlUi menu |
-| `src/gpu` | the GPU renderer for the 3D: Metal (`gpu3d_metal.mm`), SDL_GPU (`gpu3d_sdlgpu.cpp`), its HLSL compute shaders (`gpu3d.hlsl`) and their compiled SPIR-V / DXIL (`gpu3d_shaders.h`) |
-| `tools/gpu/shaders.sh` | compiles `gpu3d.hlsl` into `gpu3d_shaders.h` with DXC |
-| `assets/` | `vf_map.txt` (function addresses), the app icon, the menu (`ui/`) and its font |
-| `third_party/` | MAME code, Musashi, ymfm, SLJIT, the Z80 core, RmlUi, GLM, stb_image |
-| `tools/recomp` | the ahead-of-time recompiler (V60 to C++), for development |
-| `tools/port` | the script that ported MAME's TGP and rasterizer |
-| `tools/*.cpp`, `tools/romset.py` | region builder, disassembler, headless runner, lockstep checker, coverage |
-| `tools/mac`, `tools/win`, `tools/deck`, `tools/release` | the release packages and their licence notices |
-| `tools/site` | the download site |
+| `src/core` | NEC V60 interpreter and Fujitsu MB86233 (TGP) core |
+| `src/machine` | Shared Model 1 memory map, interrupts, TGP, rasterizer, tile chip, sound and I/O boards |
+| `src/rt` | Recompiler runtime and startup native recompilation |
+| `src/host` | SDL 3 host, input, pacing, and RmlUi menu |
+| `src/games/vf`, `src/games/vr` | Title profiles and game-specific behavior |
+| `assets/games/vf`, `assets/games/vr` | Each game's address map, icon and other artwork |
+| `src/gpu` | Metal and SDL_GPU renderers and shaders |
+| `tools/recomp` | Ahead-of-time V60-to-C++ recompiler |
+| `tools/mac`, `tools/win`, `tools/linux` | Each platform's `package.sh [game ...]`: the downloads, the same for every game |
+| `tools/release` | What the platforms share: game settings (`games.sh`), third-party sources (`deps.sh`), `LICENSES.txt` |
+| `tools/games/<game>/release` | A game's download settings (`game.sh`), READMEs and launcher |
+| `tools/games/vf/site` | Virtua Fighter's download page (`build.py` builds it into `build/site`) |
 
-## Run it yourself
+## Project notes
 
-Needs a C++20 compiler, zlib, SDL 3 and FreeType (Mac: `brew install sdl3 freetype`).
+- [How it was made and validated](docs/HOW-IT-WAS-MADE.md)
+- [Virtua Fighter-specific documentation](src/games/vf/README.md)
+- [Virtua Racing-specific documentation](src/games/vr/README.md)
 
-```
-make native            # build/bin/vf-native: the game, recompiled from your vf.zip when it starts
-build/bin/vf-native
-```
+## Credits and licence
 
-The release packages: `tools/mac/package.sh` (Mac, universal), `tools/win/build.sh` (Windows, cross-compiled with
-MinGW-w64), `tools/deck/build.sh` (Steam Deck / x86-64 Linux, in Valve's Steam Runtime "sniper" SDK container).
-They also take `assets/backgrounds/` (painted widescreen sides for the title and player select screens), which
-isn't in this repository: the game runs without it, and those two screens are then shown 4:3.
+The project incorporates work from MAME, Musashi, ymfm, SLJIT, the Z80 core, RmlUi, GLM, stb_image, SDL 3, and
+FreeType. `tools/release/licenses.sh` gathers the third-party notices for distribution packages.
 
-For development, the V60 code can also be recompiled ahead of time to C++ (kept in `build/`, never committed):
-`python3 tools/romset.py roms/vf.zip build/vf roms/model1io.zip`, then `make` builds `build/bin/vf`. `make rec`
-builds `vflock`, which runs MAME's V60 interpreter and the recompiled code side by side and compares every register
-at every scanline.
-
-## How it's made
-
-Made with the help of AI coding tools. Every build is checked against the arcade: the recompiled code runs side by
-side with an interpreter of the original code, and both are compared frame by frame with MAME's pictures, RAM and
-sound.
-
-The whole story, with how the AI-assisted work was organised and checked: [docs/HOW-IT-WAS-MADE.md](docs/HOW-IT-WAS-MADE.md).
-
-## Credits
-
-Built on MAME's work on the Model 1: the V60 core and disassembler (Farfetch'd, R. Belmont), the TGP, the
-rasterizer, the System 24 tile chip and the machine (Olivier Galibert), the MultiPCM (Miguel Angel Horna) and the
-sound board (R. Belmont), all BSD-3-Clause. Also Musashi (Karl Stenerud, MIT), ymfm (Aaron Giles, BSD-3-Clause),
-SLJIT (Zoltan Herczeg, BSD-2-Clause), the Z80 core (Nicolas Allemand, MIT), RmlUi (MIT), GLM (MIT), stb_image
-(Sean Barrett, public domain / MIT), SDL 3 (zlib), FreeType (FreeType License) and the Barlow Condensed font (SIL
-Open Font License). `tools/release/licenses.sh` gathers their notices for the downloads.
-
-Thanks to everyone who tested and reported: [svera](https://github.com/svera) (portable mode, the unused
-characters), [terryarcade](https://github.com/terryarcade), [chocolatelily-0716](https://github.com/chocolatelily-0716),
-[vmicka72](https://github.com/vmicka72) and [aadsasdasd](https://github.com/aadsasdasd). The secret characters come
-from mountainmanjed's MAME cheats, documented on [The Cutting Room Floor](https://tcrf.net/Virtua_Fighter_(Arcade)).
-
-Virtua Fighter is SEGA's. This project is not affiliated with or endorsed by SEGA.
-
-## Licence
-
-MIT for this project's own code: see [LICENSE](LICENSE). Code from MAME keeps its BSD-3-Clause licence and notices;
-the rest of `third_party/` keeps its own.
-
-## Support
-
-If you enjoy it, you can [buy me a coffee](https://buymeacoffee.com/mrfinster).
+The project's own code is MIT-licensed: see [LICENSE](LICENSE). Third-party components retain their respective
+licences. This project is not affiliated with or endorsed by Sega.

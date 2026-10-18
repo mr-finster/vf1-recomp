@@ -29,7 +29,7 @@ static int s_last_count = 0;           // the polygons in the last pass that not
 int model1::s_depth_w = 0;
 int model1::s_depth_pass = 0;
 thread_local int model1::s_cur_quad = 0;
-thread_local bool model1::s_cur_fshadow = false;
+thread_local bool model1::s_cur_mshadow = false;
 // The polygons are drawn in row bands, several at once (draw_quads): each band notes its own
 // shaded rows (merged after) and only plots its own rows of a wireframe line, which is clipped
 // against the whole view as before so its pixels don't change.
@@ -37,7 +37,7 @@ static thread_local int t_mark_y1 = 1 << 30, t_mark_y2 = -1;
 static thread_local int t_band_y1 = -(1 << 30), t_band_y2 = 1 << 30;
 static thread_local rectangle t_full_clip;
 static thread_local bool t_banded = false;
-std::vector<uint8_t> model1::s_qstage;
+std::vector<uint8_t> model1::s_qscenery;
 // Recording for the GPU at 1x: the rasterizer's own spans, kept instead of drawn
 static thread_local std::vector<gpu3d_span> *t_sink = nullptr;
 static thread_local uint32_t t_sink_poly = 0;
@@ -82,7 +82,7 @@ void model1::fill_quad_hd(bitmap_rgb32 &bitmap, view_t *view, const quad_t &q, i
 			int xa = std::max(view->x1, int(std::ceil(xs[k] - 0.5f)));
 			int xb = std::min(view->x2, int(std::ceil(xs[k + 1] - 0.5f)) - 1);
 			if (xa > xb) continue;
-			if (s_depth_pass && s_cur_fshadow) {   // a fighter's shadow
+			if (s_depth_pass && s_cur_mshadow) {   // a moving model's shadow
 				uint32_t *pix = &bitmap.pix(y);
 				const int32_t *own = &s_owner[size_t(y) * s_depth_w];
 				for (int x = xa; x <= xb; x++) {
@@ -93,7 +93,7 @@ void model1::fill_quad_hd(bitmap_rgb32 &bitmap, view_t *view, const quad_t &q, i
 						continue;
 					}
 					const int o = own[x] - s_owner_base - 1;     // the polygon that painted it (< 0: none)
-					if ((pix[x] & MOIRE_MARK) || (o >= 0 && !s_qstage[o])) continue;   // not on a fighter
+					if ((pix[x] & MOIRE_MARK) || (o >= 0 && !s_qscenery[o])) continue;   // not on a model
 					t_mark_y1 = std::min(t_mark_y1, y);
 					t_mark_y2 = std::max(t_mark_y2, y);
 					pix[x] = MOIRE_MARK | (((pix[x] >> 1) & 0x7f7f7f) + ((uint32_t(color) >> 1) & 0x7f7f7f));
@@ -727,18 +727,18 @@ void model1::draw_quads(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 // The CPU's drawing of the list (m_quadind's first `count`) within the view's clip
 void model1::raster_quads(bitmap_rgb32 &bitmap, view_t *view, int count)
 {
-	// debug: VF_PICK=x,y,frame prints every polygon that writes that pixel on that frame
+	// debug: M1_PICK=x,y,frame prints every polygon that writes that pixel on that frame
 	static int pick_x = -1, pick_y = -1, pick_f = -1;
-	static const char *pick_env = getenv("VF_PICK");
+	static const char *pick_env = getenv("M1_PICK");
 	if (pick_x < 0 && pick_env) sscanf(pick_env, "%d,%d,%d", &pick_x, &pick_y, &pick_f);
 	const bool picking = pick_x >= 0 && int(m_frame) == pick_f && pick_x < bitmap.width() && pick_y < bitmap.height();
 	// Above 1x (with the blended shadows): the polygons paint in the arcade's order, noting which
-	// painted each pixel, and a fighter's shadow doesn't shade a fighter (the arcade's
+	// painted each pixel, and a moving model's shadow doesn't shade a model (the arcade's
 	// one-depth-per-polygon sort let it paint over one lying on the floor). VF's shadows sit off
-	// the floor, so depth can't tell floor from fighter; the model can: the stages' come first in
-	// the polygon data, the fighters' from 80000 on.
-	static const bool no_depth = getenv("VF_NO_SHADOW_DEPTH") != nullptr;   // testing: the arcade's order
-	const bool depth = s_hd_raster && s_moire_blend && !no_depth;
+	// the floor, so depth can't tell floor from fighter; the model can: the scenery comes first in
+	// the polygon data (VF's stages; the fighters from 80000 on: video_traits::scenery_polys_end).
+	static const bool no_depth = getenv("M1_NO_SHADOW_DEPTH") != nullptr;   // testing: the arcade's order
+	const bool depth = s_hd_raster && s_moire_blend && !no_depth && m_video->scenery_polys_end;
 	if (depth) {
 		// the owners: numbered above every earlier pass's (and the buffer cleared when they run out),
 		// instead of clearing the picture's worth each time
@@ -750,14 +750,14 @@ void model1::raster_quads(bitmap_rgb32 &bitmap, view_t *view, int count)
 		} else
 			s_owner_base += s_last_count + 1;
 		s_last_count = count;
-		s_qstage.resize(count);
-		for (int i = 0; i < count; i++) s_qstage[i] = stage_model(m_quadind[i]->obj);
+		s_qscenery.resize(count);
+		for (int i = 0; i < count; i++) s_qscenery[i] = scenery_model(m_quadind[i]->obj);
 		s_depth_pass = 1;
 	}
-	struct pass_end { ~pass_end() { s_depth_pass = 0; s_cur_fshadow = false; } } pass_end_;
+	struct pass_end { ~pass_end() { s_depth_pass = 0; s_cur_mshadow = false; } } pass_end_;
 	// Above 1x: the rows in bands, a thread each, every band drawing all the polygons in order
 	// within its rows: the same picture, several times faster. (Picking prints, so stays serial.)
-	static const bool serial = getenv("VF_SERIAL_POLYS") != nullptr;   // testing: the one-thread path
+	static const bool serial = getenv("M1_SERIAL_POLYS") != nullptr;   // testing: the one-thread path
 	if (s_hd_raster && !picking && !serial && count > 0 && view->y2 >= view->y1) {
 		const rectangle full(view->x1, view->x2, view->y1, view->y2);
 		const view_t vbase = *view;
@@ -768,13 +768,13 @@ void model1::raster_quads(bitmap_rgb32 &bitmap, view_t *view, int count)
 			v.y2 = vbase.y1 + r1 - 1;
 			t_banded = true; t_full_clip = full; t_band_y1 = v.y1; t_band_y2 = v.y2;
 			t_mark_y1 = 1 << 30; t_mark_y2 = -1;
-			s_cur_fshadow = false;
+			s_cur_mshadow = false;
 			for (int i = 0; i < count; i++) {
 				s_cur_quad = i;
-				s_cur_fshadow = depth && fighter_shadow(*m_quadind[i]);
+				s_cur_mshadow = depth && model_shadow(*m_quadind[i]);
 				fill_quad(bitmap, &v, *m_quadind[i]);
 			}
-			s_cur_fshadow = false;
+			s_cur_mshadow = false;
 			t_banded = false; t_band_y1 = -(1 << 30); t_band_y2 = 1 << 30;
 			std::lock_guard<std::mutex> lk(marks);
 			s_mark_y1 = std::min(s_mark_y1, t_mark_y1);
@@ -787,7 +787,7 @@ void model1::raster_quads(bitmap_rgb32 &bitmap, view_t *view, int count)
 	for (int i = 0; i < count; i++)
 	{
 		s_cur_quad = i;
-		s_cur_fshadow = depth && fighter_shadow(*m_quadind[i]);
+		s_cur_mshadow = depth && model_shadow(*m_quadind[i]);
 		uint32_t before = picking ? bitmap.pix(pick_y, pick_x) : 0;
 		fill_quad(bitmap, view, *m_quadind[i]);
 		if (picking && bitmap.pix(pick_y, pick_x) != before) {
@@ -1069,14 +1069,10 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 	// Protect against bad data when attacking a super destroyer
 	if(tex_adr == 0xffffffff || size >= 0x1000000)
 		return;
-	// VF's name entry: the wheel's letters N-Z, the symbols and BACK take their colours from the
-	// block at 94000, END from 94040, which the game fills with FFFF at boot and never sets: MAME
-	// (and we, before) drew them black. Cabinet captures (the user's, 2026-10-13: "Congratulations!"
-	// 26 and 24) show them blue and END red, front and back alike; the palette's pens 0x372 (blue)
-	// and 0x373 (red) are those colours and nothing else uses them. Only these two blocks, only
-	// with FFFF in them, and only the wheel's letter models (380a36-381c2d), which no other scene
-	// draws.
-	const int ne_pen = (poly_adr >= 0x380a36 && poly_adr <= 0x381c2d) ? tex_adr == 0x94000 ? 0x372 : tex_adr == 0x94040 ? 0x373 : 0 : 0;
+	// a texture block the game leaves unset, coloured as the cabinet shows it (game::video_traits)
+	int unset_pen = 0;
+	for (const auto &u : m_video->unset_texture_pens)
+		if (poly_adr >= u.poly_first && poly_adr <= u.poly_last && tex_adr == u.texture) unset_pen = u.pen;
 
 #if 0
 	int dump;
@@ -1295,7 +1291,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 			// flat UI element (radar blips, HUD text) drawn unlit, and mode 01
 			// additionally blinks by rotating the BGR channels on alternate frames.
 			uint16_t tex_data = m_tgp_ram[tex_adr - 0x40000];
-			if (ne_pen && tex_data == 0xffff) tex_data = uint16_t(0xfc00 | ne_pen);   // (see above; still unlit)
+			if (unset_pen && tex_data == 0xffff) tex_data = uint16_t(0xfc00 | unset_pen);   // (see above; still unlit)
 			int color = m_paletteram16[0x1000 | (tex_data & 0x3ff)];
 			int r = (color >> 0x0) & 0x1f;
 			int g = (color >> 0x5) & 0x1f;
@@ -1603,7 +1599,7 @@ const uint16_t *model1::picture_list()
 	set_current_render_list();
 	int cur = m_display_list_current == m_display_list1 ? 1 : 0;
 	auto age = [&](int b) { return m_list_written[b] == ~0ull ? ~0ull : m_frame - m_list_written[b]; };
-	static const bool as_selected = getenv("VF_LIST_AS_SELECTED") != nullptr;   // testing: the old way
+	static const bool as_selected = getenv("M1_LIST_AS_SELECTED") != nullptr;   // testing: the old way
 	if (!as_selected && age(cur) > 8 && age(cur ^ 1) <= 2) cur ^= 1;
 	return cur ? m_display_list1 : m_display_list0;
 }
@@ -1665,7 +1661,7 @@ void model1::view_t::init_translation_matrix()
 
 void model1::view_t::set_viewport(float xcenter, float ycenter, float xl, float xr, float yb, float yt)
 {
-	static const bool log_viewport = getenv("VF_LOG_VIEWPORT") != nullptr;
+	static const bool log_viewport = getenv("M1_LOG_VIEWPORT") != nullptr;
 	if (log_viewport) {
 		static std::set<std::array<int, 6>> seen;
 		std::array<int, 6> k{int(xcenter), int(ycenter), int(xl), int(xr), int(yb), int(yt)};
@@ -2112,8 +2108,8 @@ void model1::screen_vblank_model1(int state)
 void model1::record_quads(view_t *view, int count)
 {
 	const uint64_t t0 = trace_ns();
-	static const bool no_depth = getenv("VF_NO_SHADOW_DEPTH") != nullptr;
-	const bool depth = s_hd_raster && s_moire_blend && !no_depth;
+	static const bool no_depth = getenv("M1_NO_SHADOW_DEPTH") != nullptr;
+	const bool depth = s_hd_raster && s_moire_blend && !no_depth && m_video->scenery_polys_end;
 	const uint32_t batch = uint32_t(m_rec_batches.size());
 	m_rec_batches.push_back({ view->x1, view->x2, view->y1, view->y2, m_rec_quads.size(), size_t(count) });
 	for (int i = 0; i < count; i++) {
@@ -2152,10 +2148,10 @@ void model1::record_quads(view_t *view, int count)
 		gpu3d_poly g;
 		g.cx0 = view->x1; g.cx1 = view->x2; g.cy0 = view->y1; g.cy1 = view->y2;
 		g.batch = batch;
-		const bool fighter = depth && fighter_shadow(q);
-		if (fighter) g.flags |= G3_FIGHTER | G3_SHADOW;
+		const bool mshadow = depth && model_shadow(q);
+		if (mshadow) g.flags |= G3_MODEL_SHADOW | G3_SHADOW;
 		else if (color & MOIRE) g.flags |= s_moire_blend ? G3_SHADOW : G3_CHECKER;
-		if (stage_model(q.obj)) g.flags |= G3_STAGE;
+		if (scenery_model(q.obj)) g.flags |= G3_SCENERY;
 		g.colour = (g.flags & G3_CHECKER) ? uint32_t(color) & 0xffffff : uint32_t(color);
 		const uint32_t idx = uint32_t(m_rec_polys.size());
 		int ya, yb;
@@ -2165,7 +2161,7 @@ void model1::record_quads(view_t *view, int count)
 				g.x[k] = q.p[k]->fx; g.y[k] = q.p[k]->fy;
 				ok = ok && std::fabs(g.x[k]) < 1e7f && std::fabs(g.y[k]) < 1e7f;   // (NaN fails too)
 			}
-			if (!ok) { if (!m_rec_bad && getenv("VF_LOG_GPU3D")) fprintf(stderr, "gpu3d: a vertex out of range (frame %llu, obj %06x: %g,%g %g,%g %g,%g %g,%g)\n", (unsigned long long)m_frame, q.obj, g.x[0], g.y[0], g.x[1], g.y[1], g.x[2], g.y[2], g.x[3], g.y[3]); m_rec_bad = true; continue; }
+			if (!ok) { if (!m_rec_bad && getenv("M1_LOG_GPU3D")) fprintf(stderr, "gpu3d: a vertex out of range (frame %llu, obj %06x: %g,%g %g,%g %g,%g %g,%g)\n", (unsigned long long)m_frame, q.obj, g.x[0], g.y[0], g.x[1], g.y[1], g.x[2], g.y[2], g.x[3], g.y[3]); m_rec_bad = true; continue; }
 			const float ymin = std::min({ g.y[0], g.y[1], g.y[2], g.y[3] }), ymax = std::max({ g.y[0], g.y[1], g.y[2], g.y[3] });
 			ya = std::max(view->y1, int(std::ceil(ymin - 0.5f)));
 			yb = std::min(view->y2, int(std::ceil(ymax - 0.5f)) - 1);

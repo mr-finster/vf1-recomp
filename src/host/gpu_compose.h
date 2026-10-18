@@ -23,7 +23,7 @@ public:
 		const char *name = SDL_GetRendererName(ren);
 		if (!name || !strcmp(name, "software")) return false;
 		m_max = int(SDL_GetNumberProperty(SDL_GetRendererProperties(ren), SDL_PROP_RENDERER_MAX_TEXTURE_SIZE_NUMBER, 0));
-		if (const char *t = getenv("VF_GPU_MAX")) m_max = atoi(t);   // testing: a smaller GPU's limit
+		if (const char *t = getenv("M1_GPU_MAX")) m_max = atoi(t);   // testing: a smaller GPU's limit
 		m_keyed = SDL_ComposeCustomBlendMode(SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDFACTOR_SRC_ALPHA, SDL_BLENDOPERATION_ADD,
 											 SDL_BLENDFACTOR_ZERO, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_ADD);
 		return true;
@@ -78,7 +78,7 @@ public:
 		}
 		return true;
 	}
-	int made = 0;              // testing (VF_TRACE): textures made, and pixels uploaded
+	int made = 0;              // testing (M1_TRACE): textures made, and pixels uploaded
 	uint64_t uploaded = 0;
 
 	// The parts onto the target (w x h, scaled into the window with `scale_mode`); false: failed

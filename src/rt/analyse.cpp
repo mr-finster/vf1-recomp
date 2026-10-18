@@ -205,7 +205,7 @@ void write_map(const program &p, const char *path)
 {
 	FILE *f = fopen(path, "w");
 	if (!f) return;
-	fprintf(f, "# Virtua Fighter (Model 1) code map for the on-device recompiler: where the functions start\n"
+	fprintf(f, "# Model 1 code map for the recompiler: where the functions start\n"
 			   "# and where the indirect jumps and calls lead. Addresses only, nothing from the ROM.\n");
 	for (const function &fn : p.functions) fprintf(f, "entry %06x\n", fn.entry);
 	for (auto &[a, ts] : p.edges)

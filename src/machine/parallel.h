@@ -73,7 +73,7 @@ private:
 	row_pool()
 	{
 		int n = std::clamp(int(std::thread::hardware_concurrency()) - 2, 0, 7);   // the CPU and sound keep theirs
-		if (const char *t = getenv("VF_THREADS")) n = std::clamp(atoi(t) - 1, 0, 63);   // testing: this many drawing threads in all
+		if (const char *t = getenv("M1_THREADS")) n = std::clamp(atoi(t) - 1, 0, 63);   // testing: this many drawing threads in all
 		for (int i = 0; i < n; i++)
 			m_workers.emplace_back([this] {
 				unsigned seen = 0;

@@ -1,6 +1,6 @@
 // The 3D on the GPU, Metal (src/gpu/gpu3d.h). The rows' spans above 1x are model1::fill_quad_hd's
 // (ours), worked out a thread a row; the pixels' rule is the rasterizer's (model1_video.cpp:
-// draw_hline, draw_hline_moired and fill_quad_hd's fighter's shadow).
+// draw_hline, draw_hline_moired and fill_quad_hd's model shadow).
 #include "gpu3d.h"
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -27,7 +27,7 @@ struct poly {
 	uint span0, colour, flags, batch;
 };
 struct span { uint poly; int y, xa, xb; };
-constant uint SHADOW = 1, CHECKER = 2, FIGHTER = 4, STAGE = 8, LINE = 32;
+constant uint SHADOW = 1, CHECKER = 2, MODEL_SHADOW = 4, SCENERY = 8, LINE = 32;
 constant uint L = 8;   // the threads a span (each every L-th pixel of it: neighbours write neighbours)
 constant uint KEY = 0xff000000u, SHADOW_KEY = 0xfd000000u, MOIRE_MARK = 0x01000000u;
 
@@ -81,7 +81,7 @@ kernel void k_solid(uint t [[thread_position_in_grid]], constant uint &total [[b
 	if (f & SHADOW) return;
 	device atomic_uint *row = owner + uint(s.y) * W;
 	const uint v = s.poly + 1;
-	if (!(f & (CHECKER | LINE))) {   // (the polygons a fighter's shadow looks under: model1::s_owner's)
+	if (!(f & (CHECKER | LINE))) {   // (the polygons a model's shadow looks under: model1::s_owner's)
 		device atomic_uint *drow = depth + uint(s.y) * W;
 		for (int x = s.xa + lane; x <= s.xb; x += int(L)) { atomic_fetch_max_explicit(&row[x], v, memory_order_relaxed); atomic_fetch_max_explicit(&drow[x], v, memory_order_relaxed); }
 		return;
@@ -103,15 +103,15 @@ kernel void k_shadow(uint t [[thread_position_in_grid]], constant uint &total [[
 	if (s.xa > s.xb) return;
 	const device poly &q = polys[s.poly];
 	if (!(q.flags & SHADOW)) return;
-	const bool fighter = (q.flags & FIGHTER) != 0;
+	const bool mshadow = (q.flags & MODEL_SHADOW) != 0;
 	const uint at = uint(s.y) * W;
 	for (int x = s.xa; x <= s.xb; x++) {
 		const uint o = owner[at + uint(x)];
 		if (o > s.poly) continue;                 // a solid polygon (or line) drawn after it
-		const uint d = fighter ? depth[at + uint(x)] : 0u;
-		if (d) {                                  // a fighter's shadow: not over a fighter's polygon in its own list
+		const uint d = mshadow ? depth[at + uint(x)] : 0u;
+		if (d) {                                  // a model's shadow: not over a model's polygon in its own list
 			const device poly &u = polys[d - 1];
-			if (u.batch == q.batch && !(u.flags & STAGE)) continue;
+			if (u.batch == q.batch && !(u.flags & SCENERY)) continue;
 		}
 		atomic_fetch_min_explicit(&shade[at + uint(x)], s.poly, memory_order_relaxed);
 	}

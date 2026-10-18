@@ -3,8 +3,8 @@
 // list sorted far to near, the lists in the order the display list gives them), the last to fill
 // a pixel keeping it. The shadows (MOIRE) are the one blend: above 1x a shadow halves the pixel
 // beneath with its colour once (the first shadow over it after the last solid polygon), and a
-// fighter's shadow leaves a fighter alone (the solid polygon under it from a fighter's model, in
-// the same list); at 1x a shadow is the arcade's checkerboard, every other pixel solid.
+// moving model's shadow (a VF fighter's) leaves the models alone (the solid polygon under it from a
+// model that isn't scenery, in the same list); at 1x a shadow is the arcade's checkerboard, every other pixel solid.
 //
 // The board records the picture's polygons as it would draw them (model1::draw_quads, in GPU
 // mode) and hands them over here; the backend draws them into the CPU's own picture (the bitmap's
@@ -30,17 +30,17 @@ struct gpu3d_poly
 	uint32_t span0 = 0;           // above 1x: its rows' spans' first place after the CPU's (two a row)
 	uint32_t colour = 0;          // what a solid pixel becomes; a shadow's colour
 	uint32_t flags = 0;           // gpu3d_flag
-	uint32_t batch = 0;           // its viewport's list (a fighter's shadow looks under it in its own)
+	uint32_t batch = 0;           // its viewport's list (a model's shadow looks under it in its own)
 };
 enum gpu3d_flag : uint32_t
 {
 	G3_SHADOW = 1,       // blended (above 1x): halves the pixel beneath once
 	G3_CHECKER = 2,      // solid on the pixels with (x ^ y) even (1x's shadows)
-	G3_FIGHTER = 4,      // a fighter's shadow: not over a fighter's polygon in its list
-	G3_STAGE = 8,        // from a stage's model (a fighter's shadow goes over it)
+	G3_MODEL_SHADOW = 4, // a moving model's shadow: not over a model's polygon in its list
+	G3_SCENERY = 8,      // from the scenery (a model's shadow goes over it)
 	G3_ROWS = 16,        // its spans worked out on the GPU (above 1x)
 	G3_LINE = 32,        // a wireframe line's pixels (draw_wireframe_line's, worked out on the CPU): solid,
-	                     // but not a polygon to a fighter's shadow (the CPU's map of them leaves it out)
+	                     // but not a polygon to a model's shadow (the CPU's map of them leaves it out)
 };
 struct gpu3d_span { uint32_t poly; int32_t y, xa, xb; };   // pixels xa..xb of row y (none: xa > xb)
 

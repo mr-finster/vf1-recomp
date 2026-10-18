@@ -78,7 +78,7 @@ struct gen
 		to_label.push_back({ sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, addr), addr });
 	}
 
-	const bool native_ok = getenv("VF_NO_NATIVE_OPS") == nullptr;   // testing: every instruction via MAME
+	const bool native_ok = getenv("M1_NO_NATIVE_OPS") == nullptr;   // testing: every instruction via MAME
 
 	// ---- instructions done natively (the rest run MAME's handler through rt_step) ----
 

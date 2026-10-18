@@ -102,7 +102,7 @@ void model1::record_frame()
 		lf.vscr = m_tiles.tile_r(0x5006);
 		index_objects(lf);
 		objects = lf.objects;
-		static const bool log = getenv("VF_LOG_SMOOTH") != nullptr;
+		static const bool log = getenv("M1_LOG_SMOOTH") != nullptr;
 		if (lf.hash != m_logic[1].hash) {
 			m_logic_prev = std::move(m_logic[0]);
 			m_logic[0] = std::move(m_logic[1]);
@@ -154,6 +154,14 @@ bool model1::render_smooth(double now, bool shown)
 		m_frame_parts = m_parts != nullptr;
 		if (shown) { m_shown = true; m_shown_now = now; m_shown_frame = m_frame; }
 	};
+	if (!m_video->smooth_frames) {
+		m_replaying = false;
+		m_replay_older = false;
+		m_replay_extra = false;
+		screen_update(m_bitmap, m_bitmap.cliprect());
+		drawn();
+		return true;
+	}
 	if (m_logic[1].list.empty()) { screen_update(m_bitmap, m_bitmap.cliprect()); drawn(); return true; }
 	const logic_frame &a = m_logic[0], &b = m_logic[1];
 	double alpha = 1;
@@ -222,7 +230,7 @@ bool model1::render_smooth(double now, bool shown)
 	m_replay_older = false;
 	m_replay_extra = false;
 	drawn();
-	static const bool log = getenv("VF_LOG_SMOOTH") != nullptr;
+	static const bool log = getenv("M1_LOG_SMOOTH") != nullptr;
 	if (log && alpha < 1)
 		fprintf(stderr, "R %.2f a=%.2f unmatched %d jumped %d blended %d\n", now, alpha, m_smooth_stats[0], m_smooth_stats[1], m_smooth_stats[2]);
 	m_alpha = 1;
@@ -253,8 +261,8 @@ void model1::keep_still()
 	std::copy(std::begin(m_view->lightparams), std::end(m_view->lightparams), s.lightparams.begin());
 	s.light = m_view->light;
 	s.spec_enable = m_view->spec_enable;
-	memcpy(s.camera, &m_ram_b[0x17f0], 4);
-	s.fight_cam = m_fight_cam;
+	memcpy(s.camera, &m_ram_b[m_profile->camera_ram], 4);
+	s.camera_wide = m_camera_wide;
 	s.sky_now = m_sky_now; s.sky_last = m_sky_last;
 	s.sky_base = m_sky_base; s.sky_last_tx0 = m_sky_last_tx0;
 }
@@ -279,8 +287,8 @@ void model1::swap_still()
 	std::swap_ranges(std::begin(m_view->lightparams), std::end(m_view->lightparams), s.lightparams.begin());
 	std::swap(m_view->light, s.light);
 	std::swap(m_view->spec_enable, s.spec_enable);
-	std::swap_ranges(&m_ram_b[0x17f0], &m_ram_b[0x17f4], s.camera);   // (the camera pointer: work RAM, put back after)
-	std::swap(m_fight_cam, s.fight_cam);
+	std::swap_ranges(&m_ram_b[m_profile->camera_ram], &m_ram_b[m_profile->camera_ram + 4], s.camera);   // (the camera pointer: work RAM, put back after)
+	std::swap(m_camera_wide, s.camera_wide);
 	std::swap(m_sky_now, s.sky_now); std::swap(m_sky_last, s.sky_last);
 	std::swap(m_sky_base, s.sky_base); std::swap(m_sky_last_tx0, s.sky_last_tx0);
 }
@@ -455,7 +463,7 @@ void model1::blend_slots(const logic_frame &a, const logic_frame &b, double alph
 	}
 	m_camera_cut = false;
 	repaired += repair_by_camera(a, b, pair, changed_run);
-	static const bool logp = getenv("VF_LOG_SMOOTH") != nullptr;
+	static const bool logp = getenv("M1_LOG_SMOOTH") != nullptr;
 	if (logp && repaired && !m_redrawing) fprintf(stderr, "P frame %d repaired %d\n", b.frame, repaired);
 	int jumps = 0, paired = 0, missing = 0;
 	for (size_t i = 0; i < b.slots.size(); i++) {
@@ -510,7 +518,7 @@ void model1::blend_slots(const logic_frame &a, const logic_frame &b, double alph
 	}
 	if (m_blend_cut) std::fill(m_blend_ok.begin(), m_blend_ok.end(), 0);
 	m_smooth_stats[1] = jumps;
-	static const bool logm = getenv("VF_LOG_SMOOTH") != nullptr;
+	static const bool logm = getenv("M1_LOG_SMOOTH") != nullptr;
 	if (logm && (jumps || missing)) fprintf(stderr, "M jumps %d missing %d paired %d slots %zu/%zu\n", jumps, missing, paired, na, nb);
 	for (size_t i = 0; i < b.slots.size(); i++)
 		if (!b.slots[i].polys.empty()) m_smooth_stats[m_blend_ok[i] ? 2 : 0]++;
@@ -528,19 +536,20 @@ bool model1::smooth_matrix(uint32_t, float *out)
 	return true;
 }
 
-// The game's sky scroll (the routine at ff49a1, at the start of vblank) comes from the camera:
-// across, its heading (508004: 1/32 pixel, 2048 pixels for a turn); up and down, 508006 (whole
-// pixels). Each is mixed with the last game frame's (508008, 50800a): halfway across on the frames
-// between the game's 30 a second, and a quarter or three quarters up and down; then written to
-// tile map 2's scroll in whole pixels (h: the heading >> 5; v: a sum >> 1). When a write is that
-// sum, the fraction it dropped is kept for smooth motion's sky (worked out again from the RAM it
-// read: nothing writes those in between).
+// The game's sky scroll (its routine at the start of vblank) comes from the camera (the RAM in
+// game::video_traits::sky_scroll): across, its heading (1/32 pixel, 2048 pixels for a turn); up
+// and down, its height (whole pixels). Each is mixed with the last game frame's: halfway across on
+// the frames between the game's 30 a second, and a quarter or three quarters up and down; then
+// written to the sky map's scroll in whole pixels (h: the heading >> 5; v: a sum >> 1). When a
+// write is that sum, the fraction it dropped is kept for smooth motion's sky (worked out again
+// from the RAM it read: nothing writes those in between).
 model1::sky_scroll model1::sky_scroll_from_ram(bool between) const
 {
+	const game::sky_camera &cam = *m_video->sky_scroll;
 	auto rd = [&](uint32_t x) { return uint16_t(m_ram_b[x - 0x500000] | m_ram_b[x - 0x500000 + 1] << 8); };
-	uint16_t r1 = rd(0x508004);
-	if (between) r1 = uint16_t(r1 - (int16_t(uint16_t(r1 - rd(0x508008))) >> 1));
-	uint16_t r3 = rd(0x508006), r4 = rd(0x50800a);
+	uint16_t r1 = rd(cam.heading);
+	if (between) r1 = uint16_t(r1 - (int16_t(uint16_t(r1 - rd(cam.last_heading))) >> 1));
+	uint16_t r3 = rd(cam.height), r4 = rd(cam.last_height);
 	const uint16_t d = uint16_t(r3 - r4);
 	if (between) r3 = uint16_t(r3 - (int16_t(d) >> 1));
 	else r4 = uint16_t(r4 + (int16_t(d) >> 1) + (d & 1));   // (rounded: the bit shifted out added back)
@@ -557,9 +566,15 @@ model1::sky_scroll model1::sky_scroll_from_ram(bool between) const
 // the routine's sum of two equal values)
 void model1::sky_settled(int &h, int &v) const
 {
+	if (!m_video->sky_scroll) {         // (no camera known: where the tile chip has it)
+		h = m_tiles.tile_r(0x5002) & 0x1ff;
+		v = m_tiles.tile_r(0x5006) & 0x3ff;
+		return;
+	}
+	const game::sky_camera &cam = *m_video->sky_scroll;
 	auto rd = [&](uint32_t x) { return uint16_t(m_ram_b[x - 0x500000] | m_ram_b[x - 0x500000 + 1] << 8); };
-	h = (rd(0x508004) >> 5) & 0x1ff;
-	v = (rd(0x508006) + 0x21) & 0x3ff;
+	h = (rd(cam.heading) >> 5) & 0x1ff;
+	v = (rd(cam.height) + 0x21) & 0x3ff;
 }
 
 // Whether the sky can be drawn where it lands from where the game has it in a frame (the tile
@@ -573,7 +588,8 @@ bool model1::sky_reaches(const sky_sample &s) const
 
 void model1::sky_scroll_written(uint32_t a)
 {
-	m_sky_between = m_ram_b[0x501] & 1;
+	if (!m_video->sky_scroll) return;   // (no camera known: no fractions, the scroll as written)
+	m_sky_between = m_ram_b[m_video->sky_scroll->between - 0x500000] & 1;
 	const sky_scroll s = sky_scroll_from_ram(m_sky_between);
 	if (a == 0x70a004) {
 		m_sky_read_h = s.h == m_tiles.tile_r(0x5002);         // (anything else written: no fraction)

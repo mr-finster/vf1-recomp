@@ -1,4 +1,4 @@
-// Included by the generated code (build/gen/vf_rec.cpp): its functions are members of a class
+// Included by the generated code (build/gen/<game>_rec.cpp): its functions are members of a class
 // derived from v60_device, so MAME's handler bodies and macros work in them unchanged.
 #pragma once
 #include "rec_rt.h"
