@@ -8,7 +8,8 @@ For shared Model 1 architecture, build requirements, and repository information,
 [root README](../../../README.md). For the port's implementation and validation history, see
 [How it was made](../../../docs/HOW-IT-WAS-MADE.md).
 
-> No game files are included. You need your own MAME `vr` set (`vr.zip`). The game is an unofficial fan project,
+> No game files are included. You need your own MAME `vr` set (`vr.zip`) and the Model 1 I/O-board ROM
+> (`model1io.zip`). The game is an unofficial fan project,
 > not made, approved, or supported by Sega.
 
 ## Run Virtua Racing
@@ -26,8 +27,10 @@ checks every ROM by CRC, and copies the zip into the game's user-data folder so 
 repository, `make vr` also assembles development regions under `build/vr/` (with `tools/romset.py`), which the host
 uses when run from the repository root. The VR host has settings and saves separate from Virtua Fighter.
 
-If you have the common Model 1 I/O-board ROM, put `model1io.zip` next to `vr.zip`; a picked `vr.zip` brings a
-`model1io.zip` beside it along. Without it, digital I/O uses a stand-in and the ADC is unavailable.
+You also need the common Model 1 I/O-board ROM: put `model1io.zip` next to `vr.zip`; a picked `vr.zip` brings a
+`model1io.zip` beside it along. The steering wheel and both pedals go through that board's analog inputs, so without
+it the game starts but can't be steered or accelerated: a stand-in board answers only the digital inputs (shift,
+start, coin).
 
 Release packages include no ROMs and need no preparation step or Python. They are produced for macOS
 (`VirtuaRacingRecomp-mac.zip`), Windows (`VirtuaRacingRecomp-windows.zip`), and Steam Deck / x86-64 Linux

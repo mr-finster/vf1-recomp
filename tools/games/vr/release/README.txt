@@ -2,14 +2,16 @@ VIRTUA RACING RECOMP (preview)
 ==============================
 
 An unofficial fan project, not made, approved or supported by SEGA.
-No game files are included. You need your own MAME "vr" set (vr.zip).
+No game files are included. You need your own MAME "vr" set (vr.zip) and the Model 1 I/O
+board's program (model1io.zip).
 
 FIRST LAUNCH
 Start Virtua Racing Recomp. It asks for your vr.zip, checks it and copies it into its user-data
-folder, so you only do this once. If model1io.zip (the Model 1 I/O board's program) is next to
-your vr.zip, it is copied too and enables the real analog I/O board.
+folder, so you only do this once. Put model1io.zip next to your vr.zip first: it is copied too.
+The wheel and pedals go through the I/O board, so without model1io.zip the game starts but you
+can't steer or accelerate.
 
-On Steam Deck / Linux, put vr.zip (and model1io.zip, if you have it) in the package's roms
+On Steam Deck / Linux, put vr.zip and model1io.zip in the package's roms
 folder instead: Game Mode has no file picker. Then add VirtuaRacing.sh as a Non-Steam Game and set
 Start In to the extracted VirtuaRacing folder.
 
