@@ -100,6 +100,24 @@ struct unset_texture_pen
 	uint16_t pen;
 };
 
+// What the game itself says each part of its 3D is, read as it writes its display list (see
+// blend_by_records): each instruction writing a matrix command and the register then holding the
+// record of the thing drawn (records lie in [records_from, records_to); any other value: the still
+// world), and where the camera is in RAM B as the list is written (12 floats: the rotation taking
+// the world to the view, by columns, then the view's translation, like a list's matrix).
+struct matrix_writer
+{
+	uint32_t pc;
+	int record_register;
+};
+
+struct draw_records
+{
+	std::vector<matrix_writer> writers;
+	uint32_t records_from, records_to;
+	uint32_t camera;
+};
+
 struct video_traits
 {
 	bool smooth_frames = false;      // the 3D blended between game frames (a 30 Hz game's)
@@ -110,6 +128,7 @@ struct video_traits
 	int sky_tile_map = 0, sky_first_row = 0;   // where the game streams the panoramas
 	std::optional<sky_camera> sky_scroll;      // none: the sky's scroll as the tile chip has it
 	std::vector<unset_texture_pen> unset_texture_pens;
+	std::optional<draw_records> records;   // none: the parts matched from the lists alone
 };
 
 class auto_play;

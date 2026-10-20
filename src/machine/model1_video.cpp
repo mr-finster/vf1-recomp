@@ -1601,6 +1601,7 @@ const uint16_t *model1::picture_list()
 	auto age = [&](int b) { return m_list_written[b] == ~0ull ? ~0ull : m_frame - m_list_written[b]; };
 	static const bool as_selected = getenv("M1_LIST_AS_SELECTED") != nullptr;   // testing: the old way
 	if (!as_selected && age(cur) > 8 && age(cur ^ 1) <= 2) cur ^= 1;
+	m_picture_buffer = cur;
 	return cur ? m_display_list1 : m_display_list0;
 }
 

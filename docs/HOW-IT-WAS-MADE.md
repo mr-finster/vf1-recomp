@@ -57,7 +57,18 @@ menu (RmlUi), saves, the first-launch file picker, and the parts that go beyond 
 - **Smooth motion.** VF's logic runs at 30 Hz. Above 1x, each picture is drawn for a moment between the last two game
   frames: every object's matrix is blended with its match in the frame before, paired like a diff of the two display
   lists. Camera cuts and objects that can't be paired aren't blended. The game itself runs untouched; the picture is a
-  game frame behind.
+  game frame behind. VR draws at 30 Hz too, but its wheels change model as they turn and its trackside reuses
+  models along the track, so guessing pairs by model and place put tyres between cars. Instead the game's own memory
+  says what each part is (`draw_records`): as the CPU writes a matrix into the display list, the register holding the
+  record of the thing drawn (a car) and the camera in RAM are read. So a car's parts pair with its own parts, the
+  track is where the older camera saw it, and a wheel that changed model moves with its car. The SEGA logo is drawn
+  the way the track is but without the camera, so a "world" part that stays in its place on screen while the camera
+  moves is blended on screen instead. Each car part then follows a
+  curve that keeps its speed from one game frame to the next, since the game's own steps are uneven. The camera turns
+  unevenly too: in a bend about 0.5 degrees a game frame, then 0.06, so the road's lines jerked sideways. Its turn is
+  smoothed with an alpha-beta filter, held within a degree of the game's, and the whole 3D picture is turned about the
+  eye to match, so cars and track stay together. A camera turn over 25 degrees or a jump over 8 units is a cut. Running VR's logic at 60 Hz instead isn't possible: it waits for two
+  vblanks a frame by design, and its timing (the attract mode, the race clock) counts game frames.
 - **Widescreen.** In fights the 3D view opens out to the sides and the stage sky is drawn from its whole panorama. The
   title and player select get painted side columns, drawn for this port.
 - **Antialiasing** (an edge filter, or 2x/3x supersampling), scanline and CRT filters, and hi-res stage skies built

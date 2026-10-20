@@ -382,8 +382,8 @@ void model1::bus_write16(uint32_t a, uint16_t v, uint16_t mask)
 	auto combine = [&](uint16_t &d) { d = (d & ~mask) | (v & mask); };
 	if (a >= 0x400000 && a < 0x410000) { wr(&m_ram_a[a - 0x400000]); return; }
 	if (a >= 0x500000 && a < 0x540000) { wr(&m_ram_b[a - 0x500000]); return; }
-	if (a >= 0x600000 && a < 0x610000) { combine(m_display_list0[(a - 0x600000) >> 1]); m_list_written[0] = m_frame; return; }
-	if (a >= 0x610000 && a < 0x620000) { combine(m_display_list1[(a - 0x610000) >> 1]); m_list_written[1] = m_frame; return; }
+	if (a >= 0x600000 && a < 0x610000) { combine(m_display_list0[(a - 0x600000) >> 1]); m_list_written[0] = m_frame; list_written(0, (a - 0x600000) >> 1); return; }
+	if (a >= 0x610000 && a < 0x620000) { combine(m_display_list1[(a - 0x610000) >> 1]); m_list_written[1] = m_frame; list_written(1, (a - 0x610000) >> 1); return; }
 	if (a >= 0x680000 && a < 0x680004) { model1_listctl_w((a - 0x680000) >> 1, v, mask); return; }
 	if (a >= 0x700000 && a < 0x710000) {
 		m_tiles.tile_w((a - 0x700000) >> 1, v, mask);

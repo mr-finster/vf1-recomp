@@ -277,6 +277,7 @@ private:
 		std::vector<uint32_t> polys;
 		float light[3] = { 0, 0, 0 };                // the list's light vector (command 0xa) where this slot is
 		bool has_light = false;
+		uint32_t owner = 0;                          // (video_traits::records) 0: not known, 1: the still world, else its record
 	};
 	struct logic_frame {
 		std::vector<uint16_t> list;                  // the display list as the game left it
@@ -285,6 +286,13 @@ private:
 		uint16_t hscr = 0, vscr = 0;                 // the sky map's scroll
 		std::vector<struct slot> slots;              // matrix commands and the objects drawn with each
 		int objects = 0;
+		std::array<float, 12> camera{};              // (video_traits::records) the camera as the list was written
+		bool has_camera = false;
+		// (records) the camera's turn smoothed (blend_by_records): its rotation (a quaternion, w x y
+		// z) and turn a list (a rotation vector); 0: none, 1: from the camera as it is, 2: filtered
+		std::array<float, 4> turn{};
+		std::array<float, 3> turn_rate{};
+		int turn_age = 0;
 	};
 	logic_frame m_logic[2];                         // the game frame before, and the last
 	logic_frame m_logic_prev;                       // and the one before those (a cut's older view goes on from it)
@@ -327,6 +335,8 @@ private:
 	uint64_t m_sky_written = ~0ull;                  // the frame they were written in
 	void sky_scroll_written(uint32_t a);
 	void blend_slots(const logic_frame &a, const logic_frame &b, double alpha);
+	void smooth_turn(logic_frame &lf, const logic_frame &before);
+	void blend_by_records(const logic_frame &a, const logic_frame &b, double alpha);
 	int repair_by_camera(const logic_frame &a, const logic_frame &b, std::vector<int> &pair, const std::vector<char> &changed_run);
 	bool m_camera_cut = false;    // (repair_by_camera: the camera's move between the two lists is a cut)
 	void index_objects(logic_frame &lf);
@@ -493,6 +503,13 @@ private:
 	std::vector<uint8_t> m_ram_b;      // 500000-53ffff
 	std::vector<uint16_t> m_display_list0_ram, m_display_list1_ram;
 	uint64_t m_list_written[2] = { ~0ull, ~0ull };   // the game frame each display list was last written in
+	// (video_traits::records) per word of each display list, what the game drew with the matrix
+	// written there (slot::owner), and the camera as the list was written
+	std::vector<uint32_t> m_list_owner[2];
+	std::array<float, 12> m_list_camera[2]{};
+	bool m_list_has_camera[2] = { false, false };
+	int m_picture_buffer = 0;                        // the display list picture_list() last chose
+	void list_written(int buffer, uint32_t word);
 	const uint16_t *picture_list();                  // the display list to show (see model1_video.cpp)
 	std::vector<uint16_t> m_paletteram16_ram, m_color_xlat_ram;
 	uint16_t *m_display_list0, *m_display_list1, *m_paletteram16, *m_color_xlat;
