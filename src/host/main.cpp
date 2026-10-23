@@ -1068,6 +1068,11 @@ int main(int argc, char **argv)
 	if (!getenv("VF_HIDDEN")) SDL_RaiseWindow(win);
 	int focus_checks = 600;   // about 5 s: going fullscreen on a Mac moves to a new Space, which takes a while
 	SDL_Renderer *ren = nullptr;
+	// Why the pictures or the 3D are on the CPU when the setting isn't CPU: said on screen, not only in the log (a
+	// player whose GPU couldn't be used just saw a slow game). cpu_why_new: not said yet.
+	std::string cpu_why;
+	bool cpu_why_new = false;
+	auto on_cpu_because = [&](const std::string &why) { if (cpu_why.empty()) { cpu_why = why; cpu_why_new = true; } };
 #if VF_GPU3D_SDL
 	// The 3D on the GPU wanted (Auto or GPU): SDL's "gpu" renderer (Direct3D 12 on Windows, Vulkan on
 	// Linux and the Deck), whose device the 3D's compute shares, drawing straight into the renderer's
@@ -1084,7 +1089,7 @@ int main(int argc, char **argv)
 		std::string by;
 		size_t n = 0;
 		if (void *d = SDL_LoadFile(path.c_str(), &n)) { by.assign(static_cast<const char *>(d), n); SDL_free(d); }
-		if (by == settings::BUILD) return true;
+		if (by == settings::BUILD) { on_cpu_because("the graphics driver closed the game the last time the GPU started"); return true; }
 		fprintf(stderr, "the GPU: %s closed while starting it: this build tries it again\n", by.empty() ? "an older build" : by.c_str());
 		return false;
 	};
@@ -1182,8 +1187,8 @@ int main(int argc, char **argv)
 	// The GPU's picture against the CPU's, as vf2-recomp's check (its #3): judged by how wrong, not
 	// how many. Colours (never the unused top byte) off by a little anywhere are a driver's rounding
 	// (NVIDIA's on Direct3D 12 scales and blends a hair differently: vf1-recomp #16, an RTX 5080 at
-	// 6x and 16:9 sent to the CPU by its first picture, then held to 60 a second); only more than 1%
-	// of the picture off by more than 8 a channel is a GPU putting it together wrong.
+	// 6x and 16:9 sent to the CPU by its first picture, then held to 60 a second); only more than 10%
+	// of the picture off by more than 8 a channel is a GPU putting it together wrong (as the 3D's).
 	struct picture_diff { long long n = 0, big = 0; int most = 0; bool wrong = false; };
 	auto compare = [](const std::vector<uint32_t> &g, const uint32_t *c, size_t px, bool loose) {
 		picture_diff d;
@@ -1196,7 +1201,7 @@ int main(int argc, char **argv)
 			d.most = std::max(d.most, off);
 			d.big += off > 8;
 		}
-		d.wrong = d.big > std::max(64LL, (long long)(px / 100));
+		d.wrong = d.big > std::max(64LL, (long long)(px / 10));
 		return d;
 	};
 	{
@@ -1236,6 +1241,7 @@ int main(int argc, char **argv)
 		}
 #endif
 		if (gpu_2d) fprintf(stderr, "pictures put together on the GPU (renderer: %s)\n", rname ? rname : "?");
+		else if (cfg.renderer3d != 0 && !getenv("VF_CPU_2D")) on_cpu_because("the GPU couldn't put the pictures together (" + why + "): update the graphics driver");
 		// Low's edges smoothed there too (SDL's gpu renderer): the 3D then goes straight into its
 		// texture with Low as without, nothing back to the CPU (vf1-recomp #16: an RTX 5080 at 6x,
 		// Low, its 3D read back each picture for the CPU's smoothing, held at 60)
@@ -1278,6 +1284,7 @@ int main(int argc, char **argv)
 			if (!g3) g3 = gpu3d_create_sdlgpu();
 			SDL_RemovePath(marker.c_str());
 			fprintf(stderr, "the 3D on the GPU: %s (%.0f ms to start)\n", g3 ? g3->name() : "none here (the CPU's 3D)", (SDL_GetTicksNS() - t0) / 1e6);
+			if (!g3) on_cpu_because("the GPU's 3D couldn't start here: update the graphics driver");
 		} else if (!crashed) {
 			g3_next_start = true;
 			fprintf(stderr, "the 3D on the CPU (the setting): the GPU's from the next start if chosen\n");
@@ -1365,10 +1372,12 @@ int main(int argc, char **argv)
 					fprintf(stderr, "the 3D on the GPU: trying %s instead: %s\n", d3d ? "Vulkan" : "Direct3D 12", g3 ? g3->name() : "none here");
 					if (g3) { m.set_gpu3d(g3.get()); a3.tested = false; continue; }
 					a3.broken = true; a3.gpu = false; apply_3d();   // (g3 gone: the CPU's)
+					on_cpu_because("the GPU's 3D pictures were wrong here");
 					return;
 				}
 				a3.broken = true; a3.gpu = false; apply_3d();
 				fprintf(stderr, "the 3D on the GPU: the CPU for this run\n");
+				on_cpu_because("the GPU's 3D pictures were wrong here");
 				return;
 			}
 			if (d > 0) fprintf(stderr, "the 3D on the GPU (%s): its test picture: %lld of %lld pixels differ by rounding (%lld drawn on one only, %lld by more than %d, colours by %d at most): keeping the GPU\n",
@@ -1390,6 +1399,7 @@ int main(int argc, char **argv)
 		a3.gpu = !g3->software();
 		auto_remember(a3.gpu);
 		fprintf(stderr, "3D renderer: Auto (%s) at %dx, antialiasing %d: the %s\n", why, cfg.scale, cfg.aa, a3.gpu ? "GPU" : "CPU (its GPU is drawn on the CPU)");
+		if (!a3.gpu) on_cpu_because("there's no graphics driver for this GPU (install the graphics card's driver)");
 		apply_3d();
 	};
 	// after each picture: its time; Auto's checks
@@ -1398,7 +1408,7 @@ int main(int argc, char **argv)
 		const model1::gpu3d_stats &st = m.m_g3;
 		if (st.failed != a3.failed) {
 			a3.failed = st.failed;
-			if (!a3.broken) fprintf(stderr, "3D renderer: the GPU failed: the CPU for this run\n");
+			if (!a3.broken) { fprintf(stderr, "3D renderer: the GPU failed: the CPU for this run\n"); on_cpu_because("the GPU's 3D failed during play"); }
 			a3.broken = true;
 			a3.gpu = false;
 			apply_3d();
@@ -1783,6 +1793,7 @@ int main(int argc, char **argv)
 			"Which draws the 3D: the CPU, or the graphics card (GPU), with exactly the same picture. Auto uses the GPU whenever it works here (the CPU if it can't).",
 			[&] { return renderer_name(); },
 			[&](int d) {
+				SDL_RemovePath((dir + "/gpu-start.crashed").c_str());   // (the player's choice: a crashed start tried again from the next)
 				if (!g3 && g3_next_start) { cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true; return; }   // (SDL_GPU: from the next start)
 				if (!g3) return;
 				cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true;
@@ -2681,6 +2692,7 @@ int main(int argc, char **argv)
 								if (read) fprintf(stderr, "pictures drawn on the CPU from now on: the GPU's picture %d differs from the CPU's (%lld of %d x %d pixels, %lld by more than 8, colours by %d at most)\n",
 												  gpu_pictures, d.n, m.frame_w(), m.frame_h(), d.big, d.most);
 								else fprintf(stderr, "pictures drawn on the CPU from now on: the GPU's picture %d couldn't be read back\n", gpu_pictures);
+								on_cpu_because("the GPU's pictures were wrong here");
 								gpu_2d = false;
 								m.set_gpu_edge(false);
 								gc.reset();
@@ -2708,6 +2720,7 @@ int main(int argc, char **argv)
 					else if (r == 1) {                        // the GPU failed: drawn whole, and at this scale from now on
 						fprintf(stderr, "pictures drawn on the CPU at %dx: the GPU couldn't put them together (%s)\n", m.render_scale(), SDL_GetError());
 						gpu_failed.insert(m.render_scale());
+						on_cpu_because("this GPU can't put pictures that large together: a lower render scale (F5) keeps it on the GPU");
 						gc.reset();
 						m.redraw();
 					}
@@ -2749,6 +2762,11 @@ int main(int argc, char **argv)
 			}
 			if (cap && g_rec_to != SIZE_MAX && g_plan_i >= g_rec_to) running = false;
 			const uint64_t now = SDL_GetTicksNS();
+			// (the pictures or the 3D on the CPU with the setting not CPU: why, on screen once)
+			if (cpu_why_new) {
+				cpu_why_new = false;
+				menu.toast("Drawing on the CPU (slower): " + cpu_why + ". Choose GPU in Display > 3D renderer to try it again from the next start.", 12);
+			}
 			if (now - since >= 500000000) {
 				menu.set_fps(cfg.show_fps ? std::to_string(int(std::lround(shown * 1e9 / double(now - since)))) + " FPS" : "");
 				shown = 0; since = now;

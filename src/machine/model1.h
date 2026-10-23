@@ -1215,13 +1215,13 @@ public:
 	int m_gpu3d_verify = 0;
 	// When the GPU's picture differs from the CPU's, how wrong it is, not how many pixels: some
 	// graphics cards' drivers (NVIDIA's on Direct3D 12) put pixels a hair off. Colours within
-	// GPU_ROUNDING_COLOUR anywhere are rounding; past that, up to 1% of the pixels, and up to 5%
-	// drawn on one and not the other (edges a hair apart), the GPU kept. When the player chose the
-	// GPU (not Auto, m_gpu3d_chosen): 10% and 25%, only a picture mostly wrong (a GPU drawing
-	// nothing, or garbage) putting the 3D on the CPU.
+	// GPU_ROUNDING_COLOUR anywhere are rounding; past that, up to 10% of the pixels, and up to 25%
+	// drawn on one and not the other, the GPU kept: only a picture mostly wrong (a GPU drawing
+	// nothing, or garbage) putting the 3D on the CPU. (Auto as the GPU chosen by hand now: a driver's
+	// rounding over a few percent of a picture never harmed a player, the CPU's 3D made it slow above 1x.)
 	static constexpr long long GPU_ROUNDING_PX = 64;
 	static constexpr int GPU_ROUNDING_COLOUR = 8;
-	static constexpr double GPU_WRONG_COLOUR = 0.01, GPU_WRONG_COVER = 0.05, GPU_WRONG_COLOUR_CHOSEN = 0.10, GPU_WRONG_COVER_CHOSEN = 0.25;
+	static constexpr double GPU_WRONG_COLOUR = 0.10, GPU_WRONG_COVER = 0.25;
 	bool m_gpu3d_chosen = false;
 	struct gpu_diff { long long all = 0, cover = 0, big = 0; int most = 0; size_t first = 0; };
 	static gpu_diff gpu_compare(const uint32_t *cpu, const uint32_t *gpu, size_t n)
@@ -1241,8 +1241,8 @@ public:
 	}
 	bool gpu_diff_ok(const gpu_diff &d, long long px) const
 	{
-		const long long colour = std::max(GPU_ROUNDING_PX, (long long)(px * (m_gpu3d_chosen ? GPU_WRONG_COLOUR_CHOSEN : GPU_WRONG_COLOUR)));
-		const long long cover = std::max(GPU_ROUNDING_PX, (long long)(px * (m_gpu3d_chosen ? GPU_WRONG_COVER_CHOSEN : GPU_WRONG_COVER)));
+		const long long colour = std::max(GPU_ROUNDING_PX, (long long)(px * GPU_WRONG_COLOUR));
+		const long long cover = std::max(GPU_ROUNDING_PX, (long long)(px * GPU_WRONG_COVER));
 		return d.big <= colour && d.cover <= cover;
 	}
 	gpu_diff m_bench_diff;   // (bench3d's picture each way, compared)

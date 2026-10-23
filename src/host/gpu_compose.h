@@ -7,6 +7,7 @@
 #include "../machine/model1.h"
 #include "../gpu/gpu3d_shaders.h"
 #include <SDL3/SDL.h>
+#include <cstdio>
 #include <cstdlib>
 #include <algorithm>
 #include <cstring>
@@ -367,9 +368,22 @@ public:
 				p.img[model1::TEX_3D].px = px[model1::TEX_3D].data();
 			} else m_first_3d = px[model1::TEX_3D];
 			model1::compose_cpu(p, w, h, want);
-			size_t n = 0;
-			for (size_t i = 0; i < want.size(); i++) n += want[i] != got[i];
-			if (n) { why = std::to_string(n) + " of " + std::to_string(want.size()) + " pixels differ from the CPU's"; ok = false; }
+			// (as the 3D's check, model1::gpu_diff_ok: judged by how wrong, not how many. Colours off by a little anywhere,
+			// a driver's rounding (NVIDIA's on Direct3D 12 puts pixels a hair off), aren't a broken GPU; only a picture
+			// plainly wrong (over 10% of it off by more than GPU_ROUNDING_COLOUR: drawing nothing, or garbage) puts the
+			// pictures on the CPU, whose putting together at full size each picture made the game slow above 1x)
+			size_t n = 0, big = 0;
+			for (size_t i = 0; i < want.size(); i++) {
+				if (want[i] == got[i]) continue;
+				n++;
+				int d = 0;
+				for (int sh = 0; sh < 24; sh += 8) d = std::max(d, std::abs(int((want[i] >> sh) & 255) - int((got[i] >> sh) & 255)));
+				big += d > model1::GPU_ROUNDING_COLOUR;
+			}
+			const size_t allowed = std::max<size_t>(size_t(model1::GPU_ROUNDING_PX), size_t(double(want.size()) * model1::GPU_WRONG_COLOUR));
+			if (big > allowed) { why = std::to_string(big) + " of " + std::to_string(want.size()) + " pixels differ from the CPU's by more than rounding"; ok = false; }
+			else if (n) fprintf(stderr, "pictures put together on the GPU: %zu of %zu pixels differ from the CPU's by rounding (%zu by more than %d, up to %zu kept): kept\n",
+			                    n, want.size(), big, model1::GPU_ROUNDING_COLOUR, allowed);
 		}
 		reset();
 		m_first_3d.clear();
