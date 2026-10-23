@@ -1581,31 +1581,48 @@ int main(int argc, char **argv)
 		return std::string(g);
 	};
 	// each player's pad: the one chosen (by its GUID) if it is there, else the next free one
-	// ("auto"), or none
+	// ("auto"), or none: first the pads chosen by name, then "auto" players take the free ones in
+	// order, then a player whose chosen pad isn't there (or shows up differently: a pad in another
+	// mode has another GUID) takes the next free one too. A pad already open stays open (a Bluetooth
+	// pad shows up in stages, and one that wouldn't open is tried again a second later); a
+	// player's pad changing lets go of whatever that player was holding. Says if one changed.
+	pad_state pstate[2];
 	auto open_pads = [&] {
-		for (auto &pd : pads) if (pd) { SDL_CloseGamepad(pd); pd = nullptr; }
+		SDL_JoystickID before[2] = { 0, 0 };
+		for (int p = 0; p < 2; p++) if (pads[p]) before[p] = SDL_GetGamepadID(pads[p]);
+		SDL_Gamepad *next[2] = { nullptr, nullptr };
 		int n = 0;
 		SDL_JoystickID *ids = SDL_GetGamepads(&n);
+		if (!ids) return false;
 		std::vector<bool> used(n, false);
-		// first the pads chosen by name, then "auto" players take the free ones in order, then a
-		// player whose chosen pad isn't there (or shows up differently: a pad in another mode
-		// has another GUID) takes the next free one too
 		for (int pass = 0; pass < 3; pass++)
 			for (int p = 0; p < 2; p++) {
 				const std::string &c = cfg.ctl[p].pad_choice;
-				if (pads[p] || c == "none") continue;
+				if (next[p] || c == "none") continue;
 				const bool chosen = c != "auto";
 				if ((pass == 0 && !chosen) || (pass == 1 && chosen)) continue;
-				for (int i = 0; i < n && !pads[p]; i++)
-					if (!used[i] && (pass != 0 || guid_of(ids[i]) == c)) { pads[p] = SDL_OpenGamepad(ids[i]); used[i] = true; }
+				for (int i = 0; i < n && !next[p]; i++) {
+					if (used[i] || (pass == 0 && guid_of(ids[i]) != c)) continue;
+					used[i] = true;
+					for (int o = 0; o < 2; o++) if (before[o] == ids[i]) next[p] = pads[o];
+					if (!next[p] && !(next[p] = SDL_OpenGamepad(ids[i])))
+						fprintf(stderr, "pad %u didn't open: %s (tried again in a second)\n", unsigned(ids[i]), SDL_GetError());
+				}
 			}
 		SDL_free(ids);
-		if (pads_swapped && pads[0] && pads[1]) std::swap(pads[0], pads[1]);
+		if (pads_swapped && next[0] && next[1]) std::swap(next[0], next[1]);
+		for (auto *pd : pads) if (pd && pd != next[0] && pd != next[1]) SDL_CloseGamepad(pd);
+		bool changed = false;
+		for (int p = 0; p < 2; p++) {
+			pads[p] = next[p];
+			if (before[p] != (pads[p] ? SDL_GetGamepadID(pads[p]) : 0)) { pstate[p] = pad_state{}; changed = true; }
+		}
+		return changed;
 	};
 	open_pads();
+	uint64_t next_pad_scan = SDL_GetTicks() + 1000;
 
 	bool running = true, paused = false, show_frame = true;
-	pad_state pstate[2];
 	// F9: timings in the title bar (and on stderr) every 120 frames; a frame has 17.4 ms
 	struct perf_stats { bool show = false; int frames = 0, starved = 0, held = 0, long_frame = 0, long_picture = 0, long_other = 0, ahead = 0; uint64_t emu = 0, emu_max = 0, present = 0, work = 0, shown = 0, since = SDL_GetTicksNS(); };
 	perf_stats perf{ cfg.timings || getenv("VF_PERF") != nullptr };
@@ -2166,7 +2183,7 @@ int main(int argc, char **argv)
 	// present's wait, a picture's drawing), and shown a refresh apart the motion wobbled. Only while the
 	// passes keep to the screen's refreshes, a whole number of them apart on average: not with vsync
 	// off or not honoured, nor a minimised or covered window; never back. VF_NO_EVEN_PACE=1: as before.
-	double even_real = 0, even_shown = 0, pass_avg = 0;
+	double even_real = 0, even_shown = 0, pass_avg = 0, dt_avg = 1.0 / 120;
 	auto restart_clock = [&] { clock_t = SDL_GetTicksNS(); frame_clock = double(game_run); even_real = even_shown = 0; };
 	int shot = 0;
 	// testing: VF_QUIT_AFTER=n runs n frames, saves build/host_last.png (the game's frame) and
@@ -2325,13 +2342,14 @@ int main(int argc, char **argv)
 		}
 		// testing: VF_EVENTS_AT="2000:p,2050:reset,2060:targets" at those passes presses a key, or
 		// sends the renderer's device reset or render targets reset (as Direct3D does); "stall" and
-		// "unstall" stop and restart the sound device
+		// "unstall" stop and restart the sound device; "sleep" a minute passing at once (the machine asleep)
 		static const char *events_at = getenv("VF_EVENTS_AT");
 		for (const char *c = events_at; c && *c; c = strchr(c, ',') ? strchr(c, ',') + 1 : "") {
 			char what[32] = "";
 			long at = -1;
 			if (sscanf(c, "%ld:%31[^,]", &at, what) != 2 || at != pass) continue;
 			fprintf(stderr, "test: pass %ld: %s\n", at, what);
+			if (!strcmp(what, "sleep")) { clock_t -= 60000000000ull; continue; }   // a minute asleep
 			if (!strcmp(what, "stall") || !strcmp(what, "unstall")) {   // the sound device stops taking data
 				if (audio) { if (what[0] == 's') SDL_PauseAudioStreamDevice(audio); else SDL_ResumeAudioStreamDevice(audio); }
 				continue;
@@ -2348,8 +2366,11 @@ int main(int argc, char **argv)
 		}
 		SDL_Event e;
 		const bool menu_was_open = menu.is_open();
+		bool pads_changed = false;
 		while (SDL_PollEvent(&e)) {
 			if (e.type == SDL_EVENT_QUIT) running = false;
+			else if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED || e.type == SDL_EVENT_GAMEPAD_REMAPPED
+					 || e.type == SDL_EVENT_JOYSTICK_ADDED || e.type == SDL_EVENT_JOYSTICK_REMOVED) pads_changed = true;
 			else if (e.type == SDL_EVENT_RENDER_TARGETS_RESET || e.type == SDL_EVENT_RENDER_DEVICE_RESET) {
 				// Direct3D lost what render targets held (a device reset: every texture). The GPU's
 				// parts are made again whatever is on show (their old textures can't be used), and
@@ -2372,7 +2393,6 @@ int main(int argc, char **argv)
 					 && (e.key.scancode == SDL_SCANCODE_F11 || (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT))))
 				set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
 			else if (menu.handle_event(e)) continue;
-			else if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) open_pads();
 			else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && ASPECTS[aspect_i] <= 0) {
 				float before = m.aspect();
 				apply_aspect();
@@ -2401,6 +2421,12 @@ int main(int argc, char **argv)
 				} else if (e.key.scancode == SDL_SCANCODE_F11 || fullscreen_key(e.key))
 					set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
 			}
+		}
+		// pads looked at again on a pad's event, and once a second anyway (a pad that didn't open, an
+		// event missed)
+		if (pads_changed || SDL_GetTicks() >= next_pad_scan) {
+			if (open_pads()) menu.refresh();
+			next_pad_scan = SDL_GetTicks() + 1000;
 		}
 		// the menu pauses the game and its sound
 		if (menu.is_open() != menu_was_open && audio) {
@@ -2440,6 +2466,22 @@ int main(int argc, char **argv)
 			// VF_HIDDEN, VF_HZ high and VF_CAPTURE: every in-between picture, on a machine too slow to keep up)
 			static const double fixed_dt = getenv("VF_STEP_HZ") ? 1.0 / atof(getenv("VF_STEP_HZ")) : 0;
 			double dt = fixed_dt > 0 ? fixed_dt : double(now_ns - clock_t) / 1e9;
+			// A gap over half a second (the machine asleep, the window dragged, the app in the
+			// background) isn't the game's time: the averages below start again rather than take it
+			// in (they kept even steps off and the pace wrong for a second or two after waking), and
+			// sound queued before it goes (it would play late). It counts as one frame's time, so a window
+			// the system only lets run now and then still goes on.
+			if (fixed_dt == 0 && dt > 0.5) {
+				static int told = 0;
+				if (told++ < 5) fprintf(stderr, "a %.1f s gap (asleep?): the pacing starts again\n", dt);
+				dt = 1.0 / FRAME_HZ;
+				frame_clock = double(game_run);
+				even_real = even_shown = 0;
+				pass_avg = screen_hz_now > 0 ? 1.0 / screen_hz_now : 0;
+				dt_avg = 1.0 / 120;
+				queue_avg = QUEUED * frame_bytes;
+				if (audio) SDL_ClearAudioStream(audio);
+			}
 			clock_t = now_ns;
 			{   // (even steps: above, at frame_clock)
 				static const bool no_even = getenv("VF_NO_EVEN_PACE") != nullptr;
@@ -2485,7 +2527,6 @@ int main(int argc, char **argv)
 			// or 50, more under an FPS limit); the rest of the lost time is dropped and the clock
 			// carries on from there, its fraction kept, so the pictures go on at their pace. The
 			// sound's slack (QUEUED frames) covers it, and the 1% trim makes it up.
-			static double dt_avg = 1.0 / 120;
 			dt_avg += (std::min(dt, 0.1) - dt_avg) * 0.05;
 			const int pace = std::max(1, int(std::ceil(dt_avg * rate + 0.25)));
 			if (due > pace) {
