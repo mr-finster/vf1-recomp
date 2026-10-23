@@ -25,6 +25,10 @@
 #endif
 #ifdef _WIN32
 #include <SDL3/SDL_main.h>   // WinMain, and argv as UTF-8
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>         // (power throttling off, below)
 #endif
 #include <string>
 #include <algorithm>
@@ -405,6 +409,7 @@ struct settings
 	bool one_hit_ko = false, no_time_limit = false, kage_unmasked = false;   // Cheats
 	int ring_cheat = 0;     // Cheats: 0 the arcade's, 1 tiny (600), 2 huge (5000: no ring outs)
 	int ring_now() const { return ring_cheat == 1 ? 600 : ring_cheat == 2 ? 5000 : ring; }
+	static constexpr const char *BUILD = VF_VERSION " " VF_DATE;   // (what auto_3d was learnt by)
 	std::string auto_3d;    // Auto's findings, per render scale and antialiasing ("3x1:g,2x0:c")
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	bool english_set = false;   // (the game's language made English once, its first start here: Japanese after is the player's choice)
@@ -453,6 +458,12 @@ struct settings
 		flag("english_set", english_set);
 		num("ring_cheat", ring_cheat, 0, 2);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
+		// (Auto's findings by another build (another version, or the same rebuilt) forgotten, so each new build looks
+		// again: a driver updated since, or a fix here; kept for ever, one slow measure kept a scale on the CPU)
+		if (auto it = kv.find("auto_3d_build"); !auto_3d.empty() && (it == kv.end() || it->second != BUILD)) {
+			fprintf(stderr, "settings: Auto's findings (%s) by %s forgotten: this build looks again\n", auto_3d.c_str(), it == kv.end() ? "an older build" : it->second.c_str());
+			auto_3d.clear();
+		}
 		auto trimmed = [](std::string v) { while (!v.empty() && isspace(uint8_t(v.back()))) v.pop_back(); return v; };   // (a value edited by hand: "* ")
 		for (int p = 0; p < 2; p++)
 			if (auto it = kv.find(p ? "random_p2_name" : "random_p1_name"); it != kv.end()) random_named[p] = trimmed(it->second);
@@ -512,7 +523,7 @@ struct settings
 		if (kage_unmasked) fprintf(f, "kage_unmasked = 1\n");
 		if (english_set) fprintf(f, "english_set = 1\n");
 		if (ring_cheat) fprintf(f, "ring_cheat = %d\n", ring_cheat);
-		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\n", auto_3d.c_str());
+		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\nauto_3d_build = %s\n", auto_3d.c_str(), BUILD);
 		if (!roms_folder.empty()) fprintf(f, "roms_folder = %s\n", roms_folder.c_str());
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
 		const bool flushed = flush_to_disk(f);
@@ -1015,6 +1026,22 @@ int main(int argc, char **argv)
 	// Windows only lets the program in front hand over the foreground: started from another program,
 	// the game could open behind it with the keys going there. SDL's raise can force it.
 	SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
+	// Power throttling off for the game (as VF2's and VF3's): its threads at the clocks and on the cores the
+	// scheduler gives a program that's in use, and its timers as fine as asked for, even minimized. (Windows 11
+	// otherwise may put a game it thinks is in the background on the efficiency cores, at their low clocks.)
+	{
+		using set_t = BOOL(WINAPI *)(HANDLE, PROCESS_INFORMATION_CLASS, LPVOID, DWORD);
+		if (auto set = reinterpret_cast<set_t>(reinterpret_cast<void *>(GetProcAddress(GetModuleHandleA("kernel32.dll"), "SetProcessInformation")))) {
+			PROCESS_POWER_THROTTLING_STATE st{};
+			st.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+			st.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+			st.StateMask = 0;
+			if (!set(GetCurrentProcess(), ProcessPowerThrottling, &st, sizeof st)) {   // (Windows 10 before 21H2 has no timer flag)
+				st.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+				set(GetCurrentProcess(), ProcessPowerThrottling, &st, sizeof st);
+			}
+		}
+	}
 #endif
 	if (!SDL_Init(SDL_INIT_VIDEO)) return fail("Couldn't start the video");
 	if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) fprintf(stderr, "no gamepads: %s\n", SDL_GetError());
@@ -1051,11 +1078,24 @@ int main(int argc, char **argv)
 	// SDL's own, chooses over this; VF_NO_GPU_RENDERER=1 skips it, tests. A start that closed while
 	// starting it leaves gpu-start.crashed, as the 3D's own start does below: SDL's usual one then.)
 	const std::string gpu_marker = dir + "/gpu-start.crashed";
+	// (a marker holds the build that left it: another build's, a driver or a fix since, the GPU tried again)
+	auto marker_crashed = [&](const std::string &path) {
+		if (!SDL_GetPathInfo(path.c_str(), nullptr)) return false;
+		std::string by;
+		size_t n = 0;
+		if (void *d = SDL_LoadFile(path.c_str(), &n)) { by.assign(static_cast<const char *>(d), n); SDL_free(d); }
+		if (by == settings::BUILD) return true;
+		fprintf(stderr, "the GPU: %s closed while starting it: this build tries it again\n", by.empty() ? "an older build" : by.c_str());
+		return false;
+	};
+	auto leave_marker = [&](const std::string &path) {
+		if (SDL_IOStream *io = SDL_IOFromFile(path.c_str(), "w")) { SDL_WriteIO(io, settings::BUILD, strlen(settings::BUILD)); SDL_CloseIO(io); }
+	};
 	// (Windows: Vulkan first on any card, unless Graphics driver is Direct3D 12; SDL_GPU_DRIVER chooses over both)
 	const bool vk_first = !getenv("SDL_GPU_DRIVER") && cfg.graphics == 0 && gpu3d_prefer_vulkan();
 	bool ren_vk = false;   // (the gpu renderer started on Vulkan, chosen first)
-	if (cfg.renderer3d != 0 && !getenv("SDL_RENDER_DRIVER") && !getenv("VF_NO_GPU_RENDERER") && !SDL_GetPathInfo(gpu_marker.c_str(), nullptr)) {
-		if (SDL_IOStream *io = SDL_IOFromFile(gpu_marker.c_str(), "w")) SDL_CloseIO(io);
+	if (cfg.renderer3d != 0 && !getenv("SDL_RENDER_DRIVER") && !getenv("VF_NO_GPU_RENDERER") && !marker_crashed(gpu_marker)) {
+		leave_marker(gpu_marker);
 		// (Windows: Vulkan first, Direct3D 12 if it won't start, gpu3d_prefer_vulkan)
 		if (vk_first) {
 			SDL_SetHint(SDL_HINT_GPU_DRIVER, "vulkan");
@@ -1225,11 +1265,11 @@ int main(int argc, char **argv)
 		// while it starts: there next time, it crashed then, so the CPU's 3D, said so. Deleting
 		// gpu-start.crashed tries again.)
 		const std::string marker = dir + "/gpu-start.crashed";
-		const bool crashed = cfg.renderer3d != 0 && SDL_GetPathInfo(marker.c_str(), nullptr);
-		if (crashed) fprintf(stderr, "the 3D on the CPU: the last start closed while starting the GPU's (%s)\n", marker.c_str());
+		const bool crashed = cfg.renderer3d != 0 && marker_crashed(marker);
+		if (crashed) fprintf(stderr, "the 3D on the CPU: the last start closed while starting the GPU's (%s; a new build tries it again)\n", marker.c_str());
 		if (cfg.renderer3d != 0 && !crashed) {
 			const uint64_t t0 = SDL_GetTicksNS();
-			if (SDL_IOStream *io = SDL_IOFromFile(marker.c_str(), "w")) SDL_CloseIO(io);
+			leave_marker(marker);
 			{
 				const char *rn = SDL_GetRendererName(ren);
 				if (gpu_2d && rn && !strcmp(rn, "gpu") && !getenv("VF_G3_OWN_DEVICE")) g3_shared = (g3 = gpu3d_create_sdlgpu_on(SDL_GetGPURendererDevice(ren))) != nullptr;
