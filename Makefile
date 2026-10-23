@@ -35,10 +35,12 @@ BIN ?= build/bin
 # date of the last commit. Builds without git (a container) are handed them in the environment.
 VF_VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 VF_DATE ?= $(shell git log -1 --format=%cd --date=format:'%b %-d %Y' 2>/dev/null)
+# (the commit too: what a GPU failure is remembered by, src/host/main.cpp's BUILD)
+VF_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 # rewritten only when they change, so main is rebuilt for a new version and not otherwise
 $(OBJ)/version.h: FORCE
 	@mkdir -p $(OBJ)
-	@printf '#define VF_VERSION "%s"\n#define VF_DATE "%s"\n' "$(VF_VERSION)" "$(VF_DATE)" > $@.tmp
+	@printf '#define VF_VERSION "%s"\n#define VF_DATE "%s"\n#define VF_COMMIT "%s"\n' "$(VF_VERSION)" "$(VF_DATE)" "$(VF_COMMIT)" > $@.tmp
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 FORCE:
 objs = $(patsubst %.cpp,$(OBJ)/%.o,$(1))

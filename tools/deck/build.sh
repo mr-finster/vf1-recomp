@@ -13,4 +13,5 @@ IMG=registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
 # the menu's version and date, from git here (the container may have no git)
 VF_VERSION=${VF_VERSION:-$(git describe --tags --always 2>/dev/null || echo dev)}   # (VF_VERSION=v1.1.11 for a release)
 VF_DATE=$(git log -1 --format=%cd --date=format:'%b %-d %Y' 2>/dev/null)
-docker run --rm --platform linux/amd64 -e VF_VERSION="$VF_VERSION" -e VF_DATE="$VF_DATE" -e DECK_FAST="$DECK_FAST" -v "$PWD":/src -w /src "$IMG" bash tools/deck/inside.sh
+VF_COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
+docker run --rm --platform linux/amd64 -e VF_VERSION="$VF_VERSION" -e VF_DATE="$VF_DATE" -e VF_COMMIT="$VF_COMMIT" -e DECK_FAST="$DECK_FAST" -v "$PWD":/src -w /src "$IMG" bash tools/deck/inside.sh
