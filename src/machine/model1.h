@@ -746,9 +746,9 @@ public:
 		bool gpu = false;       // drawn by the GPU
 		int polys = 0;
 		uint64_t failed = 0, cpu_fallback = 0, checked = 0, differ = 0;   // errors; pictures the CPU drew instead; checks
-		uint64_t wrong = 0;     // of the errors, a game's picture checked and not the CPU's
 		uint64_t pictures = 0;  // drawn by the GPU
 		uint64_t handed = 0;    // of them, drawn straight into the host's texture (nothing waited for)
+		uint64_t wrong = 0;     // of the errors, a game's picture checked and not the CPU's (last: bench3d's list by place)
 	};
 	gpu3d_stats m_g3;
 	// Auto's measure (model1_video.cpp); differ: also the test picture drawn once more each way and

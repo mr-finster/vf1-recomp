@@ -2853,7 +2853,7 @@ bool model1::bench3d(int reps, double &cpu_ms, double &gpu_ms, long long *differ
 	}
 	view->x1 = sx1; view->x2 = sx2; view->y1 = sy1; view->y2 = sy2;
 	s_mark_y1 = mk1; s_mark_y2 = mk2;
-	m_g3 = gpu3d_stats{ 0, 0, 0, false, 0, m_g3.failed, m_g3.cpu_fallback, m_g3.checked, m_g3.differ, m_g3.pictures };
+	m_g3 = gpu3d_stats{ 0, 0, 0, false, 0, m_g3.failed, m_g3.cpu_fallback, m_g3.checked, m_g3.differ, m_g3.pictures, 0, m_g3.wrong };
 	if (!ok) return false;
 	std::sort(c.begin(), c.end()); std::sort(g.begin(), g.end());
 	cpu_ms = c[c.size() / 2]; gpu_ms = g[g.size() / 2];

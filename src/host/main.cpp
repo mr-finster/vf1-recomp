@@ -1109,7 +1109,7 @@ int main(int argc, char **argv)
 		std::string by;
 		size_t n = 0;
 		if (void *d = SDL_LoadFile(path.c_str(), &n)) { by.assign(static_cast<const char *>(d), n); SDL_free(d); }
-		if (by == settings::BUILD) { on_cpu_because("the graphics driver closed the game the last time the GPU started", "Choose Auto in Display > 3D renderer to try it again from the next start."); return true; }
+		if (by == settings::BUILD) { on_cpu_because("the graphics driver closed the game the last time the GPU started", "Press left or right on Display > 3D renderer to try it again from the next start."); return true; }
 		fprintf(stderr, "the GPU: %s closed while starting it: this build tries it again\n", by.empty() ? "an older build" : by.c_str());
 		return false;
 	};
@@ -1354,6 +1354,7 @@ int main(int argc, char **argv)
 		if (!g3 || a3.broken) return "CPU (no GPU here)";
 #elif VF_GPU3D_SDL
 		if (!g3 && g3_crashed) return "CPU (GPU crashed: choose to retry)";
+		if (!g3 && g3_next_start && !cfg.renderer3d) return "CPU";   // (none made, the setting CPU: there may well be a GPU)
 		if (!g3 && g3_next_start && cfg.renderer3d) return cfg.renderer3d == 2 ? "Auto (from the next start)" : "GPU (from the next start)";
 		if (!g3 || a3.broken) return "CPU (no GPU here)";
 #else
@@ -1397,12 +1398,12 @@ int main(int argc, char **argv)
 					fprintf(stderr, "the 3D on the GPU: trying %s instead: %s\n", d3d ? "Vulkan" : "Direct3D 12", g3 ? g3->name() : "none here");
 					if (g3) { m.set_gpu3d(g3.get()); a3.tested = false; continue; }
 					a3.broken = true; a3.gpu = false; apply_3d();   // (g3 gone: the CPU's)
-					on_cpu_because("the GPU drew the 3D wrongly here", UPDATE);
+					on_cpu_because(d > 0 ? "the GPU drew the 3D wrongly here" : "the GPU's 3D failed its test here", UPDATE);
 					return;
 				}
 				a3.broken = true; a3.gpu = false; apply_3d();
 				fprintf(stderr, "the 3D on the GPU: the CPU for this run\n");
-				on_cpu_because("the GPU drew the 3D wrongly here", UPDATE);
+				on_cpu_because(d > 0 ? "the GPU drew the 3D wrongly here" : "the GPU's 3D failed its test here", UPDATE);
 				return;
 			}
 			if (d > 0) fprintf(stderr, "the 3D on the GPU (%s): its test picture: %lld of %lld pixels differ by rounding (%lld drawn on one only, %lld by more than %d, colours by %d at most): keeping the GPU\n",
@@ -1806,8 +1807,11 @@ int main(int argc, char **argv)
 			[&] { return renderer_name(); },
 			[&](int d) {
 				SDL_RemovePath((dir + "/gpu-start.crashed").c_str());   // (the player's choice: a crashed start tried again from the next)
+				const bool was_crashed = g3_crashed;
 				g3_crashed = false;
-				if (!g3 && g3_next_start) { cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true; return; }   // (SDL_GPU: from the next start)
+				// (SDL_GPU: from the next start. After a crashed start the first press only tries the GPU again, the
+				// setting kept: one press on to CPU would have left it there)
+				if (!g3 && g3_next_start) { if (!was_crashed) { cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true; } return; }
 				if (!g3) return;
 				cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true;
 				auto_measure("chosen");
@@ -1818,7 +1822,11 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Graphics driver",
 			"Which of Windows' graphics drivers the GPU uses. Auto starts on Vulkan, and on Direct3D 12 if Vulkan won't start or can't draw the game exactly. Pick Direct3D 12 if the game runs better on it here. Takes effect the next time the game starts.",
 			[&] { return std::string(cfg.graphics ? "Direct3D 12" : "Auto (Vulkan first)"); },
-			[&](int) { cfg.graphics = !cfg.graphics; cfg_dirty = true; } });
+			[&](int) {
+				cfg.graphics = !cfg.graphics; cfg_dirty = true;
+				SDL_RemovePath((dir + "/gpu-start.crashed").c_str());   // (another driver: a crashed start tried again with it)
+				g3_crashed = false;
+			} });
 #endif
 		p.items.push_back({ "Picture shape",
 			"Fit the window fills any screen shape. The other shapes add black bars to keep their shape; 4:3 is the original arcade screen. (F6)",
