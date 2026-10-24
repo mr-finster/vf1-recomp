@@ -357,6 +357,17 @@ bool save_blob(const std::string &path, const uint8_t *src, size_t n)
 	return replace_file(path, tmp);
 }
 
+// The GPU's start marker: written in place and flushed (no swap: a rename's not on the disk until the folder is, and
+// a crash that takes the machine down in the driver would lose it).
+bool write_marker(const std::string &path, const char *text)
+{
+	FILE *f = fopen(path.c_str(), "wb");
+	if (!f) return false;
+	const size_t n = strlen(text);
+	const bool ok = fwrite(text, 1, n, f) == n && flush_to_disk(f);
+	return fclose(f) == 0 && ok;
+}
+
 // The saves written off the game's thread: save_blob flushes each file to the disk (a crash mid-save
 // keeps the old one), which on a hard disk waits tens of milliseconds a file, and the autosave ran
 // every few seconds in play: a hitch each time (a reporter: "on an SSD barely noticeable, on a HDD
@@ -458,7 +469,7 @@ struct settings
 		flag("english_set", english_set);
 		num("ring_cheat", ring_cheat, 0, 2);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
-		// (Auto's findings by another build (another version, or the same rebuilt) forgotten, so each new build looks
+		// (Auto's findings by another build (another version or commit) forgotten, so each new build looks
 		// again: a driver updated since, or a fix here; kept for ever, one slow measure kept a scale on the CPU)
 		if (auto it = kv.find("auto_3d_build"); !auto_3d.empty() && (it == kv.end() || it->second != BUILD)) {
 			fprintf(stderr, "settings: Auto's findings (%s) by %s forgotten: this build looks again\n", auto_3d.c_str(), it == kv.end() ? "an older build" : it->second.c_str());
@@ -1103,7 +1114,7 @@ int main(int argc, char **argv)
 		return false;
 	};
 	auto leave_marker = [&](const std::string &path) {
-		save_blob(path, reinterpret_cast<const uint8_t *>(settings::BUILD), strlen(settings::BUILD));   // (flushed to the disk: a crash that takes the machine down keeps it)
+		write_marker(path, settings::BUILD);   // (flushed to the disk: a crash that takes the machine down keeps it)
 	};
 	// (Windows: Vulkan first on any card, unless Graphics driver is Direct3D 12; SDL_GPU_DRIVER chooses over both)
 	const bool vk_first = !getenv("SDL_GPU_DRIVER") && cfg.graphics == 0 && gpu3d_prefer_vulkan();
@@ -1342,7 +1353,7 @@ int main(int argc, char **argv)
 #if VF_GPU3D_METAL
 		if (!g3 || a3.broken) return "CPU (no GPU here)";
 #elif VF_GPU3D_SDL
-		if (!g3 && g3_crashed) return "CPU (the GPU closed the game last time: choose to try again)";
+		if (!g3 && g3_crashed) return "CPU (GPU crashed: choose to retry)";
 		if (!g3 && g3_next_start && cfg.renderer3d) return cfg.renderer3d == 2 ? "Auto (from the next start)" : "GPU (from the next start)";
 		if (!g3 || a3.broken) return "CPU (no GPU here)";
 #else
@@ -1422,7 +1433,11 @@ int main(int argc, char **argv)
 		const model1::gpu3d_stats &st = m.m_g3;
 		if (st.failed != a3.failed) {
 			a3.failed = st.failed;
-			if (!a3.broken) { fprintf(stderr, "3D renderer: the GPU failed: the CPU for this run\n"); on_cpu_because("the GPU's 3D stopped (after a sleep, or the graphics driver restarting)", NEXT); }
+			if (!a3.broken) {
+				fprintf(stderr, "3D renderer: the GPU failed: the CPU for this run\n");
+				if (st.wrong) on_cpu_because("the GPU drew the 3D wrongly here", UPDATE);   // (a game's picture checked: not the CPU's)
+				else on_cpu_because("the GPU's 3D stopped (after a sleep, or the graphics driver restarting)", NEXT);
+			}
 			a3.broken = true;
 			a3.gpu = false;
 			apply_3d();
@@ -1787,7 +1802,7 @@ int main(int argc, char **argv)
 				set_scale(cfg.scale);
 			} });
 		p.items.push_back({ "3D renderer",
-			"Which draws the 3D: the CPU, or the graphics card (GPU), with exactly the same picture. Auto uses the GPU whenever it works here (the CPU if it can't).",
+			"Which draws the 3D: the CPU, or the graphics card (GPU), with exactly the same picture. Auto uses the GPU whenever it works here (the CPU if it can't). If the GPU closed the game as it started, the CPU draws it until you choose again here.",
 			[&] { return renderer_name(); },
 			[&](int d) {
 				SDL_RemovePath((dir + "/gpu-start.crashed").c_str());   // (the player's choice: a crashed start tried again from the next)
@@ -2682,7 +2697,7 @@ int main(int argc, char **argv)
 								if (read) fprintf(stderr, "pictures drawn on the CPU from now on: the GPU's picture %d differs from the CPU's (%lld of %d x %d pixels, %lld by more than 8, colours by %d at most)\n",
 												  gpu_pictures, d.n, m.frame_w(), m.frame_h(), d.big, d.most);
 								else fprintf(stderr, "pictures drawn on the CPU from now on: the GPU's picture %d couldn't be read back\n", gpu_pictures);
-								on_cpu_because("the GPU put the pictures together wrongly here", NEXT);
+								if (cfg.renderer3d != 0) on_cpu_because("the GPU put the pictures together wrongly here", NEXT);
 								gpu_2d = false;
 								m.set_gpu_edge(false);
 								gc.reset();
@@ -2710,7 +2725,7 @@ int main(int argc, char **argv)
 					else if (r == 1) {                        // the GPU failed: drawn whole, and at this scale from now on
 						fprintf(stderr, "pictures drawn on the CPU at %dx: the GPU couldn't put them together (%s)\n", m.render_scale(), SDL_GetError());
 						gpu_failed.insert(m.render_scale());
-						on_cpu_because("this GPU can't put pictures that large together", "A lower render scale (F5) keeps it on the GPU.");
+						if (cfg.renderer3d != 0) on_cpu_because("this GPU can't put pictures that large together", "A lower Display > Render scale keeps it on the GPU.");
 						gc.reset();
 						m.redraw();
 					}

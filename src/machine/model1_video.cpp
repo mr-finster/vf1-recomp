@@ -2737,7 +2737,7 @@ void model1::gpu3d_end(bitmap_rgb32 &bitmap)
 					if (--m_gpu3d_verify == 0) { fprintf(stderr, "the 3D on the GPU: the game's pictures checked against the CPU's\n"); cpu_3d_let_go(); }
 				} else if (diff) {   // (not the CPU's: the CPU's picture shown, and the CPU's from now on)
 					memcpy(bitmap.data(), m_check_cpu.data(), n * 4);
-					m_g3.failed++;
+					m_g3.failed++; m_g3.wrong++;
 					m_gpu3d_verify = 0;
 					fprintf(stderr, "the 3D on the GPU: its picture isn't the CPU's (%zu pixels differ, %lld drawn on one only, %lld by more than %d): the CPU's 3D from now on\n",
 							diff, dd.cover, dd.big, GPU_ROUNDING_COLOUR);
