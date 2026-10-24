@@ -1098,12 +1098,12 @@ int main(int argc, char **argv)
 		std::string by;
 		size_t n = 0;
 		if (void *d = SDL_LoadFile(path.c_str(), &n)) { by.assign(static_cast<const char *>(d), n); SDL_free(d); }
-		if (by == settings::BUILD) { on_cpu_because("the graphics driver closed the game the last time the GPU started", "Choose GPU in Display > 3D renderer to try it again from the next start."); return true; }
+		if (by == settings::BUILD) { on_cpu_because("the graphics driver closed the game the last time the GPU started", "Choose Auto in Display > 3D renderer to try it again from the next start."); return true; }
 		fprintf(stderr, "the GPU: %s closed while starting it: this build tries it again\n", by.empty() ? "an older build" : by.c_str());
 		return false;
 	};
 	auto leave_marker = [&](const std::string &path) {
-		if (SDL_IOStream *io = SDL_IOFromFile(path.c_str(), "w")) { SDL_WriteIO(io, settings::BUILD, strlen(settings::BUILD)); SDL_CloseIO(io); }
+		save_blob(path, reinterpret_cast<const uint8_t *>(settings::BUILD), strlen(settings::BUILD));   // (flushed to the disk: a crash that takes the machine down keeps it)
 	};
 	// (Windows: Vulkan first on any card, unless Graphics driver is Direct3D 12; SDL_GPU_DRIVER chooses over both)
 	const bool vk_first = !getenv("SDL_GPU_DRIVER") && cfg.graphics == 0 && gpu3d_prefer_vulkan();
@@ -1250,7 +1250,7 @@ int main(int argc, char **argv)
 		}
 #endif
 		if (gpu_2d) fprintf(stderr, "pictures put together on the GPU (renderer: %s)\n", rname ? rname : "?");
-		else if (cfg.renderer3d != 0 && !getenv("VF_CPU_2D")) on_cpu_because("the GPU couldn't put the pictures together", UPDATE);
+		else if (cfg.renderer3d != 0 && !getenv("VF_CPU_2D")) on_cpu_because("the GPU couldn't put the pictures together", UPDATE);   // (the 3D on the CPU by choice: SDL's usual renderer, which may not)
 		// Low's edges smoothed there too (SDL's gpu renderer): the 3D then goes straight into its
 		// texture with Low as without, nothing back to the CPU (vf1-recomp #16: an RTX 5080 at 6x,
 		// Low, its 3D read back each picture for the CPU's smoothing, held at 60)
@@ -1267,6 +1267,7 @@ int main(int argc, char **argv)
 	std::unique_ptr<gpu3d> g3;
 	bool g3_shared = false;       // (SDL_GPU: on the renderer's own device, drawing into its textures)
 	bool g3_next_start = false;   // (SDL_GPU: none made, the setting CPU as the game started)
+	bool g3_crashed = false;      // (SDL_GPU: none made, the last start closed while starting it; a choice in the menu tries again)
 #if VF_GPU3D_METAL
 	{
 		const char *rname = SDL_GetRendererName(ren);
@@ -1283,7 +1284,7 @@ int main(int argc, char **argv)
 		const bool crashed = cfg.renderer3d != 0 && marker_crashed(marker);
 		if (crashed) {
 			fprintf(stderr, "the 3D on the CPU: the last start closed while starting the GPU's (%s; a new build tries it again)\n", marker.c_str());
-			g3_next_start = true;   // (the menu's choice: from the next start, the marker gone)
+			g3_next_start = g3_crashed = true;   // (the menu's choice: from the next start, the marker gone)
 		}
 		if (cfg.renderer3d != 0 && !crashed) {
 			const uint64_t t0 = SDL_GetTicksNS();
@@ -1341,6 +1342,7 @@ int main(int argc, char **argv)
 #if VF_GPU3D_METAL
 		if (!g3 || a3.broken) return "CPU (no GPU here)";
 #elif VF_GPU3D_SDL
+		if (!g3 && g3_crashed) return "CPU (the GPU closed the game last time: choose to try again)";
 		if (!g3 && g3_next_start && cfg.renderer3d) return cfg.renderer3d == 2 ? "Auto (from the next start)" : "GPU (from the next start)";
 		if (!g3 || a3.broken) return "CPU (no GPU here)";
 #else
@@ -1643,60 +1645,31 @@ int main(int argc, char **argv)
 		return std::string(g);
 	};
 	// each player's pad: the one chosen (by its GUID) if it is there, else the next free one
-	// ("auto"), or none: first the pads chosen by name, then "auto" players take the free ones in
-	// order, then a player whose chosen pad isn't there (or shows up differently: a pad in another
-	// mode has another GUID) takes the next free one too. A pad already open stays open (a Bluetooth
-	// pad shows up in stages, and one that wouldn't open is tried again on a pad's event, or 10 s
-	// later: another program holding it, as DS4Windows does, wasn't opened each second, a stutter);
-	// an "auto" player keeps the pad they have while it's there (another's dropping out doesn't
-	// hand it on); a player's pad changing lets go of whatever that player was holding. Says if one
-	// changed.
-	pad_state pstate[2];
-	std::set<SDL_JoystickID> pads_unopened;   // (tried and failed: skipped until retry)
-	auto open_pads = [&](bool retry = true) {
-		if (retry) pads_unopened.clear();
-		SDL_JoystickID before[2] = { 0, 0 };
-		for (int p = 0; p < 2; p++) if (pads[p]) before[p] = SDL_GetGamepadID(pads[p]);
-		SDL_Gamepad *next[2] = { nullptr, nullptr };
+	// ("auto"), or none
+	auto open_pads = [&] {
+		for (auto &pd : pads) if (pd) { SDL_CloseGamepad(pd); pd = nullptr; }
 		int n = 0;
 		SDL_JoystickID *ids = SDL_GetGamepads(&n);
-		if (!ids) return false;
 		std::vector<bool> used(n, false);
+		// first the pads chosen by name, then "auto" players take the free ones in order, then a
+		// player whose chosen pad isn't there (or shows up differently: a pad in another mode
+		// has another GUID) takes the next free one too
 		for (int pass = 0; pass < 3; pass++)
 			for (int p = 0; p < 2; p++) {
 				const std::string &c = cfg.ctl[p].pad_choice;
-				if (next[p] || c == "none") continue;
+				if (pads[p] || c == "none") continue;
 				const bool chosen = c != "auto";
 				if ((pass == 0 && !chosen) || (pass == 1 && chosen)) continue;
-				// (an "auto" player's own pad first, while it's there; not with two alike swapped by hand, whose swap
-				// is made again below: it would undo it each time)
-				for (int i = 0; i < n && !next[p] && pass > 0 && before[p] && !pads_swapped; i++)
-					if (!used[i] && ids[i] == before[p]) { used[i] = true; next[p] = pads[p]; }
-				for (int i = 0; i < n && !next[p]; i++) {
-					if (used[i] || (pass == 0 && guid_of(ids[i]) != c) || pads_unopened.count(ids[i])) continue;
-					used[i] = true;
-					for (int o = 0; o < 2; o++) if (before[o] == ids[i]) next[p] = pads[o];
-					if (!next[p] && !(next[p] = SDL_OpenGamepad(ids[i]))) {
-						fprintf(stderr, "pad %u didn't open: %s (tried again on a pad's event, or in 10 s)\n", unsigned(ids[i]), SDL_GetError());
-						pads_unopened.insert(ids[i]);
-						used[i] = false;   // (free for the other player's turn: it won't open for them either, but the next one might)
-					}
-				}
+				for (int i = 0; i < n && !pads[p]; i++)
+					if (!used[i] && (pass != 0 || guid_of(ids[i]) == c)) { pads[p] = SDL_OpenGamepad(ids[i]); used[i] = true; }
 			}
 		SDL_free(ids);
-		if (pads_swapped && next[0] && next[1]) std::swap(next[0], next[1]);
-		for (auto *pd : pads) if (pd && pd != next[0] && pd != next[1]) SDL_CloseGamepad(pd);
-		bool changed = false;
-		for (int p = 0; p < 2; p++) {
-			pads[p] = next[p];
-			if (before[p] != (pads[p] ? SDL_GetGamepadID(pads[p]) : 0)) { pstate[p] = pad_state{}; changed = true; }
-		}
-		return changed;
+		if (pads_swapped && pads[0] && pads[1]) std::swap(pads[0], pads[1]);
 	};
 	open_pads();
-	uint64_t next_pad_scan = SDL_GetTicks() + 1000;
 
 	bool running = true, paused = false, show_frame = true;
+	pad_state pstate[2];
 	// F9: timings in the title bar (and on stderr) every 120 frames; a frame has 17.4 ms
 	struct perf_stats { bool show = false; int frames = 0, starved = 0, held = 0, long_frame = 0, long_picture = 0, long_other = 0, ahead = 0; uint64_t emu = 0, emu_max = 0, present = 0, work = 0, shown = 0, since = SDL_GetTicksNS(); };
 	perf_stats perf{ cfg.timings || getenv("VF_PERF") != nullptr };
@@ -1818,6 +1791,7 @@ int main(int argc, char **argv)
 			[&] { return renderer_name(); },
 			[&](int d) {
 				SDL_RemovePath((dir + "/gpu-start.crashed").c_str());   // (the player's choice: a crashed start tried again from the next)
+				g3_crashed = false;
 				if (!g3 && g3_next_start) { cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true; return; }   // (SDL_GPU: from the next start)
 				if (!g3) return;
 				cfg.renderer3d = wrap(cfg.renderer3d + d, 3); cfg_dirty = true;
@@ -2441,11 +2415,8 @@ int main(int argc, char **argv)
 		}
 		SDL_Event e;
 		const bool menu_was_open = menu.is_open();
-		bool pads_changed = false;
 		while (SDL_PollEvent(&e)) {
 			if (e.type == SDL_EVENT_QUIT) running = false;
-			else if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED || e.type == SDL_EVENT_GAMEPAD_REMAPPED
-					 || e.type == SDL_EVENT_JOYSTICK_ADDED || e.type == SDL_EVENT_JOYSTICK_REMOVED) pads_changed = true;
 			else if (e.type == SDL_EVENT_RENDER_TARGETS_RESET || e.type == SDL_EVENT_RENDER_DEVICE_RESET) {
 				// Direct3D lost what render targets held (a device reset: every texture). The GPU's
 				// parts are made again whatever is on show (their old textures can't be used), and
@@ -2468,6 +2439,7 @@ int main(int argc, char **argv)
 					 && (e.key.scancode == SDL_SCANCODE_F11 || (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT))))
 				set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
 			else if (menu.handle_event(e)) continue;
+			else if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) open_pads();
 			else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && ASPECTS[aspect_i] <= 0) {
 				float before = m.aspect();
 				apply_aspect();
@@ -2496,15 +2468,6 @@ int main(int argc, char **argv)
 				} else if (e.key.scancode == SDL_SCANCODE_F11 || fullscreen_key(e.key))
 					set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
 			}
-		}
-		// pads looked at again on a pad's event, and once a second anyway (a pad that didn't open, an
-		// event missed)
-		if (pads_changed || SDL_GetTicks() >= next_pad_scan) {
-			static uint64_t retry_at = 0;
-			const bool retry = pads_changed || SDL_GetTicks() >= retry_at;
-			if (retry) retry_at = SDL_GetTicks() + 10000;
-			if (open_pads(retry)) menu.refresh();
-			next_pad_scan = SDL_GetTicks() + 1000;
 		}
 		// the menu pauses the game and its sound
 		if (menu.is_open() != menu_was_open && audio) {
