@@ -34,6 +34,8 @@ model1::model1(regions &&r)
 		use_tgp_program(m_regions.tgp_program);
 	if (!m_regions.ioboard.empty() && !getenv("VF_IO_STANDIN"))
 		m_ioboard = std::make_unique<model1io>(m_regions.ioboard, m_dpram);
+	if (m_regions.maincpu.size() >= RANDOM_ROM_END)   // (VF's own, before anything's changed it: rom_pristine)
+		m_rom_orig.assign(m_regions.maincpu.begin() + RANDOM_ROM_AT, m_regions.maincpu.begin() + RANDOM_ROM_END);
 	uint64_t h = 0xcbf29ce484222325ull;
 	for (const std::vector<uint8_t> *r : { &m_regions.maincpu, &m_regions.copro_tables, &m_regions.polygons, &m_regions.sndcpu,
 	                                       &m_regions.pcm1, &m_regions.pcm2, &m_regions.tgp_program })
@@ -686,7 +688,7 @@ void model1::set_akira_slot(int which)
 	static uint8_t akira[N][4];
 	static bool kept = false, ribbon = false;
 	if (!kept) {
-		for (int i = 0; i < N; i++) memcpy(akira[i], &rom[AT[i].addr], AT[i].size);
+		for (int i = 0; i < N; i++) memcpy(akira[i], rom_pristine(AT[i].addr), AT[i].size);
 		// (VF's lists as expected: by the fight's (RIBBON3/4), which nothing else changes; the
 		// portraits' (RIBBON1/2) may have been changed already by Random fighter's portrait strands,
 		// so VF's own values taken for them)
@@ -759,7 +761,7 @@ void model1::akira_camera(int which)
 	if (CAMERA + 18 > rom.size()) return;
 	static uint8_t akira_cam[18];
 	static bool cam_kept = false;
-	if (!cam_kept) { memcpy(akira_cam, &rom[CAMERA], sizeof akira_cam); cam_kept = true; }
+	if (!cam_kept) { memcpy(akira_cam, rom_pristine(CAMERA), sizeof akira_cam); cam_kept = true; }
 	which = std::clamp(which, 0, int(std::size(UNUSED_CHARACTERS)) - 1);
 	if (which == m_akira_cam_now && which) return;
 	m_akira_cam_now = which;
@@ -815,7 +817,7 @@ void model1::akira_slot_heads(uint32_t record)
 	auto wr = [&](uint32_t a, uint32_t v) { for (int b = 0; b < 4; b++) rom[a + b] = uint8_t(v >> (8 * b)); };
 	static bool kept = false, ours[std::size(NO_PORTRAIT)];
 	if (!kept) {
-		for (size_t i = 0; i < std::size(NO_PORTRAIT); i++) ours[i] = rd(NO_PORTRAIT[i] + 0x72) == 0;   // (VF's: none)
+		for (size_t i = 0; i < std::size(NO_PORTRAIT); i++) { const uint8_t *q = rom_pristine(NO_PORTRAIT[i] + 0x72); ours[i] = (q[0] | q[1] | q[2] | q[3]) == 0; }   // (VF's: none)
 		kept = true;
 	}
 	const uint32_t blink = rd(rd(BLINK_OF + 0x72) + 0x3c);
@@ -2088,8 +2090,9 @@ void model1::random_fighter_portrait_strands()
 	static bool kept = false;
 	if (!kept) {
 		// (not VF's list; Akira's places' slot bytes may be set_akira_slot's already: none, 0x19)
-		if (rom[LIST + 14 * 5] != 0xff || (rom[LIST + 9 * 5] != 0x16 && rom[LIST + 9 * 5] != 0x19) || (rom[LIST + 8 * 5] != 0x0b && rom[LIST + 8 * 5] != 0x19)) return;
-		memcpy(orig, &rom[LIST], sizeof orig);
+		const uint8_t *vf = rom_pristine(LIST);
+		if (vf[14 * 5] != 0xff || (vf[9 * 5] != 0x16 && vf[9 * 5] != 0x19) || (vf[8 * 5] != 0x0b && vf[8 * 5] != 0x19)) return;
+		memcpy(orig, vf, sizeof orig);
 		orig[9 * 5] = 0x16;
 		orig[8 * 5] = 0x0b;
 		kept = true;
