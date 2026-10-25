@@ -878,6 +878,8 @@ void model1::random_fighter_forget()
 	m_select_seen = m_cpu_pending = m_rolling_at_select = m_build_select = m_run_on = false;
 	m_run_idle = 0;
 	m_random_applied = false;
+	m_look_share = 1;
+	m_look_same_body = false;
 }
 
 // (the special commands' lists by character, fdb820, and ours: see random_fighter_make)
