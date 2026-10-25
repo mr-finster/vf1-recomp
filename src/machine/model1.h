@@ -450,6 +450,11 @@ public:
 	// (netplay's match start: what Random fighter knows of the fighters it made offline forgotten, its records put
 	// back as VF has them first: both sides then start alike)
 	void random_fighter_forget();
+	// The ROM's bytes as loaded, before any cheat changed them, in Random fighter's part (f80000 on): what its "VF's
+	// own" are kept from. Kept from the live ROM the first time they're needed, they were whatever was there then (a
+	// fighter being made for the seeds' names, say), so two players' games could start a match apart
+	std::vector<uint8_t> m_rom_orig;
+	const uint8_t *rom_pristine(uint32_t a) const { return a >= RANDOM_ROM_AT && a - RANDOM_ROM_AT < m_rom_orig.size() ? &m_rom_orig[a - RANDOM_ROM_AT] : &m_regions.maincpu[a]; }
 	void set_random_seed(uint32_t seed) { m_random_state = seed ? seed : 1; }   // (netplay: the same fighters made on both sides; never the clock's)
 	void save_state(std::vector<uint8_t> &out, std::vector<m1::StateSection> *sections = nullptr, bool append = false);   // (append: after what out holds)
 	bool load_state(const uint8_t *p, size_t n);

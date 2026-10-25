@@ -102,7 +102,7 @@ int main(int argc, char **argv)
 	uint32_t seed = 1;
 	vfnet::SimWire::Params p{ 40, 8, 0 };
 	int delay = 2;
-	bool interp = false, soft = false;   // soft: each side's clock a little slower while ahead, as the game's
+	bool interp = false, soft = false, names_host = false;   // soft: each side's clock a little slower while ahead, as the game's
 	const char *usage = "usage: vf1net [regions dir] [--random SEED] [--frames N] [--latency MS] [--jitter MS] [--loss PERCENT] [--delay D] [--interp] [--soft] [--map FILE]\n";
 	for (int i = 1; i < argc; i++) {
 		std::string a = argv[i];
@@ -110,6 +110,7 @@ int main(int argc, char **argv)
 		else if (a == "--map" && i + 1 < argc) map_path = argv[++i];
 		else if (a == "--p1" && i + 1 < argc) p1 = argv[++i];   // (each player's fighter, as the handshake has it: R, S<seed>, X<k>)
 		else if (a == "--p2" && i + 1 < argc) p2 = argv[++i];
+		else if (a == "--names-host") names_host = true;   // (the host has looked up the seeds' names before: Random fighter's history on one side only)
 		else if (a == "--random" && i + 1 < argc) seed = uint32_t(strtoul(argv[++i], nullptr, 10));
 		else if (a == "--latency" && i + 1 < argc) p.latency_ms = atof(argv[++i]);
 		else if (a == "--jitter" && i + 1 < argc) p.jitter_ms = atof(argv[++i]);
@@ -132,6 +133,7 @@ int main(int argc, char **argv)
 	for (long f = 0; f < frames + 200; f++) real.push_back(rnd.next(uint64_t(f)));
 
 	// (the host's NVRAM: a fresh board's, as on a first run)
+	if (names_host) A.m->random_fighter_names();
 	A.adapter->hosting = true;
 	A.adapter->own_extra = p1;
 	B.adapter->own_extra = p2;
