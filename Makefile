@@ -23,6 +23,9 @@ CORO_ASM = src/rt/coro_x86_64.S
 endif
 
 CORE = src/core/v60_device.cpp src/core/mb86233.cpp
+# online play: netplay (src/net, VF3's), the game as a session's Game, the Online screens
+NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp
+ONLINE = src/host/online.cpp src/host/vf1_netplay.cpp $(NET)
 SOUND = src/machine/m1audio.cpp src/machine/multipcm.cpp third_party/ymfm/ymfm_opn.cpp third_party/ymfm/ymfm_adpcm.cpp third_party/ymfm/ymfm_ssg.cpp
 MUSASHI_OBJ = $(OBJ)/musashi/m68kcpu.o $(OBJ)/musashi/m68kops.o $(OBJ)/musashi/m68kdasm.o $(OBJ)/musashi/softfloat.o
 MACHINE = src/machine/model1.cpp src/machine/model1_tgp.cpp src/machine/model1_tgp_lle.cpp src/machine/model1_video.cpp src/machine/model1_sky.cpp src/machine/model1_interp.cpp src/machine/model1_gpu.cpp src/machine/model1_edge_aa.cpp src/machine/model1io.cpp src/machine/model1_state.cpp
@@ -40,10 +43,18 @@ VF_VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 VF_DATE ?= $(shell git log -1 --format=%cd --date=format:'%b %-d %Y' 2>/dev/null)
 # (the commit too: what a GPU failure is remembered by, src/host/main.cpp's BUILD)
 VF_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+# and the lobby the room codes use (VF3's, shared: vf3-recomp/tools/lobby): its https address, this one if unset or
+# empty, "none" for none
+ifeq ($(strip $(VF_LOBBY_URL)),)
+VF_LOBBY_URL = https://vf-lobby.throbbing-lab-db6e.workers.dev
+endif
+ifeq ($(VF_LOBBY_URL),none)
+VF_LOBBY_URL :=
+endif
 # rewritten only when they change, so main is rebuilt for a new version and not otherwise
 $(OBJ)/version.h: FORCE
 	@mkdir -p $(OBJ)
-	@printf '#define VF_VERSION "%s"\n#define VF_DATE "%s"\n#define VF_COMMIT "%s"\n' "$(VF_VERSION)" "$(VF_DATE)" "$(VF_COMMIT)" > $@.tmp
+	@printf '#define VF_VERSION "%s"\n#define VF_DATE "%s"\n#define VF_COMMIT "%s"\n#define VF_LOBBY_URL "%s"\n' "$(VF_VERSION)" "$(VF_DATE)" "$(VF_COMMIT)" "$(VF_LOBBY_URL)" > $@.tmp
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 FORCE:
 objs = $(patsubst %.cpp,$(OBJ)/%.o,$(1))
@@ -116,12 +127,30 @@ rec: $(BIN)/vflock
 $(BIN)/vf1soak: $(call objs,tools/vf1soak.cpp src/rt/rec_table_none.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
-# netplay (src/net) and the game as a session's Game (src/host/vf1_netplay.cpp); vf1net: two boards through a
-# simulated network
-NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp
+# nettest: the session on a simulated network with a stand-in game (no ROM)
+$(BIN)/nettest: $(call objs,$(NET) tools/nettest.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+# delaytest: Auto's input delay against simulated pings (full speed at any; raised and lowered as it should)
+$(BIN)/delaytest: $(call objs,$(NET) tools/delaytest.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+# roomtest: room links against a TURN server on 127.0.0.1:3478 (coturn: tools/roomtest.cpp)
+$(BIN)/roomtest: $(call objs,$(NET) tools/roomtest.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+
+# netfuzz: the session against a peer who sends anything, with AddressSanitizer and UBSan (its own objects)
+$(BIN)/netfuzz: $(NET) tools/netfuzz.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -std=c++20 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $^ -o $@
+
+# vf1net: two boards through a simulated network
 $(BIN)/vf1net: $(call objs,tools/vf1net.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) $(NET_LIBS)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 $(OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)
@@ -138,9 +167,9 @@ RML_SRC = $(wildcard third_party/rmlui/Source/Core/*.cpp third_party/rmlui/Sourc
 RML_CFLAGS = -DRMLUI_STATIC_LIB -DRMLUI_FONT_ENGINE_FREETYPE -DRMLUI_SDL_VERSION_MAJOR=3 -Ithird_party/rmlui/Include -Ithird_party/rmlui/Backends
 $(OBJ)/third_party/rmlui/%.o: CXXFLAGS += $(RML_CFLAGS) $(FT_CFLAGS) $(SDL_CFLAGS) -w
 $(OBJ)/src/host/stb_image_impl.o: CXXFLAGS += -w
-$(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
-$(OBJ)/src/host/main.o: $(OBJ)/version.h
-$(OBJ)/src/host/main.o: CXXFLAGS += -I$(OBJ)
+$(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o $(OBJ)/src/host/online.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
+$(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: $(OBJ)/version.h
+$(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: CXXFLAGS += -I$(OBJ)
 # The 3D on the GPU in the game (src/gpu, Display > 3D renderer): Metal for an Apple target; SDL_GPU
 # elsewhere (Direct3D 12 or Vulkan: gpu3d_sdlgpu.cpp, its shaders precompiled in gpu3d_shaders.h by
 # tools/gpu/shaders.sh); GPU3D=none: the CPU's only
@@ -159,7 +188,7 @@ $(OBJ)/%.o: %.mm
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -fobjc-arc -MMD -c $< -o $@
 $(OBJ)/src/host/main.o: CXXFLAGS += $(GPU3D_DEF)
-$(BIN)/vf: $(call objs,src/host/main.cpp src/host/menu.cpp src/host/romset.cpp src/host/stb_image_impl.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(RML_SRC)) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM)) $(OBJ)/build/gen/vf_rec.o $(GPU3D_OBJ)
+$(BIN)/vf: $(call objs,src/host/main.cpp src/host/menu.cpp $(ONLINE) src/host/romset.cpp src/host/stb_image_impl.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(RML_SRC)) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM)) $(OBJ)/build/gen/vf_rec.o $(GPU3D_OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) $(SDL_LIBS) $(FT_LIBS) $(GPU3D_LIBS)
 
@@ -168,7 +197,7 @@ $(BIN)/vf: $(call objs,src/host/main.cpp src/host/menu.cpp src/host/romset.cpp s
 $(OBJ)/src/host/main_native.o: src/host/main.cpp $(OBJ)/version.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(SDL_CFLAGS) $(RML_CFLAGS) $(GPU3D_DEF) -I$(OBJ) -DVF_NATIVE -MMD -c $< -o $@
-$(BIN)/vf-native: $(OBJ)/src/host/main_native.o $(call objs,src/host/menu.cpp src/host/romset.cpp src/host/stb_image_impl.cpp src/rt/rec_table_none.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE) $(RML_SRC)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM)) $(GPU3D_OBJ)
+$(BIN)/vf-native: $(OBJ)/src/host/main_native.o $(call objs,src/host/menu.cpp $(ONLINE) src/host/romset.cpp src/host/stb_image_impl.cpp src/rt/rec_table_none.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE) $(RML_SRC)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM)) $(GPU3D_OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) $(SDL_LIBS) $(FT_LIBS) $(GPU3D_LIBS)
 native: $(BIN)/vf-native

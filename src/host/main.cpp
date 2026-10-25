@@ -6,6 +6,7 @@
 #include <filesystem>
 #include "png.h"
 #include "menu.h"
+#include "online.h"
 #include "backgrounds.h"
 #include "scene_sync.h"
 #include "gpu_compose.h"
@@ -93,6 +94,7 @@ const key_bind SYS_KEYS[] = {
 // The PC build (the default; --arcade for the cabinet's behaviour): no boot screen, always free
 // play with nothing said about it, and Start simply starts.
 bool g_pc_mode = true;
+bool g_match_board = false;   // (an online match's board: the host's backup and the match's settings, none of this player's)
 
 struct pad_state
 {
@@ -432,6 +434,7 @@ struct settings
 	bool english_set = false;   // (the game's language made English once, its first start here: Japanese after is the player's choice)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
+	OnlineSettings online;   // the Online page's
 	player_controls ctl[2] = { player_controls::defaults(0), player_controls::defaults(1) };
 
 	void load(const std::string &path)
@@ -449,6 +452,14 @@ struct settings
 		};
 		auto flag = [&](const char *k, bool &v) { int i = v; num(k, i, 0, 1); v = i; };
 		num("scale", scale, 1, 6);
+		if (auto it = kv.find("online_name"); it != kv.end()) online.name = online_menu::clean_name(it->second);
+		if (auto it = kv.find("online_address"); it != kv.end()) online.address = online_menu::clean_address(it->second);
+		if (auto it = kv.find("online_lobby"); it != kv.end() && (it->second.rfind("https://", 0) == 0 || it->second.rfind("http://", 0) == 0))
+			online.lobby = it->second.substr(0, 200);   // (another lobby than the built-in one: tests, a server of one's own)
+		num("online_delay", online.delay, -1, 10);
+		num("online_port", online.port, 1024, 65535);
+		num("online_connection", online.show_connection, 0, 2);
+		flag("online_hide_ip", online.hide_ip);
 		num("picture_shape", aspect, 0, 4);
 		num("volume", volume, 0, 100);
 		num("antialiasing", aa, 0, 3);   // 1 off, 0 Low (the 3D's edges smoothed), 2 and 3 drawn larger
@@ -542,6 +553,11 @@ struct settings
 		if (ring_cheat) fprintf(f, "ring_cheat = %d\n", ring_cheat);
 		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\nauto_3d_build = %s\n", auto_3d.c_str(), BUILD);
 		if (!roms_folder.empty()) fprintf(f, "roms_folder = %s\n", roms_folder.c_str());
+		fprintf(f, "online_name = %s\nonline_delay = %d\nonline_connection = %d\nonline_port = %d\n", online.name.c_str(), online.delay,
+				online.show_connection, online.port);
+		if (!online.address.empty()) fprintf(f, "online_address = %s\n", online.address.c_str());
+		if (!online.lobby.empty()) fprintf(f, "online_lobby = %s\n", online.lobby.c_str());
+		fprintf(f, "online_hide_ip = %d\n", int(online.hide_ip));
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
 		const bool flushed = flush_to_disk(f);
 		if (fclose(f) == 0 && flushed && replace_file(path, tmp)) return true;
@@ -849,8 +865,8 @@ int main(int argc, char **argv)
 				setvbuf(stderr, nullptr, _IONBF, 0);
 			}
 			// the log's first line: which build (as the menu's footer), and where it runs
-			fprintf(stderr, "Virtua Fighter Recomp %s (%s) on %s, %d logical processors, %d MB of memory\n", VF_VERSION, *VF_DATE ? VF_DATE : "no date",
-					SDL_GetPlatform(), SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM());
+			fprintf(stderr, "Virtua Fighter Recomp %s (%s, online %s) on %s, %d logical processors, %d MB of memory\n", VF_VERSION, *VF_DATE ? VF_DATE : "no date",
+					vf1net::online_version(VF_VERSION).c_str(), SDL_GetPlatform(), SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM());
 			if (portable) fprintf(stderr, "portable (%s): everything in %s\n", portable, dir.c_str());
 			else if (home.find("/AppTranslocation/") != std::string::npos)   // (macOS runs a downloaded app from a hidden copy until it's moved)
 				fprintf(stderr, "run from macOS's hidden copy of the app (App Translocation): a portable.txt beside it isn't seen until the app is moved with the Finder\n");
@@ -1755,6 +1771,9 @@ int main(int argc, char **argv)
 	// the arcade settings as their page opened (and the ring): see arcade_page
 	std::optional<std::array<int, 12>> assign_before;
 	auto reset_game = [&](bool keep_coins = true) {
+		// (never on a match's board: the host's backup booted, the same on both sides; end_match gives this player's
+		// back first)
+		if (g_match_board) { fprintf(stderr, "(no restart: an online match's board)\n"); return; }
 		assign_before.reset();   // a restart applies them
 		if (keep_coins) keep_arcade_coins();     // (Arcade: as the service menu may have left them)
 		menu.close();
@@ -2259,8 +2278,123 @@ int main(int argc, char **argv)
 		pg.items.push_back(back_item());
 		return pg;
 	};
+	// ---- Online play (online.h): matches through the session; in a match the board holds the host's backup and the
+	// match's settings, and this player's own wait here ----
+	static Online online(m, !interp);
+	std::vector<uint8_t> own_backup;
+	uint8_t own_eeprom[model1::EEPROM_SIZE] = {};
+	std::string own_rank_names;
+	bool match_on = false, resimmed = false;
+	// The match's sound: the board's own sound board, taken off it for the match (the main board then never hears back
+	// from it, the same on both sides), on a thread of its own to the real clock, fed the bytes the match's board sends
+	// it; the queue kept topped up whatever the frames do (held back for the other side, slowed to keep in time), so it
+	// never drops out or changes pitch
+	struct match_sound_t {
+		std::unique_ptr<m1audio> board;
+		std::thread th;
+		std::mutex mx;
+		std::vector<uint8_t> in;
+		std::atomic<bool> quit{ false };
+		std::atomic<uint64_t> frames{ 0 }, bytes_in{ 0 };   // (the log's: what it played)
+		void put(const std::vector<uint8_t> &b) { std::lock_guard<std::mutex> lk(mx); in.insert(in.end(), b.begin(), b.end()); bytes_in += b.size(); }
+		void stop()
+		{
+			if (th.joinable()) {
+				quit = true;
+				th.join();
+				fprintf(stderr, "online: the match's sound board played %llu frames, %llu bytes from the game\n", (unsigned long long)frames.load(), (unsigned long long)bytes_in.load());
+			}
+			quit = false;
+			frames = bytes_in = 0;
+		}
+	} msound;
+	auto match_sound_start = [&] {
+		msound.stop();
+		if (!audio || !msound.board) return;
+		m1audio *bp = msound.board.get();
+		bp->reset();
+		bp->set_volumes(cfg.music / 100.0f, cfg.effects / 100.0f);
+		{ std::lock_guard<std::mutex> lk(msound.mx); msound.in.clear(); }
+		SDL_ClearAudioStream(audio);
+		SDL_ResumeAudioStreamDevice(audio);
+		const int target = frame_bytes * QUEUED;
+		msound.th = std::thread([&, target, bp] {
+			m1audio &b = *bp;
+			std::vector<uint8_t> bytes;
+			std::vector<int16_t> out;
+			constexpr int LINES = 424, BYTE_LINES = 8;   // (a frame's scanlines; a byte on the link every 8, as the i8251 sends them)
+			const double line_us = 656 * 1e6 / 16e6;
+			while (!msound.quit) {
+				if (SDL_GetAudioStreamQueued(audio) >= target) { SDL_DelayNS(1000000); continue; }
+				{ std::lock_guard<std::mutex> lk(msound.mx); bytes.insert(bytes.end(), msound.in.begin(), msound.in.end()); msound.in.clear(); }
+				size_t sent = 0;
+				for (int line = 0; line < LINES; line++) {
+					if (line % BYTE_LINES == 0 && sent < bytes.size()) b.rx_byte(bytes[sent++]);
+					b.run(line_us, out);
+					while (b.tx_pending()) b.tx_byte();   // (its answers: no one listens in a match)
+				}
+				bytes.erase(bytes.begin(), bytes.begin() + ptrdiff_t(sent));
+				msound.frames++;
+				static FILE *wav = [] { const char *w = getenv("VF_MATCH_SOUND"); return w ? fopen(w, "wb") : nullptr; }();   // (tests: the raw 16-bit stereo it played)
+				if (wav && !out.empty()) { fwrite(out.data(), 2, out.size(), wav); fflush(wav); }
+				if (!out.empty()) SDL_PutAudioStreamData(audio, out.data(), int(out.size() * sizeof(int16_t)));
+				out.clear();
+			}
+		});
+	};
+	online.adapter.run = [&](bool resim) {
+		m.set_drawing(!resim);   // (a frame run again after a rollback: the board alone, no picture)
+		m.run_frame();
+		m.set_drawing(true);
+		if (resim) resimmed = true;
+	};
+	online.adapter.settle = [] {};
+	online.adapter.booting = [] { SDL_PumpEvents(); };   // (the boot's seconds: the system doesn't take the game for hung)
+	online.adapter.program_changed = [&] {   // (the match's code: the cheats' patches off)
+#ifdef VF_NATIVE
+		if (!interp && !recompile()) {
+			fprintf(stderr, "Couldn't recompile the game for the match: running it on the slower interpreter instead.\n");
+			rec::detach(m.cpu());
+			interp = true;
+			m.run_cpu = nullptr;
+		}
+#endif
+		online.adapter.native = !interp;
+	};
+	online.adapter.on_begin = [&] {
+		if (!g_match_board) {   // (this player's own, given back after the match)
+			own_backup = m.nvram();
+			memcpy(own_eeprom, m.eeprom(), sizeof own_eeprom);
+			own_rank_names = m.ranking_names();
+			g_match_board = true;
+		}
+		if (!msound.board) msound.board = m.take_audio();
+		m.set_ranking_names("");   // (the ranking's names are each player's own: none on the match's board, whose tiles they'd be drawn into)
+		online.adapter.native = !interp;
+		paused = false;
+		g_test_frames = 0;
+		g_test_pending = false;
+	};
+	online.adapter.sound_out = [&](const std::vector<uint8_t> &b) { msound.put(b); };
+	bool online_ready = false;
+	auto online_page = [&] {
+		if (!online_ready) {   // (the ROMs' hash for the handshake, once)
+			online.identity = { "vf1", vf1net::online_version(VF_VERSION), vf1net::content_hash(m), "" };   // (the online version, not the release's)
+			online_ready = true;
+		}
+		return online_menu::page(online, cfg.online, menu, [&] { cfg_dirty = true; });
+	};
 	auto main_page = [&] {
 		menu_page p{ "", "", {} };
+		if (online.playing() || g_match_board) {   // (the match goes on under the menu; or it's starting, on its board)
+			p.items.push_back({ "Resume", "Back to the match (it goes on while the menu's open).", {}, {}, [&] { menu.close(); } });
+			online_menu::match_rows(online, cfg.online, menu, [&] { cfg_dirty = true; }, p.items);
+			p.items.push_back({ "Display", "Sharpness, antialiasing, screen shape, background and screen filters, frame rate and fullscreen.",
+								{}, {}, [&] { menu.push(display_page()); } });
+			p.items.push_back({ "Sound", "The overall, music and effects volumes.", {}, {}, [&] { menu.push(sound_page()); } });
+			p.items.push_back({ "Controls", "Each player's controller, keys and buttons. Online, either player's controls play your fighter.", {}, {}, [&] { menu.push(controls_page()); } });
+			return p;
+		}
 		p.items.push_back({ "Resume", "Back to the game.", {}, {}, [&] { menu.close(); } });
 		p.items.push_back({ "Display", "Sharpness, antialiasing, screen shape, background and screen filters, frame rate and fullscreen.",
 							{}, {}, [&] { menu.push(display_page()); } });
@@ -2268,13 +2402,17 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Game", "Play style and reset.", {}, {}, [&] { menu.push(game_page()); } });
 		p.items.push_back({ "Arcade settings", "Difficulty, ring size, rounds, continues and the service menu. Changing them restarts the game.", {}, {},
 							[&] { menu.push(arcade_page()); } });
+		p.items.push_back({ "Online", "Play someone over the network: a random opponent, or a friend with a room code.", {}, {}, [&] { menu.push(online_page()); } });
 		p.items.push_back({ "Controls", "Each player's controller, keys and buttons.", {}, {}, [&] { menu.push(controls_page()); } });
 		p.items.push_back({ "Cheats", "Secret characters, random fighters, Kage's mask and fight switches. Some restart the game.", {}, {},
 							[&] { menu.push(cheats_page()); } });
 		p.items.push_back({ "Quit", "Saves and closes the game.", {}, {}, [&] { running = false; } });
 		return p;
 	};
-	auto open_menu = [&] { if (menu.ready() && !menu.is_open()) menu.open(main_page()); };
+	auto open_menu = [&] {
+		menu.set_title(online.playing() ? "ONLINE MATCH" : "PAUSED");
+		if (menu.ready() && !menu.is_open()) menu.open(main_page());
+	};
 	// The game's clock: game frames due since it started, paced by the wall clock at the arcade's
 	// rate, trimmed by up to 1% to keep the sound queue at QUEUED frames. A frame runs when the
 	// clock passes it, and smooth motion's picture is for the clock's moment: its fraction is how
@@ -2416,8 +2554,178 @@ int main(int argc, char **argv)
 			for (SDL_Scancode s : c.key) if (s == SDL_SCANCODE_F) return false;
 		return true;
 	};
+	// ---- Online play's pass: the session's notices, the match's start and end, what's on screen about it ----
+	// A step that couldn't run (the other side behind, or keeping in time) takes no input: what was pressed for it
+	// goes with the next one tried, so a tap of Start or Coin then isn't lost
+	uint16_t step_carry = 0;
+	constexpr uint16_t ONE_SHOT = vf1net::START_BUTTON | vf1net::COIN_BUTTON;
+	Online::Phase online_was = Online::Phase::off;
+	std::string online_code_was;   // (the room code: its page made again when the lobby gives it)
+	uint64_t online_refresh_t = 0;
+	auto end_match = [&] {   // back to playing on its own, from the boot, with this player's backup and settings
+		const bool reopen = match_on || g_match_board;   // (a match, or one that started and never got going)
+		if (match_on) fprintf(stderr, "online: the match ended at frame %lld; back to playing alone\n", (long long)game_run);
+		match_on = false;
+		msound.stop();
+		{ const std::string none[2]; m.set_hud_names(none); }
+		if (audio) SDL_ClearAudioStream(audio);
+		menu.set_notice("");
+		menu.set_banner("");
+		menu.hide_versus();
+		menu.set_net("", 0);
+		step_carry = 0;
+		if (g_match_board) {
+			m.on_uart_tx = nullptr;
+			if (msound.board) m.give_audio(std::move(msound.board));
+			m.use_io_standin(false);   // (the real I/O board, when the set has one)
+			memcpy(m.nvram().data(), own_backup.data(), std::min(own_backup.size(), m.nvram().size()));
+			memcpy(m.eeprom(), own_eeprom, sizeof own_eeprom);
+			m.set_ranking_names(own_rank_names);
+			g_match_board = false;
+		}
+		// this player's own again: their cheats, ring, Kage and play style (reset_game applies them, and boots)
+		m.set_ring_width(cfg.ring_now());
+		m.set_kage_unmasked(cfg.kage_unmasked);
+		apply_play_style();
+		menu.set_title("PAUSED");
+		reset_game();
+		// back on the Online page: what ended the match, and the same again a press away
+		if (reopen && menu.ready()) {
+			if (menu.is_open()) menu.close();
+			menu.open(main_page());
+			menu.select_row(5);   // (Online)
+			menu.push(online_page());
+		}
+		if (audio) { if (menu.is_open()) SDL_PauseAudioStreamDevice(audio); else SDL_ResumeAudioStreamDevice(audio); }
+	};
+	// The button this player presses for Start, as their pad or keyboard has it (online, Player 1's controls)
+	auto start_button = [&]() -> std::string {
+		const int b = cfg.ctl[0].pad[C_START];
+		if (pads[0] && b != PAD_NONE) {
+			if (b != SDL_GAMEPAD_BUTTON_START) {
+				std::string n = player_controls::pad_label(b);
+				for (char &ch : n) ch = char(toupper(uint8_t(ch)));
+				return n;
+			}
+			const char *nm = SDL_GetGamepadName(pads[0]);
+			if (nm && strstr(nm, "Steam Deck")) return "MENU";
+			switch (SDL_GetGamepadType(pads[0])) {
+			case SDL_GAMEPAD_TYPE_PS3: case SDL_GAMEPAD_TYPE_PS4: case SDL_GAMEPAD_TYPE_PS5: return "OPTIONS";
+			case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO: case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+			case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT: case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR: return "+";
+			case SDL_GAMEPAD_TYPE_XBOXONE: return "MENU";
+			default: return "START";
+			}
+		}
+		std::string k = SDL_GetScancodeName(cfg.ctl[0].key[C_START]);
+		for (char &ch : k) ch = char(toupper(uint8_t(ch)));
+		return k.empty() ? std::string("START") : k;
+	};
+	auto online_pass = [&] {
+		online.poll(double(SDL_GetTicksNS()) / 1e6);
+		Online::Notice n;
+		while (online.next_notice(n)) {
+			if (n.kind == Online::Notice::joined) {
+				match_on = true;
+				match_sound_start();
+				{   // the players' names under the energy bars (the name the other side was sent; theirs as the HUD can show it)
+					std::string names[2];
+					names[online.local_player()] = online.identity.name;
+					names[online.local_player() ^ 1] = online.opponent();
+					m.set_hud_names(names);
+				}
+				if (menu.is_open()) menu.close();
+				restart_clock();
+				// who's playing who, over the title screen for a moment (the host is player 1)
+				const std::string host = online.is_hosting() ? online.identity.name : online.opponent(), guest = online.is_hosting() ? online.opponent() : online.identity.name;
+				const int ms = online.ping();
+				menu.show_versus({ "PLAYER 1 \xC2\xB7 HOST", host, "PLAYER 2", guest,
+				                   std::string(online.via_relay() ? "Connected through the relay" : "Connected directly") + (ms > 0 ? " \xC2\xB7 " + std::to_string(ms) + " ms" : ""),
+				                   online.slow_local() ? "Through the relay: this Mac blocks your network. Turn on Local Network (System Settings) for a faster match"
+				                                       : "Both press Start", online.via_relay(),
+				                   online.is_hosting() ? online.my_country() : online.peer_country(), online.is_hosting() ? online.peer_country() : online.my_country() });
+			}
+			fprintf(stderr, "online: %s\n", Online::log_masked(n.text).c_str());
+		}
+		if ((match_on && !online.playing()) || (g_match_board && !online.playing() && !online.starting())) end_match();   // (ended, left, or never got going)
+		static bool said_interrupted = false;
+		const bool interrupted = online.playing() && online.interrupted() && (said_interrupted || (online.hold_left() <= 6 && !menu.versus_showing()));
+		said_interrupted = interrupted;
+		// who's to press Start: at the match's start until both have, and after a match the loser, for a rematch
+		int wait = online.playing() && !menu.is_open() && !menu.versus_showing() && !interrupted ? online.start_wait() : 0;
+		static uint64_t other_out_since = 0;
+		if (wait != 4) other_out_since = 0;
+		else if (!other_out_since) other_out_since = SDL_GetTicks();
+		else if (SDL_GetTicks() - other_out_since > 8000) wait = 0;
+		static int said_wait = 0;
+		if (wait != said_wait && online.playing()) {
+			static const char *what[5] = { "no one", "this player (the match's start)", "the other (the match's start)", "this player (a rematch)", "the other (a rematch)" };
+			fprintf(stderr, "online: to press Start: %s\n", what[wait]);
+		}
+		said_wait = wait;
+		const bool press = wait == 1 || wait == 3;
+		menu.set_banner(press ? "PRESS" : wait ? "WAITING FOR " + online.opponent() : "",
+		                wait == 2 ? "to press Start" : wait == 3 ? "for a rematch" : wait == 4 ? "to press Start for a rematch" : "", press ? start_button() : "");
+		if (interrupted)
+			menu.set_notice("WAITING FOR " + online.opponent(), "The connection dropped. Holding the match for " + std::to_string(online.hold_left()) + " s...",
+			                "It carries on from right here if it comes back");
+		else if (online.starting()) menu.set_notice("STARTING THE MATCH", online.status());
+		else menu.set_notice("");
+		std::string line;
+		if (cfg.online.show_connection && online.waiting() && !online.starting())   // (playing alone meanwhile: still waiting, and where)
+			line = online.phase() == Online::Phase::hosting && online.by_code() && !online.is_random()
+				? "Hosting   " + (online.room_code().empty() ? std::string("a room") : "room " + online.room_code()) + "   " + online.status()
+				: online.phase() == Online::Phase::hosting && !online.by_code()
+				? "Hosting   " + (online.local_address().empty() ? std::string("no network") : online.local_address()) + "   " + online.status()
+				: online.status();
+		static game_menu::net_cells cells;
+		static uint64_t cells_at = 0;
+		static bool had_cells = false;
+		if (!online.playing() || !cfg.online.show_connection || menu.versus_showing()) {
+			had_cells = false;
+			menu.set_net(menu.versus_showing() ? std::string() : line, 0);
+		} else if (!had_cells || SDL_GetTicks() - cells_at >= 250 || online.interrupted() != cells.interrupted) {
+			had_cells = online.connection(cells, cfg.online.show_connection == 2);
+			cells_at = SDL_GetTicks();
+			if (had_cells) menu.set_net(cells);
+			else menu.set_net(std::string(), 0);
+		}
+		// the Online page as things change: its rows made again with the phase, its status lines a few times a second
+		if (menu.is_open() && (online.phase() != online_was || online.room_code() != online_code_was) && menu.top_name() == "Online" && !menu.capturing())
+			menu.replace(online_page(), -1);
+		else if (menu.is_open() && online.phase() != online_was && !menu.capturing())
+			menu.refresh();
+		else if (menu.is_open() && online.playing() && !menu.capturing() && SDL_GetTicks() - online_refresh_t > 500) {
+			online_refresh_t = SDL_GetTicks();
+			menu.refresh();
+		}
+		else if (menu.is_open() && online.waiting() && SDL_GetTicks() - online_refresh_t > 250) {
+			online_refresh_t = SDL_GetTicks();
+			static std::string said;
+			if (const std::string now = online.status(); now != said) { said = now; menu.refresh(); }
+		}
+		else if (menu.is_open() && online.phase() == Online::Phase::off && menu.top_name() == "Online" && !menu.capturing()) {
+			static int said = -2;   // (the Online screen: how many play at random, as the lobby says)
+			if (const int nn = online.players_online(cfg.online); nn != said) { said = nn; menu.refresh(); }
+		}
+		online_was = online.phase();
+		if (!menu.capturing()) online_code_was = online.room_code();
+	};
+	// a match goes on under the menu; one being set up holds the board, which is the match's now
+	auto game_stopped = [&] { return !online.playing() && (paused || menu.is_open() || online.starting()); };
 	while (running) {
 		if (!started_at) { started_at = SDL_GetTicksNS(); log_state("the start"); }
+		// (tests: a room hosted, or joined with its code, or a random opponent looked for, as the menu would, once the
+		// game's past its start)
+		static const char *test_host_room = getenv("VF1_HOST_ROOM"), *test_join_code = getenv("VF1_JOIN_CODE"), *test_random = getenv("VF1_RANDOM");
+		if ((test_host_room || test_join_code || test_random) && frames_run == 60) {
+			online_page();   // (the identity, as opening the Online page sets it)
+			std::string err;
+			if (!(test_random ? online.find_random(cfg.online, err)
+			      : test_join_code ? online.join_room(cfg.online, test_join_code, err) : online.host_room(cfg.online, err)))
+				fprintf(stderr, "online: (test) %s\n", err.c_str());
+		}
+		online_pass();
 		bool in_texture = false;           // this pass's picture is on the GPU already (or the last one stays)
 		curtain = carried_curtain;
 		carried_curtain = false;
@@ -2509,7 +2817,7 @@ int main(int argc, char **argv)
 			}
 			else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
 				if (e.key.scancode == SDL_SCANCODE_ESCAPE) open_menu();
-				else if (e.key.scancode == SDL_SCANCODE_P) paused = !paused;
+				else if (e.key.scancode == SDL_SCANCODE_P && !online.playing()) paused = !paused;   // (a match never pauses)
 				else if (e.key.scancode == SDL_SCANCODE_F9) { perf.show = cfg.timings = !perf.show; cfg_dirty = true; if (!perf.show) present_shape(); }
 				else if (e.key.scancode == SDL_SCANCODE_F3) reset_game();
 				else if (e.key.scancode == SDL_SCANCODE_F5) player_scale_to(cfg.scale % 6 + 1);
@@ -2527,8 +2835,8 @@ int main(int argc, char **argv)
 					set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
 			}
 		}
-		// the menu pauses the game and its sound
-		if (menu.is_open() != menu_was_open && audio) {
+		// the menu pauses the game and its sound (not a match's: it goes on)
+		if (menu.is_open() != menu_was_open && audio && !online.playing()) {
 			if (menu.is_open()) SDL_PauseAudioStreamDevice(audio);
 			else SDL_ResumeAudioStreamDevice(audio);
 		}
@@ -2552,14 +2860,14 @@ int main(int argc, char **argv)
 			pstate[0].start_was = pstate[1].start_was = true;
 			for (pad_state &s : pstate) s.menu_was = s.touch_was = s.sticks_was = true;
 		}
-		if (paused || menu.is_open()) restart_clock();   // (no catching up afterwards)
-		if (!paused && !menu.is_open()) {
+		if (game_stopped()) restart_clock();   // (no catching up afterwards)
+		if (!game_stopped()) {
 			// Run the game by its clock (frame_clock): the frames it has passed, however often the
 			// screen comes round (a 30 or 15 fps limit runs 2 or 4 frames a pass), and more at once if
 			// the sound is about to run dry. Tab held: flat out. The controls are read for each frame
 			// the game runs, so their timing is the game's, not the screen's.
 			const bool *ks = SDL_GetKeyboardState(nullptr);
-			const bool ff = ks[SDL_SCANCODE_TAB];
+			const bool ff = ks[SDL_SCANCODE_TAB] && !online.playing();   // (never in a match)
 			const uint64_t now_ns = SDL_GetTicksNS();
 			// testing: VF_STEP_HZ=n steps the game's clock 1/n s a pass, whatever the time the pass took (with
 			// VF_HIDDEN, VF_HZ high and VF_CAPTURE: every in-between picture, on a machine too slow to keep up)
@@ -2602,7 +2910,7 @@ int main(int argc, char **argv)
 			double rate = FRAME_HZ;
 			int low = 0;                         // frames the sound needs at once (it's nearly run dry)
 			bool sound_full = false;             // over 300 ms queued: no frames run this pass
-			if (audio && !ff) {
+			if (audio && !ff && !online.playing()) {   // (a match's sound: its own thread's, to the real clock)
 				const int q = SDL_GetAudioStreamQueued(audio);
 				// a sound device that stopped taking data without going away, or takes it slower than
 				// the 1% trim can follow (Wine's on a Mac: 5%): the queue would grow without end, the
@@ -2617,6 +2925,7 @@ int main(int argc, char **argv)
 				rate *= 1 - std::clamp((queue_avg / frame_bytes - QUEUED) * 0.005, -0.01, 0.01);
 				if (q < frame_bytes * 3 / 2) low = int(std::ceil(QUEUED - double(q) / frame_bytes));
 			}
+			rate *= 1 - online.slow_down();   // (a match: ahead of the other side, a little slower till it's caught up)
 			frame_clock += dt * rate;
 			m.set_parts_mode(on_gpu());
 			int due = int(int64_t(std::floor(frame_clock)) - game_run);
@@ -2639,6 +2948,30 @@ int main(int argc, char **argv)
 			if (ff) { due = 8; frame_clock = double(game_run + due); }
 			else if (sound_full) due = 0;   // (the clock stops at the next frame, below)
 			const uint64_t t0 = SDL_GetTicksNS();
+			if (online.playing()) {
+				// A match: each frame through the session, with this player's input (either player's controls play
+				// this player's fighter; nothing while the menu's open); a frame that can't run yet (the other side
+				// behind, or keeping in time) stays due, and the picture stays
+				for (int i = 0; i < due && running && online.playing(); i++) {
+					// (read_inputs writes the board's ports: put back, the board's are the session's to set, and its saved
+					// state holds them)
+					uint8_t ports_were[3];
+					memcpy(ports_were, m.m_inputs, sizeof ports_were);
+					const hotkey hk = read_inputs(m, pads, pstate, cfg.ctl);
+					const uint8_t in0 = m.m_inputs[0], in1 = m.m_inputs[1], in2 = m.m_inputs[2];
+					memcpy(m.m_inputs, ports_were, sizeof ports_were);
+					const uint16_t bits = menu.is_open() ? 0 : uint16_t(vf1net::pack(in0, in1, 0) | vf1net::pack(in0, in2, 1) | step_carry);
+					online.poll(double(SDL_GetTicksNS()) / 1e6);
+					if (hk == hotkey::menu) open_menu();
+					if (!online.step(bits)) {
+						step_carry = uint16_t(bits & ONE_SHOT);
+						break;
+					}
+					step_carry = 0;
+					if (std::exchange(resimmed, false)) m.smooth_cut();   // (a rollback: the frames before aren't the ones shown)
+					if (!after_frame(false)) break;
+				}
+			} else
 			for (int i = 0; i < due; i++) {
 				if (!frame_inputs()) break;
 				m.run_frame();
@@ -2784,7 +3117,7 @@ int main(int argc, char **argv)
 			}
 		}
 		const uint64_t t1 = SDL_GetTicksNS();
-		const bool show_frame_was_new = show_frame && !paused && !menu.is_open();
+		const bool show_frame_was_new = show_frame && !game_stopped();
 		if (show_frame && !in_texture) {
 			const uint64_t tu = SDL_GetTicksNS();
 			upload();
@@ -2800,7 +3133,7 @@ int main(int argc, char **argv)
 			// the counter: pictures shown a second, where a picture held on purpose (a scene change
 			// held until it's whole, a camera cut's hold) counts as shown: the screen kept its pace,
 			// and counting it as missed showed a drop to 80-odd at every scene change
-			if (show_frame_was_new || (!paused && !menu.is_open() && (sync.holding() || cut_hold))) shown++;
+			if (show_frame_was_new || (!game_stopped() && (sync.holding() || cut_hold))) shown++;
 			static const char *cap = getenv("VF_CAPTURE");
 			static int captured = 0;
 			if (cap && show_frame_was_new && g_plan_i >= g_rec_from && g_plan_i < g_rec_to) {
@@ -2812,7 +3145,9 @@ int main(int argc, char **argv)
 			if (cap && g_rec_to != SIZE_MAX && g_plan_i >= g_rec_to) running = false;
 			const uint64_t now = SDL_GetTicksNS();
 			// (the pictures or the 3D on the CPU with the setting not CPU: why, on screen once)
-			if (cpu_why_new) {
+			// (not over online play: after it, and one up as a match is joined is taken down and said again after)
+			if (online.phase() != Online::Phase::off && !cpu_why.empty() && menu.toast_showing()) { menu.toast(""); cpu_why_new = true; }
+			if (cpu_why_new && online.phase() == Online::Phase::off) {
 				cpu_why_new = false;
 				menu.toast("Drawing on the CPU: " + cpu_why, 12);
 				fprintf(stderr, "the notice: Drawing on the CPU: %s\n", cpu_why.c_str());   // (in the log too: what the player was told)
@@ -2826,7 +3161,7 @@ int main(int argc, char **argv)
 		// and again only when it's redrawn, not every refresh
 		{
 			static bool was_stopped = false;
-			const bool stopped = paused || menu.is_open();
+			const bool stopped = game_stopped();
 			if (stopped != was_stopped) still_dirty = true;
 			// stopped in a held scene change: the picture to keep is the one on screen, not the
 			// scene being built that was drawn to look at
@@ -2842,7 +3177,7 @@ int main(int argc, char **argv)
 		if (!m.random_select_hidden())
 			SDL_RenderTexture(ren, show_target ? (aa_now() > 1 && gc.resolved() ? gc.resolved() : gc.target()) : tex, nullptr, nullptr);
 		draw_filter();
-		menu.render();
+		menu.render(true);
 		static const int shot_at = getenv("VF_SHOT_AT") ? atoi(getenv("VF_SHOT_AT")) : -1;   // testing: the window at that pass too
 		if ((quit_after >= 0 && frames_run == quit_after) || (shot_at >= 0 && frames_run == shot_at)) {
 			int lw, lh;
@@ -2862,11 +3197,11 @@ int main(int argc, char **argv)
 		}
 		// a pass whose picture stays on purpose (a held scene change, a camera cut's hold): not one
 		// the governor counts as missed
-		if (!paused && !menu.is_open() && (sync.holding() || cut_hold)) perf.held++;
+		if (!game_stopped() && (sync.holding() || cut_hold)) perf.held++;
 		// the next frame, if it'll be due by the next refresh, run while this present waits
 		bool ahead = false;
 		uint64_t ahead_t = 0;
-		if (!no_game_thread && running && m.smooth() && !paused && !menu.is_open() && !sync.holding() &&
+		if (!no_game_thread && running && m.smooth() && !paused && !menu.is_open() && !sync.holding() && !online.playing() && !g_match_board &&
 			!SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] && frame_clock - double(game_run) >= 0.5 &&
 			!(audio && SDL_GetAudioStreamQueued(audio) > frame_bytes * int(FRAME_HZ * 0.3)) &&   // (the game waiting for the sound: none ahead either)
 			frame_inputs()) {
@@ -2935,7 +3270,7 @@ int main(int argc, char **argv)
 		// The game's backup (rankings, operator settings) saved within a minute of changing, so a
 		// crash, a force quit or the Deck's power button loses at most that (every 3 s before: the
 		// arcade's bookkeeping changes it in play, so it was written that often; and at quit as ever)
-		if (quit_after < 0) {
+		if (quit_after < 0 && !g_match_board) {   // (a match's board holds the host's: this player's are given back after it)
 			static uint64_t next_check = SDL_GetTicksNS() + 60000000000ull;
 			if (SDL_GetTicksNS() >= next_check) {
 				next_check = SDL_GetTicksNS() + 60000000000ull;
@@ -2975,6 +3310,16 @@ int main(int argc, char **argv)
 	g3.reset();                          // (its device goes before SDL does)
 	if (gpu_check) fprintf(stderr, "gpu check: %d pictures put together on the GPU checked, %d differ\n", gpu_checked, gpu_differ);
 	gc.release();                        // (its textures and shader go before the renderer)
+	msound.stop();
+	online.stop();   // (closed in a match: the other side is told at once, not after a silence)
+	Online::flush(1500);   // (and the lobby told: a room closed, a search left)
+	if (g_match_board) {   // (this player's own backup, not the host's, saved)
+		m.use_io_standin(false);
+		memcpy(m.nvram().data(), own_backup.data(), std::min(own_backup.size(), m.nvram().size()));
+		memcpy(m.eeprom(), own_eeprom, sizeof own_eeprom);
+		m.set_ranking_names(own_rank_names);
+		g_match_board = false;
+	}
 	if (quit_after >= 0 && !getenv("VF_SAVE")) { SDL_Quit(); return 0; }   // test runs leave the saves and settings alone (VF_SAVE: they save, as a player's)
 	keep_arcade_coins();
 	saver.finish();   // (an autosave still being written, done before the last save: the same files)

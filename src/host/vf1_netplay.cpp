@@ -108,7 +108,9 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	board.set_ring_width(0);
 	board.set_kage_unmasked(false);
 	board.hide_free_play_text();
-	if (board.set_no_time_limit(false) && program_changed) program_changed();
+	bool code = board.set_no_time_limit(false);
+	code |= board.set_strands_moved(false);
+	if (code && program_changed) program_changed();
 	board.use_io_standin(true);
 	board.on_uart_tx = [this](uint8_t b) { if (collecting) pending.push_back(b); };
 	auto cold = [&](const uint8_t *eeprom) {

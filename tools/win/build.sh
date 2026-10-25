@@ -96,7 +96,7 @@ $T-windres $D/vf.rc -O coff -o $D/vf_res.o
 make -j$(sysctl -n hw.ncpu) CC=$T-gcc CXX=$T-g++ HOSTCC=cc ARCH=x86_64 TARGET_OS=windows \
 	OBJ=build/win/obj BIN=build/win/bin \
 	EXTRA_CFLAGS="-I$D/zlib/include -D_USE_MATH_DEFINES" \
-	LDLIBS="$D/vf_res.o -L$D/zlib/lib -lz -mwindows -static -Wl,--stack,16777216" \
+	LDLIBS="$D/vf_res.o -L$D/zlib/lib -lz -lws2_32 -lwinhttp -mwindows -static -Wl,--stack,16777216" \
 	SDL_CFLAGS="-I$D/sdl/include" SDL_LIBS="$D/sdl/lib/libSDL3.dll.a" \
 	FT_CFLAGS="-I$D/ft/include/freetype2" FT_LIBS="$D/ft/lib/libfreetype.a" \
 	build/win/bin/vf-native
