@@ -1,10 +1,19 @@
 // coro_switch(from, to): saves the AAPCS64 callee-saved registers on the current stack, stores
 // sp in *from, loads sp from *to and restores. coro_start is the first return of a new coroutine.
 #if defined(__aarch64__)
+// (a C function's symbol: _name on Apple's Mach-O, name on Linux's ELF)
+#if defined(__APPLE__)
+#define SYM(name) _##name
+#else
+#define SYM(name) name
+#endif
 	.text
 	.p2align 2
-	.globl _coro_switch
-_coro_switch:
+	.globl SYM(coro_switch)
+#if defined(__ELF__)
+	.type coro_switch, %function
+#endif
+SYM(coro_switch):
 	sub sp, sp, #160
 	stp x19, x20, [sp, #0]
 	stp x21, x22, [sp, #16]
@@ -33,8 +42,11 @@ _coro_switch:
 	add sp, sp, #160
 	ret
 
-	.globl _coro_start
-_coro_start:
+	.globl SYM(coro_start)
+#if defined(__ELF__)
+	.type coro_start, %function
+#endif
+SYM(coro_start):
 	mov x0, x20
 	blr x19
 	brk #0
