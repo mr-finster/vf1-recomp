@@ -183,6 +183,9 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	bool code = board.set_no_time_limit(false);
 	code |= board.set_strands_moved(false);
 	board.set_random_fighter(false);   // (again, its moves off: its part of the ROM as VF's)
+	// (the named fighters' list made now if it wasn't (every seed's fighter made: Random picks from it), so it's
+	// never first made during the match on one side only; then everything Random fighter knew forgotten)
+	if (random) board.random_fighter_names();
 	board.random_fighter_forget();
 	// the players' fighters (Random fighter, its moves too, only when someone has one: it patches the program),
 	// made from the host's seed, the same on both sides
@@ -191,10 +194,6 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 		code |= board.set_strands_moved(true);
 	}
 	if (code && program_changed) program_changed();
-	if (random) {
-		board.set_random_seed(seed);
-		board.set_random_fighter(true, true, false);
-	}
 	board.use_io_standin(true);
 	board.on_uart_tx = [this](uint8_t b) { if (collecting) pending.push_back(b); };
 	auto cold = [&](const uint8_t *eeprom) {
@@ -224,6 +223,12 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	uint8_t eeprom[model1::EEPROM_SIZE];
 	memcpy(eeprom, board.eeprom(), sizeof eeprom);
 	cold(eeprom);
+	// Random fighter on only now, from the cold start's RAM (it keeps a fighter a player has picked, by what the RAM
+	// says: before, that was each player's own game's), made from the host's seed
+	if (random) {
+		board.set_random_seed(seed);
+		board.set_random_fighter(true, true, false);
+	}
 	// (the boot's bytes too, from this cold start: the sound board needs its set-up; they go with the first frame's)
 	collecting = true;
 	pending.clear();
