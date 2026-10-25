@@ -76,18 +76,29 @@ public:
 	void gpio1_w(int state) { m_gpio1 = state; }
 	void gpio2_w(int state) { m_gpio2 = state; }
 	void gpio3_w(int state) { m_gpio3 = state; }
+	// The save state (model1's): every register; it waits on its FIFO at a frame's end
+	template <class IO> void state(IO &io)
+	{
+		io.pod(m_stalled); io.pod(m_icount);
+		io.pod(m_st); io.pod(m_a); io.pod(m_b); io.pod(m_d); io.pod(m_p);
+		io.pod(m_alu_stmask); io.pod(m_alu_stset); io.pod(m_alu_r1); io.pod(m_alu_r2);
+		io.pod(m_ppc); io.pod(m_pc); io.pod(m_sp); io.pod(m_b0); io.pod(m_b1); io.pod(m_x0); io.pod(m_x1);
+		io.pod(m_i0); io.pod(m_i1); io.pod(m_vsmr); io.pod(m_pcs); io.pod(m_mask); io.pod(m_m);
+		io.pod(m_r); io.pod(m_rpc); io.pod(m_c0); io.pod(m_c1); io.pod(m_sft); io.pod(m_vsm);
+		io.pod(m_gpio0); io.pod(m_gpio1); io.pod(m_gpio2); io.pod(m_gpio3); io.pod(m_stall);
+	}
 
 private:
 	mb86233_bus *m_bus;
 	bool m_stalled = false;
 	void execute_run();
-	int m_icount;
+	int m_icount = 0;
 
 	u32 m_st, m_a, m_b, m_d, m_p;
 	u32 m_alu_stmask, m_alu_stset, m_alu_r1, m_alu_r2;
 	u16 m_ppc, m_pc, m_sp, m_b0, m_b1, m_x0, m_x1, m_i0, m_i1, m_vsmr, m_pcs[4], m_mask, m_m;
 	u8 m_r, m_rpc, m_c0, m_c1, m_sft, m_vsm;
-	bool m_gpio0, m_gpio1, m_gpio2, m_gpio3;
+	bool m_gpio0 = false, m_gpio1 = false, m_gpio2 = false, m_gpio3 = false;   // (nothing drives them on Model 1: never set, they were whatever the memory held, and they're branch conditions)
 
 	bool m_stall;
 
