@@ -156,6 +156,7 @@ bool Online::open_host(std::string &error)
 	if (!link->bind(uint16_t(port), error)) { link.reset(); return false; }
 	if (adapter.settle) adapter.settle();
 	identity.name = started_with.name;
+	identity.extra = vf1net::fighter_extra(started_with.fighter, board);   // (this player's fighter, in the hello)
 	adapter.hosting = true;
 	adapter.own_extra = identity.extra;
 	session = std::make_unique<vfnet::Session>(lagged(*link), adapter, identity, config(started_with), true, adapter.host_blob());
@@ -264,6 +265,7 @@ bool Online::join(const OnlineSettings &s, std::string &error)
 	link = std::make_unique<vfnet::UdpLink>();
 	if (!link->connect(host, uint16_t(p), error)) { link.reset(); return false; }
 	identity.name = s.name;
+	identity.extra = vf1net::fighter_extra(s.fighter, board);
 	adapter.hosting = false;
 	adapter.own_extra = identity.extra;
 	session = std::make_unique<vfnet::Session>(lagged(*link), adapter, identity, config(s), false);
@@ -301,6 +303,7 @@ bool Online::find_random(const OnlineSettings &s, std::string &error)
 	if (!room->open(0, error)) { room.reset(); return false; }
 	room->set_relay_only(s.hide_ip);
 	identity.name = s.name;
+	identity.extra = vf1net::fighter_extra(s.fighter, board);
 	rooms = true;
 	random = true;
 	random_misses = 0;
@@ -341,6 +344,7 @@ bool Online::host_room(const OnlineSettings &s, std::string &error, const std::s
 	if (!room->open(0, error)) { room.reset(); return false; }
 	room->set_relay_only(s.hide_ip);
 	identity.name = s.name;
+	identity.extra = vf1net::fighter_extra(s.fighter, board);
 	rooms = true;
 	ph = Phase::hosting;
 	st = Step::getting_ready;
@@ -380,6 +384,7 @@ bool Online::join_room(const OnlineSettings &s, const std::string &c, std::strin
 	if (!room->open(0, error)) { room.reset(); return false; }
 	room->set_relay_only(s.hide_ip);
 	identity.name = s.name;
+	identity.extra = vf1net::fighter_extra(s.fighter, board);
 	rooms = true;
 	code = want;
 	ph = Phase::joining;
@@ -1445,6 +1450,36 @@ void named(OnlineSettings &s, game_menu &menu, std::function<void()> changed, st
 	menu.push(name_page(s, menu, changed, go));
 }
 
+// VF1: this player's fighter online (OnlineSettings::fighter): Normal, Random, each secret character, and the
+// Cheats page's seed name when there is one
+menu_item fighter_row(OnlineSettings &s, std::function<void()> changed)
+{
+	auto choices = [&s] {
+		std::vector<std::string> c = { "", "*" };
+		for (int k = 1; k < int(std::size(model1::UNUSED_CHARACTERS)); k++) c.push_back("#" + std::to_string(k));
+		const std::string named = !s.seed_name.empty() ? s.seed_name : (!s.fighter.empty() && s.fighter != "*" && s.fighter[0] != '#' ? s.fighter : "");
+		if (!named.empty()) c.push_back(named);
+		return c;
+	};
+	auto label = [](const std::string &f) -> std::string {
+		if (f.empty()) return "Normal";
+		if (f == "*") return "Random";
+		if (f[0] == '#') { const int k = atoi(f.c_str() + 1); return k > 0 && k < int(std::size(model1::UNUSED_CHARACTERS)) ? std::string("Secret: ") + model1::UNUSED_CHARACTERS[k] : "Normal"; }
+		return "Seed: " + f;
+	};
+	return { "Your fighter",
+		"Online, whichever side you're on. Normal: you pick at the select. Random: a new random fighter at every select. Secret: one of the "
+		"characters left in the game. Seed: the named fighter from the Cheats page. Your opponent sees it before the fight.",
+		[&s, label] { return label(s.fighter); },
+		[&s, choices, changed](int d) {
+			const std::vector<std::string> c = choices();
+			int i = 0;
+			for (int k = 0; k < int(c.size()); k++) if (c[k] == s.fighter) i = k;
+			s.fighter = c[size_t((i + d + int(c.size())) % int(c.size()))];
+			changed();
+		} };
+}
+
 menu_page settings_page(Online &o, OnlineSettings &s, game_menu &menu, std::function<void()> changed)
 {
 	menu_page p{ "Settings", "", {} };
@@ -1453,6 +1488,7 @@ menu_page settings_page(Online &o, OnlineSettings &s, game_menu &menu, std::func
 	p.items.push_back({ "Hide my IP address", "On: every online match (a code's or a random one) goes through the relay (Cloudflare's), so the other "
 		"player never sees your address. A little more ping. Off: directly when the routers allow it, which is quickest.",
 		[&s] { return std::string(s.hide_ip ? "On" : "Off"); }, [&s, changed](int) { s.hide_ip = !s.hide_ip; changed(); } });
+	p.items.push_back(fighter_row(s, changed));
 	p.items.push_back({ "Back", "", {}, {}, [&menu] { menu.pop(); } });
 	return p;
 }

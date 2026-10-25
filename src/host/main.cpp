@@ -462,6 +462,7 @@ struct settings
 		num("online_port", online.port, 1024, 65535);
 		num("online_connection", online.show_connection, 0, 2);
 		flag("online_hide_ip", online.hide_ip);
+		if (auto it = kv.find("online_fighter"); it != kv.end()) { std::string v = it->second; while (!v.empty() && isspace(uint8_t(v.back()))) v.pop_back(); online.fighter = v.substr(0, 16); }
 		num("picture_shape", aspect, 0, 4);
 		num("volume", volume, 0, 100);
 		num("antialiasing", aa, 0, 3);   // 1 off, 0 Low (the 3D's edges smoothed), 2 and 3 drawn larger
@@ -564,6 +565,7 @@ struct settings
 		if (!online.address.empty()) fprintf(f, "online_address = %s\n", online.address.c_str());
 		if (!online.lobby.empty()) fprintf(f, "online_lobby = %s\n", online.lobby.c_str());
 		fprintf(f, "online_hide_ip = %d\n", int(online.hide_ip));
+		if (!online.fighter.empty()) fprintf(f, "online_fighter = %s\n", online.fighter.c_str());
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
 		const bool flushed = flush_to_disk(f);
 		if (fclose(f) == 0 && flushed && replace_file(path, tmp)) return true;
@@ -2403,6 +2405,7 @@ int main(int argc, char **argv)
 			online.identity = { "vf1", vf1net::online_version(VF_VERSION), vf1net::content_hash(m), "" };   // (the online version, not the release's)
 			online_ready = true;
 		}
+		cfg.online.seed_name = cfg.random_named[0];   // (the Cheats page's seed name, offered as a fighter)
 		return online_menu::page(online, cfg.online, menu, [&] { cfg_dirty = true; });
 	};
 	auto main_page = [&] {
@@ -2658,7 +2661,10 @@ int main(int argc, char **argv)
 				if (menu.is_open()) menu.close();
 				restart_clock();
 				// who's playing who, over the title screen for a moment (the host is player 1)
-				const std::string host = online.is_hosting() ? online.identity.name : online.opponent(), guest = online.is_hosting() ? online.opponent() : online.identity.name;
+				// (with each one's fighter beside the name: Random, a secret character, a seed's)
+				auto with = [](const std::string &name, const std::string &extra) { const std::string w = vf1net::fighter_words(extra); return w.empty() ? name : name + " \xC2\xB7 " + w; };
+				const std::string me = with(online.identity.name, online.identity.extra), them = with(online.opponent(), online.opponent_extra());
+				const std::string host = online.is_hosting() ? me : them, guest = online.is_hosting() ? them : me;
 				const int ms = online.ping();
 				menu.show_versus({ "PLAYER 1 \xC2\xB7 HOST", host, "PLAYER 2", guest,
 				                   std::string(online.via_relay() ? "Connected through the relay" : "Connected directly") + (ms > 0 ? " \xC2\xB7 " + std::to_string(ms) + " ms" : ""),

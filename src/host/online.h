@@ -30,6 +30,10 @@ struct OnlineSettings
 	std::string address;          // the last address joined
 	std::string lobby;            // the lobby's address ("" the built-in one)
 	bool hide_ip = false;         // a room code's matches always through the relay: the other player never sees this address
+	// VF1: this player's fighter in a match, whichever side they're on: "" the select as ever, "*" a random fighter (a
+	// new one at every select), "#k" a secret character (model1::UNUSED_CHARACTERS), or a named fighter's name
+	std::string fighter;
+	std::string seed_name;        // (the Cheats page's name last typed, offered as a choice; not saved here)
 };
 
 class Online
@@ -101,6 +105,7 @@ public:
 	bool connection(game_menu::net_cells &c, bool detailed) const;
 	// the other player's name, as the HUD can show it (only its letters: whatever else the other side sent, dropped)
 	std::string opponent() const;
+	std::string opponent_extra() const { return session ? session->opponent_extra() : std::string(); }   // (VF1: their fighter, as the handshake carried it)
 	static bool local_address(const std::string &address);   // (a private network's: 192.168.x.x and the like)
 	int local_player() const { return is_host ? 0 : 1; }   // (the host is player 1)
 	int delay_now() const { return session ? session->delay() : 0; }
