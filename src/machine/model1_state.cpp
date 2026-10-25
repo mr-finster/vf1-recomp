@@ -4,6 +4,49 @@
 namespace {
 constexpr uint32_t STATE_MAGIC = 0x53314656;   // "VF1S"
 constexpr uint32_t STATE_VERSION = 1;
+
+// The host-side containers Random fighter keeps (its fighters' names, colours, moves' sources...): written in key
+// order (the same bytes for the same contents on any machine) and read back whole
+template <class IO> void field(IO &io, std::string &v)
+{
+	uint64_t n = v.size();
+	io.pod(n);
+	if (IO::loading) { if (n > (1u << 20)) n = 0; v.resize(size_t(n)); }
+	io.bytes(v.data(), v.size());
+}
+template <class IO, class T> std::enable_if_t<std::is_arithmetic_v<T>> field(IO &io, T &v) { io.raw(v); }
+template <class IO, class T, size_t N> void field(IO &io, std::array<T, N> &v) { for (T &x : v) field(io, x); }
+template <class IO, class A, class B> void field(IO &io, std::pair<A, B> &v) { field(io, v.first); field(io, v.second); }
+template <class IO, class T> void field(IO &io, std::vector<T> &v)
+{
+	uint64_t n = v.size();
+	io.pod(n);
+	if (IO::loading) { if (n > (1u << 24)) n = 0; v.resize(size_t(n)); }
+	for (T &x : v) field(io, x);
+}
+template <class IO, class K, class V> void field(IO &io, std::map<K, V> &m)
+{
+	uint64_t n = m.size();
+	io.pod(n);
+	if (!IO::loading) { for (auto &[k, v] : m) { K kk = k; field(io, kk); field(io, v); } return; }
+	m.clear();
+	for (uint64_t i = 0; i < n && i < (1u << 20); i++) { K k{}; V v{}; field(io, k); field(io, v); m.emplace(k, std::move(v)); }
+}
+template <class IO, class K> void field(IO &io, std::set<K> &m)
+{
+	uint64_t n = m.size();
+	io.pod(n);
+	if (!IO::loading) { for (K k : m) field(io, k); return; }
+	m.clear();
+	for (uint64_t i = 0; i < n && i < (1u << 20); i++) { K k{}; field(io, k); m.insert(k); }
+}
+// (a frame number, as frames before the board's own: the frame number is the header's)
+template <class IO> void frame_ago(IO &io, int64_t &at, uint64_t now)
+{
+	int64_t ago = at < 0 ? -1 : int64_t(now) - at;
+	io.pod(ago);
+	if (IO::loading) at = ago < 0 ? -1 : int64_t(now) - ago;
+}
 }
 
 template <class IO> void model1::state(IO &io)
@@ -75,6 +118,53 @@ template <class IO> void model1::state(IO &io)
 		io.bytes(m_copro_ram_data.get(), 0x8000 * sizeof(uint32_t));
 		io.raw(m_tgp_vr_base);
 		io.pod(m_ccount);
+	}
+
+	// Random fighter (netplay's random fighters: the same setting on both sides): its fighters as they're made, in
+	// the ROM's last 512 KB (Akira's records, the moves tables, specials and strands lists it builds, the code it
+	// patches there), and what it knows of them on the host's side. Only what the game's run reads or writes from:
+	// the heads' turns, the poses' easing, the build's flashes (m_build, m_build_select, m_built_run) are the picture's.
+	if (m_random_fighter) {
+		io.section("random fighter: rom");
+		auto &rom = m_regions.maincpu;
+		if (rom.size() >= RANDOM_ROM_END) io.bytes(&rom[RANDOM_ROM_AT], RANDOM_ROM_END - RANDOM_ROM_AT);
+		io.section("random fighter");
+		io.pod(m_random_state);
+		io.pod(m_player_mode);
+		io.pod(m_player_seed);
+		io.pod(m_select_seen);
+		io.pod(m_random_applied);
+		io.pod(m_cpu_pending);
+		io.pod(m_rolling_at_select);
+		io.pod(m_akira_held);
+		io.pod(m_random_seen);
+		io.pod(m_cpu_human);
+		io.pod(m_secret_recs);
+		io.pod(m_akira_ribbon);
+		io.pod(m_akira_which);
+		io.pod(m_akira_track);
+		io.pod(m_akira_cam_now);
+		io.pod(m_dural_lm);
+		io.pod(m_run_on);
+		io.pod(m_run_idle);
+		io.raw(m_look_share);
+		io.pod(m_look_same_body);
+		frame_ago(io, m_pick_at, m_frame);
+		field(io, m_random_names);
+		field(io, m_secret_names);
+		field(io, m_random_hue);
+		field(io, m_random_outfit);
+		field(io, m_random_theme);
+		field(io, m_stance_from);
+		field(io, m_special_list);
+		field(io, m_voice_of);
+		field(io, m_move_ids);
+		field(io, m_akira_made);
+		field(io, m_moves_held);
+		field(io, m_portrait_strand_models);
+		field(io, m_fought);
+		field(io, m_strands_orig);
+		field(io, m_strand_roots);   // (the strands' first points last frame: random_fighter_strands_settle writes the game's from them)
 	}
 
 	io.section("host");

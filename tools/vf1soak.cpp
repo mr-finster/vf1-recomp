@@ -6,7 +6,7 @@
 // becomes certain its state must be the straight board's, byte for byte; at the first that isn't, the two states
 // are written out and the parts that differ named.
 //   vf1soak [regions dir] [--random SEED] [--frames N] [--delay D] [--only-misses] [--interp] [--map FILE]
-//           [--hashes FILE] [--quiet] [--draw]
+//           [--hashes FILE] [--quiet] [--draw] [--random-fighters]
 // The rolled-back board runs the native code made at start-up (as the game does; assets/vf_map.txt), its
 // coroutine's stack in its save states (rec::save_stack); --interp: the interpreter on both. Both boards start as a
 // match will: free play, the FREE PLAY notices hidden, the boot run unseen, no sound board, the I/O stand-in. Two
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
 	std::string dir = "build/vf", map_path = "assets/vf_map.txt", hashes_path;
 	long frames = 20000, delay = 7;
 	uint32_t seed = 1;
-	bool quiet = false, interp = false, only_misses = false, draw = false;   // draw: the straight board draws every frame, the rolled-back one its first runs (as the game)
+	bool quiet = false, interp = false, only_misses = false, draw = false, fighters = false;   // draw: the straight board draws every frame, the rolled-back one its first runs (as the game)
 	const char *usage = "usage: vf1soak [regions dir] [--random SEED] [--frames N] [--delay D] [--only-misses] [--interp] [--map FILE] [--hashes FILE] [--quiet]\n";
 	for (int i = 1; i < argc; i++) {
 		std::string a = argv[i];
@@ -134,6 +134,7 @@ int main(int argc, char **argv)
 		else if (a == "--only-misses") only_misses = true;
 		else if (a == "--interp") interp = true;
 		else if (a == "--draw") draw = true;
+		else if (a == "--random-fighters") fighters = true;
 		else if (a == "--quiet") quiet = true;
 		else if (a[0] != '-') dir = a;
 		else { fprintf(stderr, "vf1soak: unknown argument %s\n%s", a.c_str(), usage); return 2; }
@@ -144,6 +145,12 @@ int main(int argc, char **argv)
 	const bool rec_on = !interp;
 	A.hide_free_play_text();   // (the ROM's notices: before the code is made from it)
 	B.hide_free_play_text();
+	if (fighters)   // (Random fighter for both players, with its moves: its code patches before the code is made, as the game's)
+		for (model1 *m : { &A, &B }) {
+			m->set_random_player(0, "*");
+			m->set_random_player(1, "*");
+			m->set_strands_moved(true);
+		}
 	if (rec_on) {
 		rec::attach(B.cpu());
 		rec::hints map;
@@ -154,6 +161,11 @@ int main(int argc, char **argv)
 		if (!rec::build_native(mem, map, &st)) { fprintf(stderr, "vf1soak: the native recompile failed\n"); return 1; }
 		B.run_cpu = [](int n) { rec::run(n); };
 	}
+	if (fighters)
+		for (model1 *m : { &A, &B }) {
+			m->set_random_seed(20261025);
+			m->set_random_fighter(true, true, false);
+		}
 	boot(A, false);
 	boot(B, rec_on);
 	if (draw) { A.set_drawing(true); A.set_smooth(true); B.set_smooth(true); }
