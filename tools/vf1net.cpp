@@ -72,6 +72,13 @@ struct Board
 			m->run_cpu = [](int n) { rec::run(n); };
 		}
 		adapter = std::make_unique<vf1net::Adapter>(*m, native);
+		if (native)   // (the match's patches: the native code made again, as the game does)
+			adapter->program_changed = [this, map_path] {
+				rec::hints map;
+				std::vector<uint8_t> mem = m->maincpu_rom();
+				mem.resize(0x2000000);
+				if (!map.read(map_path) || !rec::build_native(mem, map)) fprintf(stderr, "vf1net: the native recompile failed\n");
+			};
 		return true;
 	}
 };
@@ -90,7 +97,7 @@ uint16_t word(const Ports &p, int player) { return vf1net::pack(uint8_t(~p.in0),
 
 int main(int argc, char **argv)
 {
-	std::string dir = "build/vf", map_path = "assets/vf_map.txt";
+	std::string dir = "build/vf", map_path = "assets/vf_map.txt", p1, p2;
 	long frames = 3000;
 	uint32_t seed = 1;
 	vfnet::SimWire::Params p{ 40, 8, 0 };
@@ -101,6 +108,8 @@ int main(int argc, char **argv)
 		std::string a = argv[i];
 		if (a == "--frames" && i + 1 < argc) frames = strtol(argv[++i], nullptr, 10);
 		else if (a == "--map" && i + 1 < argc) map_path = argv[++i];
+		else if (a == "--p1" && i + 1 < argc) p1 = argv[++i];   // (each player's fighter, as the handshake has it: R, S<seed>, X<k>)
+		else if (a == "--p2" && i + 1 < argc) p2 = argv[++i];
 		else if (a == "--random" && i + 1 < argc) seed = uint32_t(strtoul(argv[++i], nullptr, 10));
 		else if (a == "--latency" && i + 1 < argc) p.latency_ms = atof(argv[++i]);
 		else if (a == "--jitter" && i + 1 < argc) p.jitter_ms = atof(argv[++i]);
@@ -123,7 +132,10 @@ int main(int argc, char **argv)
 	for (long f = 0; f < frames + 200; f++) real.push_back(rnd.next(uint64_t(f)));
 
 	// (the host's NVRAM: a fresh board's, as on a first run)
-	const std::vector<uint8_t> blob = vf1net::start_blob(*A.m);
+	A.adapter->hosting = true;
+	A.adapter->own_extra = p1;
+	B.adapter->own_extra = p2;
+	const std::vector<uint8_t> blob = vf1net::start_blob(*A.m, p1, seed * 2654435761u + 1);
 	const uint64_t content = vf1net::content_hash(*A.m);
 	if (content != vf1net::content_hash(*B.m)) { fprintf(stderr, "vf1net: the two boards' ROM hashes differ\n"); return 1; }
 
@@ -132,7 +144,7 @@ int main(int argc, char **argv)
 	cfg.delay = delay;
 	cfg.soft_sync = soft;
 	cfg.handshake_ms = 300000;   // (both boots run here one after the other, on the one clock)
-	const vfnet::Identity ia{ "vf1", "test", content, "HOST" }, ib{ "vf1", "test", content, "GUEST" };
+	const vfnet::Identity ia{ "vf1", "test", content, "HOST", p1 }, ib{ "vf1", "test", content, "GUEST", p2 };
 	A.adapter->checkpoint_every = B.adapter->checkpoint_every = 300;
 	A.adapter->keep_states = B.adapter->keep_states = true;
 	std::vector<uint8_t> sound[2];   // (the bytes each side sent its sound board)
@@ -183,7 +195,7 @@ int main(int argc, char **argv)
 	if (!failed) {
 		auto pc = std::make_unique<Board>();
 		Board &C = *pc;
-		if (!C.open(dir, false, map_path, error) || !C.adapter->begin(blob)) { fprintf(stderr, "vf1net: the straight board didn't start\n"); return 1; }
+		if (!C.open(dir, false, map_path, error) || (C.adapter->own_extra = p2, !C.adapter->begin(blob))) { fprintf(stderr, "vf1net: the straight board didn't start\n"); return 1; }
 		C.adapter->checkpoint_every = 300;
 		C.adapter->keep_states = true;
 		C.adapter->sound_out = [&](const std::vector<uint8_t> &b) { straight_sound.insert(straight_sound.end(), b.begin(), b.end()); };

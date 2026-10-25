@@ -140,6 +140,7 @@ public:
 	// random one, a new one each game, or a name's. False (nothing changed) for a name no seed gives.
 	// Applied as the fighters are next made (set_random_fighter, the select)
 	bool set_random_player(int pl, const std::string &setting);
+	void set_random_player_seed(int pl, uint32_t seed) { if (pl >= 0 && pl < 2 && seed >= 1 && seed <= RANDOM_SEEDS) { m_player_mode[pl] = 2; m_player_seed[pl] = seed; } }   // (netplay: a named fighter by its seed)
 	const std::map<std::string, uint32_t> &random_fighter_names();   // (every name, its seed; made once)
 	// The strands' lookup (an instruction of the game's) to our list, and the special commands'
 	// lookup to ours by record, for Random fighter: before the code is recompiled (true: it changed)
@@ -446,6 +447,9 @@ public:
 	// The header (STATE_HEADER bytes: the format, the frame number) isn't compared between two boards.
 	static constexpr size_t STATE_HEADER = 16;
 	static constexpr uint32_t RANDOM_ROM_AT = 0xf80000, RANDOM_ROM_END = 0x1000000;   // (Random fighter's part of the ROM, in its state)
+	// (netplay's match start: what Random fighter knows of the fighters it made offline forgotten, its records put
+	// back as VF has them first: both sides then start alike)
+	void random_fighter_forget();
 	void set_random_seed(uint32_t seed) { m_random_state = seed ? seed : 1; }   // (netplay: the same fighters made on both sides; never the clock's)
 	void save_state(std::vector<uint8_t> &out, std::vector<m1::StateSection> *sections = nullptr, bool append = false);   // (append: after what out holds)
 	bool load_state(const uint8_t *p, size_t n);

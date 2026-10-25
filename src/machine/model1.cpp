@@ -864,6 +864,20 @@ void model1::set_random_fighter(bool on, bool moves, bool cpu)
 	if (!on && m_akira_track >= 0 && 0xfd04f8 + 4 * 11 < rom.size()) rom[0xfd04f8 + 4 * 11] = uint8_t(m_akira_track);
 }
 
+void model1::random_fighter_forget()
+{
+	m_random_names.clear(); m_secret_names.clear();
+	m_random_hue.clear(); m_random_outfit.clear(); m_random_theme.clear();
+	m_stance_from.clear(); m_special_list.clear(); m_voice_of.clear(); m_move_ids.clear();
+	m_akira_made.clear(); m_moves_held.clear(); m_portrait_strand_models.clear(); m_strand_roots.clear();
+	m_fought.clear(); m_built_run.clear(); m_cpu_akira.clear();
+	for (int pl = 0; pl < 2; pl++) { m_akira_held[pl] = m_random_seen[pl] = m_cpu_human[pl] = 0; m_build[pl] = fighter_build{}; }
+	m_pick_at = -1;
+	m_select_seen = m_cpu_pending = m_rolling_at_select = m_build_select = m_run_on = false;
+	m_run_idle = 0;
+	m_random_applied = false;
+}
+
 // (the special commands' lists by character, fdb820, and ours: see random_fighter_make)
 static constexpr uint32_t SPECIALS = 0xfdb820, SPECIALS_OURS = 0xf80c00, SPECIALS_LOOKUP = 0xfeab54;
 // VF's moves code tells some characters' commands apart by the record's character number (+0c,
