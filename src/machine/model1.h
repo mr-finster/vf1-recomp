@@ -445,6 +445,8 @@ public:
 	// limit: their host-side state isn't in it yet). With the recompiled code, rec::save_stack too.
 	// The header (STATE_HEADER bytes: the format, the frame number) isn't compared between two boards.
 	static constexpr size_t STATE_HEADER = 16;
+	static constexpr uint32_t RANDOM_ROM_AT = 0xf80000, RANDOM_ROM_END = 0x1000000;   // (Random fighter's part of the ROM, in its state)
+	void set_random_seed(uint32_t seed) { m_random_state = seed ? seed : 1; }   // (netplay: the same fighters made on both sides; never the clock's)
 	void save_state(std::vector<uint8_t> &out, std::vector<m1::StateSection> *sections = nullptr, bool append = false);   // (append: after what out holds)
 	bool load_state(const uint8_t *p, size_t n);
 	template <class IO> void state(IO &io);
