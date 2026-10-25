@@ -38,6 +38,14 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
   frame drawn and the same frame run again unseen came apart. It's brought up to date in one place now, at the
   frame's end, drawn or not (`list_select_settle`); `vf1soak --draw` checks it.
 
+- **Random fighters** (Online > Settings > Your fighter: Normal, Random, a secret character, or the Cheats page's
+  seed name; `online_fighter` in settings.ini): the host's goes in its blob with the match's random seed, the
+  guest's in its hello (`src/net`'s optional extra: `Identity::extra`, `Game::peer_extra`), so both boards set
+  Random fighter up alike before the boot (its records put back and what it knew forgotten first, its moves' patch
+  only when someone has one: it changes the game otherwise). Its save state: the ROM's last 512 KB (the records and
+  moves tables it builds) and its maps, in key order; the build's flashes, the heads' turns and the poses' easing
+  are the picture's. The VS reveal shows each one's fighter beside the name ("NEONKID · RANDOM").
+
 ## Fixed on the way
 
 - The TGP's GPIO lines (`mb86233`) were never set, and they're branch conditions: they held whatever the memory
@@ -53,12 +61,14 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
 | The adapter, two boards | `vf1net`: in step over 12,000 frames; 90 ms with 5% lost; delay 0; 120 ms with jitter 30; the score the same on all three boards |
 | The game online | Two copies through a stand-in lobby: a room code's match in step |
 | `src/net` and its tests | VF3's: `nettest` 22, `delaytest`, `netfuzz` 2,000 runs, `roomtest` |
-| To do | Random fighters online (`docs/vf1-netplay-handoff.md` §4 in the private repo), the flags on the HUD, a match against another machine (the Mac and the Deck), arm64 against x86-64 (`vf1soak --hashes`) |
+| Random fighters | `vf1soak --random-fighters`: 6,000 frames identical; `vf1net --p1 R --p2 S1234`, `--p1 X3 --p2 R` at 90 ms with 3% lost: in step, the score the same |
+| To do | The flags on the HUD, a match against another machine (the Mac and the Deck), arm64 against x86-64 (`vf1soak --hashes`) |
 
 ```sh
 build/bin/vf1soak --frames 20000            # the save state, every frame rolled back
 build/bin/vf1soak --draw --frames 6000      # the same, the straight board drawing every frame
 build/bin/vf1net --frames 4000              # two boards, 40 ms each way
+build/bin/vf1net --p1 R --p2 X3             # with random fighters (R, S<seed>, X<secret>)
 build/bin/nettest && build/bin/delaytest && build/bin/netfuzz
 ```
 

@@ -111,6 +111,22 @@ bool fighter_setting(const std::string &x, model1 &b, std::string &setting)
 	return true;
 }
 
+std::string fighter_words(const std::string &x)
+{
+	if (x == "R") return "RANDOM";
+	if (x.size() > 1 && x[0] == 'X') {
+		const int k = atoi(x.c_str() + 1);
+		if (k > 0 && k < int(std::size(model1::UNUSED_CHARACTERS))) {
+			std::string n = model1::UNUSED_CHARACTERS[k];
+			if (const size_t paren = n.find(" ("); paren != std::string::npos) n.resize(paren);   // (the name alone: "Siba")
+			for (char &c : n) c = char(toupper(uint8_t(c)));
+			return "SECRET: " + n;
+		}
+	}
+	if (x.size() > 1 && x[0] == 'S') return "SEED " + x.substr(1);
+	return "";
+}
+
 void set_players(model1 &b, const std::string fighters[2])
 {
 	for (int p = 0; p < 2; p++)
