@@ -71,7 +71,7 @@ private:
 class Adapter : public vfnet::Game
 {
 public:
-	explicit Adapter(model1 &board, bool native) : board(board), native(native) {}
+	explicit Adapter(model1 &board, bool native) : native(native), board(board) {}
 	~Adapter() override { board.on_uart_tx = nullptr; }
 
 	// Set by the host program:
@@ -96,6 +96,7 @@ public:
 	// none and has some now, those (late)
 	void take_sound(std::vector<uint8_t> &out);
 	bool failed_stack = false;   // (a stack too deep for STACK_ROOM: the save is refused, the match ends)
+	bool native;   // (the recompiled code runs the board: its stack in the states; the host's to set, the game falling back to the interpreter)
 
 	// tests: the state's hash after each frame a multiple of this, the last time it ran (0: none kept)
 	uint32_t checkpoint_every = 0;
@@ -105,7 +106,6 @@ public:
 
 private:
 	model1 &board;
-	bool native;
 	uint32_t frame = 0;   // the session's frame the board is at
 	std::vector<uint8_t> pending, stack_buf, check_buf;
 	bool collecting = false, sound_taken = false;

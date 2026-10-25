@@ -196,6 +196,7 @@ void model1::run_frame()
 	if (static const bool sl = getenv("VF_STRANDLOG") != nullptr; sl) strand_log();   // TESTONLY
 	ranking_frame();
 	memcpy(m_inputs, inputs_were, sizeof m_inputs);
+	list_select_settle();   // (the list selected, as the picture's drawing had it brought up to date: drawn or not)
 	// MAME draws the screen when vblank ends (VIDEO_UPDATE_AFTER_VBLANK): the 2D layers are
 	// as the vblank handler left them
 	if (m_draw) {
@@ -2181,13 +2182,19 @@ std::string model1::blend_name(const std::map<std::string, int> &made_of)
 // 1a80-1aff), player 2's spelt in the font (1b00 on, two tiles a letter, ' ' 0x20 on, 16 a row,
 // top above bottom; framed by 1b03/1b04 above, 1b13/1b14 below). Each frame a random fighter's box
 // is spelt anew in the font: player 1's from the left of its picture, player 2's to its box's right.
-void model1::random_fighter_hud()
+// names: netplay's, each player's own name in their box instead (set_hud_names), with undo: what each cell held
+// before, so the picture can be drawn with them and the tiles put back as the game left them.
+void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<uint32_t, uint16_t>> *undo)
 {
 	if (m_ram_a.size() < 0x1f00) return;
 	auto rd = [&](const uint8_t *p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); };
 	constexpr int ROW = 6, W = 64;
 	auto at = [&](int x, int y) { return m_tiles.tile_r(uint32_t(y * W + x)); };
-	auto put = [&](int x, int y, uint16_t v) { if (x >= 0 && x < W && at(x, y) != v) m_tiles.tile_w(uint32_t(y * W + x), v, 0xffff); };
+	auto put = [&](int x, int y, uint16_t v) {
+		if (x < 0 || x >= W || at(x, y) == v) return;
+		if (undo) undo->push_back({ uint32_t(y * W + x), at(x, y) });
+		m_tiles.tile_w(uint32_t(y * W + x), v, 0xffff);
+	};
 	// only the fight's HUD: its WIN markers (8900-8902 below each player's bar, row 7) there, so a
 	// title or select screen's tiles that look alike are never touched (its picture unrecognised,
 	// the widescreen sides came late)
@@ -2199,10 +2206,11 @@ void model1::random_fighter_hud()
 	for (int pl = 0; pl < 2; pl++) {
 		const uint32_t rec = rd(&m_ram_a[0x700 + 0x1800 * pl - 0x50]);
 		std::string name;
-		if (m_random_fighter) { if (auto it = m_random_names.find(rec); it != m_random_names.end()) name = it->second; }
-		if (auto it = m_secret_names.find(rec); name.empty() && it != m_secret_names.end()) name = it->second;   // (a player's secret character)
+		if (names) name = names[pl];
+		else if (m_random_fighter) { if (auto it = m_random_names.find(rec); it != m_random_names.end()) name = it->second; }
+		if (auto it = m_secret_names.find(rec); !names && name.empty() && it != m_secret_names.end()) name = it->second;   // (a player's secret character)
 		// (Cheats' Secret character, with Random opponents too: the ROM's picture of its name was another's)
-		if (name.empty() && rec && (rec == m_secret_recs[0] || rec == m_secret_recs[1])) name = record_name(rec);
+		if (!names && name.empty() && rec && (rec == m_secret_recs[0] || rec == m_secret_recs[1])) name = record_name(rec);
 		if (name.empty() || !win[pl]) continue;
 		// the box: its cells on this player's half of the row
 		int x0 = -1, x1 = -1;
@@ -3365,6 +3373,17 @@ void model1::draw_tiles(bitmap_rgb32 &bitmap, const rectangle &cliprect, int lay
 
 void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
+	// netplay's names under the energy bars: in the tiles while this picture's drawn, then the game's put back
+	std::vector<std::pair<uint32_t, uint16_t>> undo;
+	struct put_back {
+		model1 &m; std::vector<std::pair<uint32_t, uint16_t>> &undo;
+		~put_back() { for (auto it = undo.rbegin(); it != undo.rend(); ++it) m.m_tiles.tile_w(it->first, it->second, 0xffff); }
+	} hud_back{ *this, undo };
+	if (!m_hud_names[0].empty() || !m_hud_names[1].empty()) {
+		std::lock_guard<std::mutex> lk(m_hud_mx);
+		random_fighter_hud(m_hud_names, &undo);
+		if (!undo.empty()) m_tiles_updated = ~0ull;   // (decoded with them)
+	}
 	view_t *view = m_view.get();
 	view->ayyc = cos(view->ayy);
 	view->ayys = sin(view->ayy);

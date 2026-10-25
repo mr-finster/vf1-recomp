@@ -2026,11 +2026,22 @@ int model1::draw_direct(bitmap_rgb32 &bitmap, const rectangle &cliprect, int lis
 }
 
 
+// The list selected: bit 0x40 of the control, which follows bit 8 unless bit 4 holds it (MAME's
+// set_current_render_list). Only read here: the game reads the control back, so its bit is brought up
+// to date in one place, at the frame's end (list_select_settle, run_frame) whether the frame is drawn
+// or not; drawing (and the scan's uploads, which only an undrawn frame makes) updated it at different
+// moments, so a frame drawn and the same frame run again unseen (netplay's rollback) came apart.
+uint16_t model1::listctl_now() const
+{
+	if (m_listctl[0] & 4) return m_listctl[0];
+	return uint16_t((m_listctl[0] & ~0x40) | (m_listctl[0] & 8 ? 0x40 : 0));
+}
+
+void model1::list_select_settle() { m_listctl[0] = listctl_now(); }
+
 void model1::set_current_render_list()
 {
-	if(!(m_listctl[0] & 4))
-		m_listctl[0] = (m_listctl[0] & ~0x40) | (m_listctl[0] & 8 ? 0x40 : 0);
-	m_display_list_current = m_listctl[0] & 0x40 ? m_display_list1 : m_display_list0;
+	m_display_list_current = listctl_now() & 0x40 ? m_display_list1 : m_display_list0;
 }
 
 // The list to show (smooth motion keeps a copy of it to draw from). The name entry flips the
@@ -2051,9 +2062,7 @@ const uint16_t *model1::picture_list()
 
 int model1::get_list_number()
 {
-	if(!(m_listctl[0] & 4))
-		m_listctl[0] = (m_listctl[0] & ~0x40) | (m_listctl[0] & 8 ? 0x40 : 0);
-	return m_listctl[0] & 0x40 ? 0 : 1;
+	return listctl_now() & 0x40 ? 0 : 1;
 }
 
 void model1::end_frame()

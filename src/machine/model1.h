@@ -197,7 +197,7 @@ public:
 	std::map<uint32_t, std::string> m_random_names;   // (each random record's name, from what it's made of)
 	static const char *record_name(uint32_t rec);
 	static std::string blend_name(const std::map<std::string, int> &made_of);
-	void random_fighter_hud();
+	void random_fighter_hud(const std::string *names = nullptr, std::vector<std::pair<uint32_t, uint16_t>> *undo = nullptr);
 	static constexpr uint32_t RANKING = 0xf800, RANK_ENTRIES = 18, RANK_ENTRY = 10;   // (in the backup RAM, 40f800: time, 0, character, initials, 0)
 	uint8_t m_rank_prev[RANK_ENTRIES * RANK_ENTRY] = {};
 	bool m_rank_seen = false;
@@ -461,6 +461,12 @@ public:
 	// to a sound board of its own, take_audio's)
 	std::function<void(uint8_t)> on_uart_tx;
 	// The sound board taken off this board (a match's sound runs it alone, on a thread) and given back
+	// Netplay: the players' names under the energy bars (up to 10 letters, in the HUD's own font, player 1's from
+	// the left, player 2's to the right), drawn into the picture only: in the tile map while a picture's drawn, the
+	// game's own entries put back after, so the board (and its save state) never holds them. Empty: none.
+	void set_hud_names(const std::string names[2]) { std::lock_guard<std::mutex> lk(m_hud_mx); m_hud_names[0] = names[0]; m_hud_names[1] = names[1]; }
+	std::string m_hud_names[2];
+	std::mutex m_hud_mx;
 	std::unique_ptr<class m1audio> take_audio() { return std::move(m_audio); }
 	void give_audio(std::unique_ptr<class m1audio> a) { m_audio = std::move(a); }
 
@@ -1189,6 +1195,8 @@ private:
 	void    draw_objects(bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
 	void set_current_render_list();
+	uint16_t listctl_now() const;
+	void list_select_settle();
 	int     get_list_number();
 	void    end_frame();
 
