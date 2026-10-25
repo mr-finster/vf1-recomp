@@ -34,6 +34,42 @@ model1::model1(regions &&r)
 		use_tgp_program(m_regions.tgp_program);
 	if (!m_regions.ioboard.empty() && !getenv("VF_IO_STANDIN"))
 		m_ioboard = std::make_unique<model1io>(m_regions.ioboard, m_dpram);
+	uint64_t h = 0xcbf29ce484222325ull;
+	for (const std::vector<uint8_t> *r : { &m_regions.maincpu, &m_regions.copro_tables, &m_regions.polygons, &m_regions.sndcpu,
+	                                       &m_regions.pcm1, &m_regions.pcm2, &m_regions.tgp_program })
+		h = m1::state_hash(r->data(), r->size()) ^ (h * 0x100000001B3ull);
+	m_rom_hash = h;
+}
+
+void model1::power_on()
+{
+	std::fill(m_ram_a.begin(), m_ram_a.end(), 0xff);
+	std::fill(m_ram_b.begin(), m_ram_b.end(), 0);
+	std::fill(m_display_list0_ram.begin(), m_display_list0_ram.end(), 0);
+	std::fill(m_display_list1_ram.begin(), m_display_list1_ram.end(), 0);
+	std::fill(m_paletteram16_ram.begin(), m_paletteram16_ram.end(), 0);
+	std::fill(m_color_xlat_ram.begin(), m_color_xlat_ram.end(), 0);
+	for (int i = 0; i < 0x2000; i++) m_pens[i] = 0;
+	m_tiles.clear();
+	std::fill(std::begin(m_dpram), std::end(m_dpram), 0);
+	std::fill(std::begin(m_inputs), std::end(m_inputs), 0xff);
+	m_lamps = 0;
+	m_io_command = 0;
+	m_io_ack = 0;
+	for (int t = 0; t < 2; t++) { m_timer_period[t] = m_timer_val[t] = 0; m_timer_remain[t] = 0; }
+	m_timer_mode = 0;
+	m_listctl[0] = m_listctl[1] = 0;
+	m_v60_copro_fifo_r = m_v60_copro_fifo_w = 0;
+	m_rng = 1;
+	m_rank_seen = false;
+	if (m_lle) use_tgp_program(m_regions.tgp_program);   // (its RAMs as at power-up: reset() keeps them)
+	reset();
+}
+
+void model1::use_io_standin(bool on)
+{
+	if (on && m_ioboard) m_ioboard_off = std::move(m_ioboard);
+	else if (!on && m_ioboard_off) m_ioboard = std::move(m_ioboard_off);
 }
 
 // (frames after a reset: random_fighter_hold_moves. The table is written on frames 203-204 and the
@@ -250,6 +286,7 @@ void model1::uart_tick(int cycles)
 	if (m_uart_shift >= 0 && (m_uart_shift_left -= cycles) <= 0) {
 		if (static const bool sl = getenv("VF_SNDLOG") != nullptr; sl) fprintf(stderr, "SND %llu %02x\n", (unsigned long long)m_frame, m_uart_shift & 0xff);   // TESTONLY
 		if (m_audio) m_audio->rx_byte(uint8_t(m_uart_shift));
+		else if (on_uart_tx) on_uart_tx(uint8_t(m_uart_shift));
 		m_uart_shift = -1;
 		if (m_uart_txbuf >= 0) {
 			m_uart_shift = m_uart_txbuf;
@@ -3091,20 +3128,19 @@ void model1::fight_cheats(int infinite, bool one_hit, bool no_time)
 	}
 }
 
-static std::vector<std::pair<uint32_t, std::vector<uint8_t>>> s_free_play_text;   // the bytes hide_free_play_text replaced
 
 void model1::show_free_play_text()
 {
-	for (const auto &[addr, bytes] : s_free_play_text) memcpy(&m_regions.maincpu[addr], bytes.data(), bytes.size());
-	s_free_play_text.clear();
+	for (const auto &[addr, bytes] : m_free_play_text) memcpy(&m_regions.maincpu[addr], bytes.data(), bytes.size());
+	m_free_play_text.clear();
 }
 
 int model1::hide_free_play_text()
 {
-	if (!s_free_play_text.empty()) return 0;
+	if (!m_free_play_text.empty()) return 0;
 	auto keep = [&](uint32_t addr, size_t n) {
 		auto &rom = m_regions.maincpu;
-		if (addr + n <= rom.size()) s_free_play_text.push_back({ addr, std::vector<uint8_t>(&rom[addr], &rom[addr] + n) });
+		if (addr + n <= rom.size()) m_free_play_text.push_back({ addr, std::vector<uint8_t>(&rom[addr], &rom[addr] + n) });
 	};
 	keep(0x13c01c2, 40);
 	keep(0xfd080f, 9);

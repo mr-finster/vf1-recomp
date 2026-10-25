@@ -2,6 +2,9 @@
 # Mac: brew install sdl3. Linux / Steam Deck: see tools/deck/build.sh (Steam Runtime container).
 CXX ?= clang++
 CXXFLAGS ?= -std=c++20 -O2 -g -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
+# (no fused multiply-adds, on every platform: the V60's and the TGP's floating point is the game's state, and an
+# ARM64 Mac must work out the same numbers as an x86-64 PC for netplay)
+CXXFLAGS += -ffp-contract=off
 CXXFLAGS += -Ithird_party/glm -Isrc/core/shim_include $(EXTRA_CFLAGS)
 LDLIBS ?= -lz
 # the compiler for tools run during the build (m68kmake): the target's own unless cross-compiling
@@ -22,7 +25,7 @@ endif
 CORE = src/core/v60_device.cpp src/core/mb86233.cpp
 SOUND = src/machine/m1audio.cpp src/machine/multipcm.cpp third_party/ymfm/ymfm_opn.cpp third_party/ymfm/ymfm_adpcm.cpp third_party/ymfm/ymfm_ssg.cpp
 MUSASHI_OBJ = $(OBJ)/musashi/m68kcpu.o $(OBJ)/musashi/m68kops.o $(OBJ)/musashi/m68kdasm.o $(OBJ)/musashi/softfloat.o
-MACHINE = src/machine/model1.cpp src/machine/model1_tgp.cpp src/machine/model1_tgp_lle.cpp src/machine/model1_video.cpp src/machine/model1_sky.cpp src/machine/model1_interp.cpp src/machine/model1_gpu.cpp src/machine/model1_edge_aa.cpp src/machine/model1io.cpp
+MACHINE = src/machine/model1.cpp src/machine/model1_tgp.cpp src/machine/model1_tgp_lle.cpp src/machine/model1_video.cpp src/machine/model1_sky.cpp src/machine/model1_interp.cpp src/machine/model1_gpu.cpp src/machine/model1_edge_aa.cpp src/machine/model1io.cpp src/machine/model1_state.cpp
 Z80_OBJ = $(OBJ)/z80/z80.o
 DASM = third_party/mame/v60/v60d.cpp
 # the recompile done on the player's machine: analysis + native code (sljit, BSD-2)
@@ -108,6 +111,17 @@ $(BIN)/vflock: $(call objs,tools/vflock.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 rec: $(BIN)/vflock
+
+# netplay's rollback soak test (tools/vf1soak.cpp): the native code made at start-up, as the game's
+$(BIN)/vf1soak: $(call objs,tools/vf1soak.cpp src/rt/rec_table_none.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+# netplay (src/net) and the game as a session's Game (src/host/vf1_netplay.cpp); vf1net: two boards through a
+# simulated network
+NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp
+$(BIN)/vf1net: $(call objs,tools/vf1net.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) $(NET_LIBS)
 
 $(OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)

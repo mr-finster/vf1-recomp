@@ -50,6 +50,19 @@ public:
 	bool service_irq() { m_irq_taken = false; if (m_irq_line != CLEAR_LINE) v60_try_irq(); return m_irq_taken; }
 	bool irq_line_up() const { return m_irq_line != CLEAR_LINE; }
 	bool m_irq_taken = false;
+	// The save state (model1::state): the registers, the flags, the lines and the cycles owed (in whichever count
+	// runs the code: the recompiled code's or m_icount). The decoder's scratch isn't in it: a frame ends between
+	// instructions, where none of it is live.
+	template <class IO> void state(IO &io)
+	{
+		io.section("v60");
+		io.pod(m_reg);
+		io.pod(m_flags);
+		io.pod(m_irq_line);
+		io.pod(m_nmi_line);
+		io.pod(m_stall_io);
+		io.pod(*m_cycles);
+	}
 
 protected:
 	v60_bus &m_bus;

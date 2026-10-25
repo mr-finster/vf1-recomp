@@ -38,6 +38,14 @@ public:
 	// a copy of them is made only when they changed.
 	uint64_t char_gen = 0;
 	void swap_rams(std::vector<uint16_t> &tiles, std::vector<uint16_t> &chars) { tile_ram.swap(tiles); char_ram.swap(chars); m_dirty = true; }
+	void clear() { std::fill(tile_ram.begin(), tile_ram.end(), 0); std::fill(char_ram.begin(), char_ram.end(), 0); m_dirty = true; char_gen++; }   // (power_on)
+	// The save state (model1::state): both RAMs; after a load every map entry and tile is decoded again
+	template <class IO> void state(IO &io)
+	{
+		io.vec(tile_ram);
+		io.vec(char_ram);
+		if (IO::loading) { m_dirty = true; char_gen++; }
+	}
 
 	// One map as a 512x512 picture (after update()), for exporting the artwork.
 	void render_map(int l, uint32_t *out) const

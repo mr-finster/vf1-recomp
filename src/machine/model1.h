@@ -21,6 +21,7 @@
 #include "m1audio.h"
 #include "model1io.h"
 #include "../core/v60_device.h"
+#include "state_io.h"
 
 #include <glm/vec3.hpp>
 
@@ -328,6 +329,7 @@ public:
 	// which is always free play. Returns how many it found.
 	int hide_free_play_text();
 	void show_free_play_text();          // (puts back what hide_free_play_text changed)
+	std::vector<std::pair<uint32_t, std::vector<uint8_t>>> m_free_play_text;   // (the bytes it replaced: each board's own)
 	// Hi-res replacements for the stage skies (model1_sky.cpp), drawn above 1x. The names are
 	// the background export's (stage_<name>.png); false for a name it doesn't know.
 	static std::vector<std::string> sky_names();
@@ -354,6 +356,7 @@ public:
 	bool past_boot() const;
 	// Frames run without drawing them (the display lists' uploads still happen, as MAME's skip).
 	void set_drawing(bool on) { m_draw = on; }
+	bool drawing() const { return m_draw; }
 	// Draws the picture last shown again, at the current settings (a change of scale, shape or
 	// filter while paused or in the menu): the same moment, from what it was drawn from, even when
 	// frames have run since without a new picture shown (a held scene change or camera cut). The
@@ -433,6 +436,33 @@ public:
 	bool real_ioboard() const { return bool(m_ioboard); }
 	const std::vector<uint8_t> &maincpu_rom() const { return m_regions.maincpu; }   // for the recompiler
 	uint64_t frame_number() const { return m_frame; }
+
+	// Save states (model1_state.cpp), for netplay's rollback: the board as the game sees it (the V60, the TGP, the
+	// RAMs, the tile chip, the palette, the timers and IRQs, the UART and the I/O stand-in) at a frame's end. Not in
+	// it: the picture's own state (the 3D's uploads, smooth motion, the skies: drawn from the board, never read by
+	// the game), the sound board (a match runs without one: its bytes go to a board of their own) and the real I/O
+	// board (a match uses the stand-in). The cheats are off (Random fighter's, the secret characters', no time
+	// limit: their host-side state isn't in it yet). With the recompiled code, rec::save_stack too.
+	// The header (STATE_HEADER bytes: the format, the frame number) isn't compared between two boards.
+	static constexpr size_t STATE_HEADER = 16;
+	void save_state(std::vector<uint8_t> &out, std::vector<m1::StateSection> *sections = nullptr, bool append = false);   // (append: after what out holds)
+	bool load_state(const uint8_t *p, size_t n);
+	template <class IO> void state(IO &io);
+	template <class IO> void lle_state(IO &io);   // (model1_tgp_lle.cpp)
+	// A cold start (netplay's match: work RAM and more survive reset(), so a side that had played would start out of
+	// step): every RAM as the board powers up, the timers stopped, the TGP made afresh, then reset()
+	void power_on();
+	// A hash of the ROMs as loaded (before any patch): what the handshake compares
+	uint64_t rom_hash() const { return m_rom_hash; }
+	// The I/O board's stand-in, whatever the set has (a match: both sides the same board); false puts the real one
+	// back
+	void use_io_standin(bool on);
+	// The main board's bytes to the sound board as they're sent, with no sound board on this one (a match's: they go
+	// to a sound board of its own, take_audio's)
+	std::function<void(uint8_t)> on_uart_tx;
+	// The sound board taken off this board (a match's sound runs it alone, on a thread) and given back
+	std::unique_ptr<class m1audio> take_audio() { return std::move(m_audio); }
+	void give_audio(std::unique_ptr<class m1audio> a) { m_audio = std::move(a); }
 
 	// Hooks for tracing and the recompiler
 	std::function<void(uint32_t pc)> on_instruction;
@@ -783,6 +813,8 @@ private:
 	void sound_ready();
 	// I/O board stand-in (MAME 0.190's io_r/io_w/network_ctl): its Z80 program isn't in this set.
 	std::unique_ptr<model1io> m_ioboard;   // the real I/O board, when its program is there
+	std::unique_ptr<model1io> m_ioboard_off;   // (use_io_standin's: the real one, put aside)
+	uint64_t m_rom_hash = 0;
 	uint8_t io_board_r(int index);
 	void io_board_w(int index, uint8_t data);
 	void io_board_tick(int cycles);

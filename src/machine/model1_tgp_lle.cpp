@@ -234,3 +234,21 @@ void model1::lle_v60_w(uint32_t a, uint16_t data, uint16_t mem_mask)
 			m_v60_copro_fifo_w = (m_v60_copro_fifo_w & 0xffff0000) | data;
 	}
 }
+
+// The save state (model1_state.cpp): the TGP's RAMs, its FIFOs, the table units' bases and its registers. It
+// waits on its input FIFO between the V60's touches, so nothing is mid-run.
+template <class IO> void model1::lle_state(IO &io)
+{
+	tgp_lle &t = *m_lle;
+	io.section("tgp");
+	io.pod(t.ram0);
+	io.pod(t.ram1);
+	io.vec(t.copro_ram);
+	io.pod(t.ram_adr);
+	io.pod(t.sincos_base); io.pod(t.inv_base); io.pod(t.isqrt_base); io.pod(t.atan_base); io.pod(t.data_base);
+	io.deq(t.fifo_in);
+	io.deq(t.fifo_out);
+	t.cpu.state(io);
+}
+template void model1::lle_state(m1::StateWriter &);
+template void model1::lle_state(m1::StateReader &);

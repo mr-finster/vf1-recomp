@@ -8,6 +8,7 @@
 #define PC (*rec::pc)
 #define TICK() do { if ((rec::cycles -= 8) <= 0 || rec::cpu->irq_line_up()) rec::after_insn_slow(); } while (0)
 #include <algorithm>
+#include <cstring>
 #include <set>
 
 namespace rec {
@@ -128,6 +129,34 @@ void detach(v60_device &c)
 	std::vector<uint8_t>().swap(game_stack);
 	started = false;
 	cpu = nullptr;
+}
+
+// The stack from the parked sp to its top, and where that sp is (its offset from the top: the same stack)
+size_t stack_used()
+{
+	if (!started) return 0;
+	return size_t(game_stack.data() + game_stack.size() - static_cast<uint8_t *>(game_ctx.sp));
+}
+
+void save_stack(std::vector<uint8_t> &out)
+{
+	const uint64_t used = stack_used();
+	const size_t at = out.size();
+	out.resize(at + sizeof used + used);
+	memcpy(out.data() + at, &used, sizeof used);
+	if (used) memcpy(out.data() + at + sizeof used, game_ctx.sp, used);
+}
+
+bool load_stack(const uint8_t *p, size_t n)
+{
+	uint64_t used = 0;
+	if (!started || n < sizeof used) return false;
+	memcpy(&used, p, sizeof used);
+	if (used == 0 || used > game_stack.size() || n != sizeof used + used) return false;
+	uint8_t *sp = game_stack.data() + game_stack.size() - used;
+	memcpy(sp, p + sizeof used, used);
+	game_ctx.sp = sp;
+	return true;
 }
 
 void run(int n)

@@ -97,6 +97,7 @@ public:
 	void clear() { m_q.clear(); }
 	std::function<void()> m_on_push;
 	bool m_underflow = false;
+	std::deque<uint32_t> &queue() { return m_q; }   // (the save state)
 private:
 	std::deque<uint32_t> m_q;
 };
