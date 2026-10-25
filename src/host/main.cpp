@@ -3333,6 +3333,7 @@ int main(int argc, char **argv)
 	g3.reset();                          // (its device goes before SDL does)
 	if (gpu_check) fprintf(stderr, "gpu check: %d pictures put together on the GPU checked, %d differ\n", gpu_checked, gpu_differ);
 	gc.release();                        // (its textures and shader go before the renderer)
+	crt_paint.release();
 	msound.stop();
 	online.stop();   // (closed in a match: the other side is told at once, not after a silence)
 	Online::flush(1500);   // (and the lobby told: a room closed, a search left)
