@@ -373,15 +373,19 @@ dialog .x:hover{background:rgba(255,255,255,.2)}
       </div></span>
     <span class="info"><button class="lnk" aria-expanded="false">Changelog</button>
       <div class="pop" role="dialog" aria-label="Changelog">
-        <p><b>v1.4.1</b> &middot; %DATE%</p>
+        <p><b>v1.4.2</b> &middot; %DATE%</p>
         <ul>
+          <li><b>Windows laptops</b> with two graphics chips run the game on the faster one (it could end up on the slower chip built into the processor).</li>
+          <li><b>Linux on ARM</b> (a Raspberry Pi 5, an ARM laptop): a download of its own on the GitHub release page, <code>VirtuaFighterRecomp-linux-arm64.tar.gz</code> (Ubuntu 22.04, Debian 12, Raspberry Pi OS bookworm or newer).</li>
+        </ul>
+        <details><summary>v1.4.1</summary><ul>
           <li><b>Never slow on a working GPU.</b> One bad start or one failed check used to keep the game drawing on the CPU at every start after, so it was smooth at 1x and slow above (most often on Windows). Now every start tries the GPU again, a graphics driver that closes the game on Vulkan goes to Direct3D 12 by itself on Windows, the check only rejects a GPU that is really broken (a driver's rounding no longer counts), and if the game ever does draw on the CPU it tells you why on screen, with what to do.</li>
           <li><b>Windows:</b> Vulkan first on every graphics card (Direct3D 12 was much slower on many NVIDIA and AMD cards), with a Display &gt; Graphics driver setting; power throttling off, so Windows 11 never runs the game on its slow cores.</li>
           <li><b>Waking from sleep:</b> the game's pacing starts fresh, no catching up or stale sound.</li>
           <li>Saves are written in the background, once a minute (no more stutter on a hard disk).</li>
           <li>Random opponents: the ending's replays show the fighters as fought, the last fight in Dural's chrome.</li>
           <li>Menu: a mouse click on &lt; steps a choice back.</li>
-        </ul>
+        </ul></details>
         <details><summary>v1.4.0</summary><ul>
           <li><b>Random fighters:</b> Menu &gt; Cheats &gt; Player 1 (or 2) fighter &gt; Random makes a new fighter every game from three of the cast: head, body and limbs, moves dealt from the same three at the real game's timings, one of their voices, and a name made of theirs on the energy bar. Round 1 builds it from its polygons.</li>
           <li><b>Seeds:</b> type a fighter's name from an energy bar to play it again: the same build and moves on any machine, in new colours.</li>
