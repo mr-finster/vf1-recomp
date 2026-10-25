@@ -156,7 +156,9 @@ bool Online::open_host(std::string &error)
 	if (!link->bind(uint16_t(port), error)) { link.reset(); return false; }
 	if (adapter.settle) adapter.settle();
 	identity.name = started_with.name;
-	session = std::make_unique<vfnet::Session>(lagged(*link), adapter, identity, config(started_with), true, vf1net::start_blob(board));
+	adapter.hosting = true;
+	adapter.own_extra = identity.extra;
+	session = std::make_unique<vfnet::Session>(lagged(*link), adapter, identity, config(started_with), true, adapter.host_blob());
 	session->trace = log_line;
 	ph = Phase::hosting;
 	return true;
@@ -262,6 +264,8 @@ bool Online::join(const OnlineSettings &s, std::string &error)
 	link = std::make_unique<vfnet::UdpLink>();
 	if (!link->connect(host, uint16_t(p), error)) { link.reset(); return false; }
 	identity.name = s.name;
+	adapter.hosting = false;
+	adapter.own_extra = identity.extra;
 	session = std::make_unique<vfnet::Session>(lagged(*link), adapter, identity, config(s), false);
 	session->trace = log_line;
 	joining_to = host + (p != 7700 ? ":" + std::to_string(p) : "");
@@ -555,7 +559,9 @@ void Online::room_session(bool host)
 	if (adapter.settle) adapter.settle();
 	vfnet::Config c = config(started_with);
 	c.token = room_token;
-	session = std::make_unique<vfnet::Session>(lagged(*room), adapter, identity, c, host, host ? vf1net::start_blob(board) : std::vector<uint8_t>());
+	adapter.hosting = host;
+	adapter.own_extra = identity.extra;
+	session = std::make_unique<vfnet::Session>(lagged(*room), adapter, identity, c, host, host ? adapter.host_blob() : std::vector<uint8_t>());
 	session->trace = log_line;
 }
 

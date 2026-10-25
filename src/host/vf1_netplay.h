@@ -37,8 +37,17 @@ std::string online_version(const std::string &build);
 
 uint64_t content_hash(const model1 &board);
 // The host's starting blob: its backup RAM and its GAME ASSIGNMENTS (the rounds, the difficulty: put in the match
-// board's EEPROM as values, whichever I/O board each side has offline)
-std::vector<uint8_t> start_blob(model1 &board);
+// board's EEPROM as values, whichever I/O board each side has offline), the match's random seed (Random fighter's
+// fighters made alike on both sides) and the host's fighter (player 1's: fighter_extra)
+std::vector<uint8_t> start_blob(model1 &board, const std::string &host_fighter = "", uint32_t seed = 1);
+
+// A player's fighter as the handshake carries it (Identity::extra): "" the select as ever, "R" a random fighter, a
+// new one at every select, "S<seed>" a named fighter's (model1::random_fighter_names: the same on any machine with
+// the ROM), "X<k>" a secret character (1-7, model1::UNUSED_CHARACTERS). As model1::set_random_player's setting
+// ("", "*", "#k", or "S<seed>": set_players); false for one that isn't any of them
+std::string fighter_extra(const std::string &random_player_setting, model1 &board);
+bool fighter_setting(const std::string &extra, model1 &board, std::string &setting);
+void set_players(model1 &board, const std::string fighters[2]);
 
 // The room at a save state's start for the coroutine's stack (its bytes, then the board's state): VF1's is a few
 // hundred bytes at a frame's end
@@ -97,6 +106,13 @@ public:
 	void take_sound(std::vector<uint8_t> &out);
 	bool failed_stack = false;   // (a stack too deep for STACK_ROOM: the save is refused, the match ends)
 	bool native;   // (the recompiled code runs the board: its stack in the states; the host's to set, the game falling back to the interpreter)
+	// The fighters (Online sets these before the session): this side's choice (fighter_extra), and whether it hosts
+	// (player 1, its choice in its blob) or joins (player 2)
+	std::string own_extra;
+	bool hosting = false;
+	std::vector<uint8_t> host_blob();   // (start_blob with this side's fighter and a fresh seed)
+	void peer_extra(const std::string &extra) override { their_extra = extra; }
+	std::string fighters[2];   // (the match's, as begin set them: model1::set_random_player's settings)
 
 	// tests: the state's hash after each frame a multiple of this, the last time it ran (0: none kept)
 	uint32_t checkpoint_every = 0;
@@ -106,6 +122,7 @@ public:
 
 private:
 	model1 &board;
+	std::string their_extra;
 	uint32_t frame = 0;   // the session's frame the board is at
 	std::vector<uint8_t> pending, stack_buf, check_buf;
 	bool collecting = false, sound_taken = false;

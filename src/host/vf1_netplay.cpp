@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <chrono>
 
 namespace vf1net {
 
@@ -62,7 +63,7 @@ std::string online_version(const std::string &b)
 
 uint64_t content_hash(const model1 &b) { return b.rom_hash(); }
 
-std::vector<uint8_t> start_blob(model1 &b)
+std::vector<uint8_t> start_blob(model1 &b, const std::string &host_fighter, uint32_t seed)
 {
 	std::vector<uint8_t> out(4);
 	memcpy(out.data(), &BLOB_MAGIC, 4);
@@ -73,7 +74,55 @@ std::vector<uint8_t> start_blob(model1 &b)
 		out.push_back(uint8_t(v));
 		out.push_back(uint8_t(uint16_t(v) >> 8));
 	}
+	for (int k = 0; k < 4; k++) out.push_back(uint8_t(seed >> (8 * k)));
+	const std::string f = host_fighter.substr(0, vfnet::MAX_EXTRA);
+	out.push_back(uint8_t(f.size()));
+	out.insert(out.end(), f.begin(), f.end());
 	return out;
+}
+
+std::string fighter_extra(const std::string &setting, model1 &b)
+{
+	if (setting.empty()) return "";
+	if (setting == "*") return "R";
+	if (setting[0] == '#') return "X" + std::to_string(atoi(setting.c_str() + 1));
+	std::string n;
+	for (char ch : setting) if (ch != ' ') n += char(toupper(uint8_t(ch)));
+	const auto &names = b.random_fighter_names();
+	const auto it = names.find(n);
+	return it == names.end() ? "R" : "S" + std::to_string(it->second);   // (a name no seed gives: Random, as offline)
+}
+
+bool fighter_setting(const std::string &x, model1 &b, std::string &setting)
+{
+	setting.clear();
+	if (x.empty()) return true;
+	if (x == "R") { setting = "*"; return true; }
+	const bool digits = x.size() >= 2 && x.size() <= 6 && x.find_first_not_of("0123456789", 1) == std::string::npos;
+	if (!digits) return false;
+	const long v = strtol(x.c_str() + 1, nullptr, 10);
+	if (x[0] == 'X') {
+		if (v < 1 || v >= long(std::size(model1::UNUSED_CHARACTERS))) return false;
+		setting = "#" + std::to_string(v);
+		return true;
+	}
+	if (x[0] != 'S' || v < 1 || v > long(model1::RANDOM_SEEDS)) return false;
+	setting = "S" + std::to_string(v);   // (a named fighter by its seed: set_players)
+	return true;
+}
+
+void set_players(model1 &b, const std::string fighters[2])
+{
+	for (int p = 0; p < 2; p++)
+		if (fighters[p].size() > 1 && fighters[p][0] == 'S') b.set_random_player_seed(p, uint32_t(strtoul(fighters[p].c_str() + 1, nullptr, 10)));
+		else b.set_random_player(p, fighters[p]);
+}
+
+std::vector<uint8_t> Adapter::host_blob()
+{
+	uint32_t seed = uint32_t(std::chrono::steady_clock::now().time_since_epoch().count() * 2654435761u) ^ 0x9e3779b9u;
+	if (!seed) seed = 1;
+	return start_blob(board, own_extra, seed);
 }
 
 void Adapter::take_sound(std::vector<uint8_t> &out)
@@ -94,9 +143,16 @@ void Adapter::take_sound(std::vector<uint8_t> &out)
 bool Adapter::begin(const std::vector<uint8_t> &blob)
 {
 	uint32_t magic = 0;
-	if (blob.size() != 4 + BACKUP_SIZE + 2 * N_ASSIGN || board.nvram().size() != BACKUP_SIZE) return false;
+	constexpr size_t FIXED = 4 + BACKUP_SIZE + 2 * N_ASSIGN + 4 + 1;
+	if (blob.size() < FIXED || blob.size() != FIXED + blob[FIXED - 1] || board.nvram().size() != BACKUP_SIZE) return false;
 	memcpy(&magic, blob.data(), 4);
 	if (magic != BLOB_MAGIC) return false;
+	uint32_t seed = 0;
+	memcpy(&seed, blob.data() + FIXED - 5, 4);
+	// each player's fighter: the host's (player 1's) in its blob, the guest's in its hello
+	const std::string host_x(reinterpret_cast<const char *>(blob.data()) + FIXED, blob[FIXED - 1]);
+	if (!fighter_setting(host_x, board, fighters[0]) || !fighter_setting(hosting ? their_extra : own_extra, board, fighters[1])) return false;
+	const bool random = !fighters[0].empty() || !fighters[1].empty();
 	if (settle) settle();
 	if (on_begin) on_begin();
 	collecting = false;
@@ -110,7 +166,19 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	board.hide_free_play_text();
 	bool code = board.set_no_time_limit(false);
 	code |= board.set_strands_moved(false);
+	board.set_random_fighter(false);   // (again, its moves off: its part of the ROM as VF's)
+	board.random_fighter_forget();
+	// the players' fighters (Random fighter, its moves too, only when someone has one: it patches the program),
+	// made from the host's seed, the same on both sides
+	if (random) {
+		set_players(board, fighters);
+		code |= board.set_strands_moved(true);
+	}
 	if (code && program_changed) program_changed();
+	if (random) {
+		board.set_random_seed(seed);
+		board.set_random_fighter(true, true, false);
+	}
 	board.use_io_standin(true);
 	board.on_uart_tx = [this](uint8_t b) { if (collecting) pending.push_back(b); };
 	auto cold = [&](const uint8_t *eeprom) {
