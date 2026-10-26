@@ -199,6 +199,8 @@ public:
 	static const char *record_name(uint32_t rec);
 	static std::string blend_name(const std::map<std::string, int> &made_of);
 	void random_fighter_hud(const std::string *names = nullptr, std::vector<std::pair<uint32_t, uint16_t>> *undo = nullptr);
+	void hud_edges(std::vector<std::pair<uint32_t, uint16_t>> &undo);   // (netplay's names: the box's lines under every cell)
+	static constexpr uint32_t CHAR_UNDO = 0x80000000u;   // (an undo entry for the tile graphics, not the map)
 	static constexpr uint32_t RANKING = 0xf800, RANK_ENTRIES = 18, RANK_ENTRY = 10;   // (in the backup RAM, 40f800: time, 0, character, initials, 0)
 	uint8_t m_rank_prev[RANK_ENTRIES * RANK_ENTRY] = {};
 	bool m_rank_seen = false;

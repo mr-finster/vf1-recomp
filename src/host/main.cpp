@@ -1638,11 +1638,9 @@ int main(int argc, char **argv)
 	SDL_Texture *glass = nullptr;
 	int glass_w = 0, glass_h = 0, glass_kind = 0;
 	// Online play's flags on the HUD, beside each player's name (model1::set_hud_names leaves two cells for one): the
-	// countries' flags (assets/ui/flags.png, 48 x 36 each) drawn over the game's picture into those cells, 12 x 9 of
-	// the arcade's pixels, after the picture and before the screen filter
-	// each player's flag as the HUD shows it: 12 x 9 of the arcade's pixels, each the 4 x 4 of the 48 x 36 flag it
-	// covers averaged (by their cover: a flag that isn't a rectangle, Nepal's), one mostly outside the flag left
-	// see-through, as VF2's (m2hud::Flag); drawn on the arcade's pixel grid, nearest, as the HUD's own pixels are
+	// countries' flags (assets/ui/flags.png, 48 x 36 each, as they are) drawn over the game's picture into those
+	// cells, 12 x 9 of the arcade's pixels in the middle of their 16 x 16, its edges on the window's own pixels (sharp
+	// at any size), after the picture and before the screen filter
 	SDL_Surface *flag_atlas = nullptr;
 	SDL_Texture *flag_tex[2] = { nullptr, nullptr };
 	std::string hud_country[2], flag_made[2];   // (each player's, as the lobby has it: "" none; and the one each texture holds)
@@ -1658,25 +1656,11 @@ int main(int argc, char **argv)
 		if (!flag_atlas) return nullptr;
 		const int x0 = i % flags::COLS * flags::CELL_W + 1, y0 = i / flags::COLS * flags::CELL_H + 1;
 		if (x0 + flags::W > flag_atlas->w || y0 + flags::H > flag_atlas->h) return nullptr;
-		constexpr int FW = flags::W / 4, FH = flags::H / 4;
-		uint32_t px[FW * FH];
-		for (int y = 0; y < FH; y++)
-			for (int x = 0; x < FW; x++) {
-				unsigned sum[4] = {};
-				for (int dy = 0; dy < 4; dy++)
-					for (int dx = 0; dx < 4; dx++) {
-						const uint8_t *q = static_cast<const uint8_t *>(flag_atlas->pixels) + size_t(y0 + y * 4 + dy) * size_t(flag_atlas->pitch) + size_t(x0 + x * 4 + dx) * 4;
-						for (int c = 0; c < 3; c++) sum[c] += q[c] * q[3];
-						sum[3] += q[3];
-					}
-				const unsigned a = sum[3] / 16, d = sum[3] ? sum[3] : 1;
-				px[y * FW + x] = a < 128 ? 0u : 0xFF000000u | (sum[0] / d) << 16 | (sum[1] / d) << 8 | (sum[2] / d);   // (ABGR8888's bytes are R G B A: out as ARGB8888)
-			}
 		if (flag_tex[p]) SDL_DestroyTexture(flag_tex[p]);
-		flag_tex[p] = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, FW, FH);
+		flag_tex[p] = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, flags::W, flags::H);
 		if (!flag_tex[p]) return nullptr;
-		SDL_UpdateTexture(flag_tex[p], nullptr, px, FW * 4);
-		SDL_SetTextureScaleMode(flag_tex[p], SDL_SCALEMODE_NEAREST);
+		SDL_UpdateTexture(flag_tex[p], nullptr, static_cast<const uint8_t *>(flag_atlas->pixels) + size_t(y0) * size_t(flag_atlas->pitch) + size_t(x0) * 4, flag_atlas->pitch);
+		SDL_SetTextureScaleMode(flag_tex[p], SDL_SCALEMODE_LINEAR);
 		SDL_SetTextureBlendMode(flag_tex[p], SDL_BLENDMODE_BLEND);
 		flag_made[p] = hud_country[p];
 		return flag_tex[p];
@@ -1685,14 +1669,20 @@ int main(int argc, char **argv)
 		if (hud_country[0].empty() && hud_country[1].empty()) return;
 		int lw = 0, lh = 0;
 		SDL_RendererLogicalPresentation mode;
+		SDL_FRect out;
 		SDL_GetRenderLogicalPresentation(ren, &lw, &lh, &mode);
-		if (lw <= 0 || lh <= 0) return;
-		const float sx = float(lw) / float(m.arcade_width()), sy = float(lh) / float(model1::SCREEN_H);
+		if (lw <= 0 || lh <= 0 || !SDL_GetRenderLogicalPresentationRect(ren, &out) || out.w <= 0) return;
+		// (the arcade's pixels to the logical size's, and the logical size's to the window's: each edge put on a whole
+		// window pixel, so the flag's never blurred into the box around it)
+		const float sx = float(lw) / float(m.arcade_width()), sy = float(lh) / float(model1::SCREEN_H), wx = out.w / float(lw), wy = out.h / float(lh);
+		auto snap_x = [&](float v) { return (std::round(out.x + v * sx * wx) - out.x) / wx; };
+		auto snap_y = [&](float v) { return (std::round(out.y + v * sy * wy) - out.y) / wy; };
 		for (int p = 0; p < 2; p++) {
 			int x = 0, y = 0;
 			if (!m.hud_flag_at(p, x, y)) continue;
 			if (SDL_Texture *t = hud_flag(p)) {
-				const SDL_FRect dst{ float(x + 2) * sx, float(y + 4) * sy, float(flags::W / 4) * sx, float(flags::H / 4) * sy };   // (its two cells, 16 x 16: 2 in, 4 down)
+				const float l = snap_x(float(x) + 2), r = snap_x(float(x) + 14), top = snap_y(float(y) + 3.5f), bottom = snap_y(float(y) + 12.5f);   // (its two cells, 16 x 16: 12 x 9 in their middle)
+				const SDL_FRect dst{ l, top, r - l, bottom - top };
 				SDL_RenderTexture(ren, t, nullptr, &dst);
 			}
 		}
@@ -2725,16 +2715,16 @@ int main(int argc, char **argv)
 				if (menu.is_open()) menu.close();
 				restart_clock();
 				// who's playing who, over the title screen for a moment (the host is player 1)
-				// (with each one's fighter beside the name: Random, a secret character, a seed's)
-				auto with = [](const std::string &name, const std::string &extra) { const std::string w = vf1net::fighter_words(extra); return w.empty() ? name : name + " \xC2\xB7 " + w; };
-				const std::string me = with(online.identity.name, online.identity.extra), them = with(online.opponent(), online.opponent_extra());
-				const std::string host = online.is_hosting() ? me : them, guest = online.is_hosting() ? them : me;
+				// (with each one's fighter under the name: Random, a secret character, a seed's)
+				const std::string me_ft = vf1net::fighter_words(online.identity.extra), them_ft = vf1net::fighter_words(online.opponent_extra());
+				const std::string host = online.is_hosting() ? online.identity.name : online.opponent(), guest = online.is_hosting() ? online.opponent() : online.identity.name;
 				const int ms = online.ping();
 				menu.show_versus({ "PLAYER 1 \xC2\xB7 HOST", host, "PLAYER 2", guest,
 				                   std::string(online.via_relay() ? "Connected through the relay" : "Connected directly") + (ms > 0 ? " \xC2\xB7 " + std::to_string(ms) + " ms" : ""),
 				                   online.slow_local() ? "Through the relay: this Mac blocks your network. Turn on Local Network (System Settings) for a faster match"
 				                                       : "Both press Start", online.via_relay(),
-				                   online.is_hosting() ? online.my_country() : online.peer_country(), online.is_hosting() ? online.peer_country() : online.my_country() });
+				                   online.is_hosting() ? online.my_country() : online.peer_country(), online.is_hosting() ? online.peer_country() : online.my_country(),
+				                   online.is_hosting() ? me_ft : them_ft, online.is_hosting() ? them_ft : me_ft });
 			}
 			fprintf(stderr, "online: %s\n", Online::log_masked(n.text).c_str());
 		}

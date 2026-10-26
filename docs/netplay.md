@@ -27,8 +27,9 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
   it, a byte every 8 scanlines as the i8251 sends them (main.cpp's `match_sound_start`). Under rollback a frame's
   bytes go once (`Adapter::take_sound`).
 - **The score** (`vf1net::Score`): work RAM 501281 and 501282, each player's rounds won (found against the HUD's
-  round markers: 13,818 and 13,822 frames of 13,824 alike, the HUD a few frames behind); bit 0x10 of the backup
-  RAM's 407483 and 407503, a person playing that side. After the CPU wins the rounds go back to 0 one at a time, so
+  round markers: 13,818 and 13,822 frames of 13,824 alike, the HUD a few frames behind); bits 0x18 of the backup
+  RAM's 407483 and 407503, a person playing that side (0x10 alone once they've lost a versus: the CPU takes their
+  side, and the loser's asked to press Start for a rematch). After the CPU wins the rounds go back to 0 one at a time, so
   a match's winner is whoever reached more.
 - **The names on the energy bars**: Random fighter's own code (`random_fighter_hud`), each player's name spelt in
   the HUD's font in their box, put in the tile map only while a picture's drawn and the game's entries put back
@@ -44,7 +45,7 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
   Random fighter up alike before the boot (its records put back and what it knew forgotten first, its moves' patch
   only when someone has one: it changes the game otherwise). Its save state: the ROM's last 512 KB (the records and
   moves tables it builds) and its maps, in key order; the build's flashes, the heads' turns and the poses' easing
-  are the picture's. The VS reveal shows each one's fighter beside the name ("NEONKID · RANDOM").
+  are the picture's. The VS reveal shows each one's fighter under the name, smaller ("RANDOM", "SECRET: SIBA").
 
 ## Fixed on the way
 

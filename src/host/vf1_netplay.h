@@ -48,7 +48,7 @@ std::vector<uint8_t> start_blob(model1 &board, const std::string &host_fighter =
 std::string fighter_extra(const std::string &random_player_setting, model1 &board);
 bool fighter_setting(const std::string &extra, model1 &board, std::string &setting);
 void set_players(model1 &board, const std::string fighters[2]);
-// A fighter as a word or two beside a player's name (the VS reveal): "" for Normal, "RANDOM", "SECRET: SIBA", "SEED 1234"
+// A fighter as a word or two under a player's name (the VS reveal): "" for Normal, "RANDOM", "SECRET: SIBA", "SEED 1234"
 std::string fighter_words(const std::string &extra);
 
 // The room at a save state's start for the coroutine's stack (its bytes, then the board's state): VF1's is a few
@@ -61,7 +61,8 @@ constexpr size_t STACK_ROOM = 16384;
 // winner's fights against the CPU after it); each reading only once it's held 30 frames, longer than any rollback,
 // so a guessed frame never scores. VF1's places (found against the HUD's round markers and runs with one player
 // and two): work RAM 501281 and 501282, each player's rounds (going back down to 0 one at a time after the CPU wins:
-// the winner is the one who reached more); bit 0x10 of the backup RAM's 407483 and 407503, a person playing that side.
+// the winner is the one who reached more); bits 0x18 of the backup RAM's 407483 and 407503, a person playing that side (0x10 alone: they
+// lost a versus and the CPU took their side).
 struct Score
 {
 	int matches[2] = {}, rounds[2] = {};   // between the two players: matches won, and rounds won in them
@@ -70,7 +71,7 @@ struct Score
 	uint8_t players_now() const { return now[2]; }   // (as the RAM has it this frame, not yet held)
 	int round_ends = 0;   // (each round's end, any players')
 	static constexpr uint32_t ROUNDS_P1 = 0x1281, ROUNDS_P2 = 0x1282;   // (work RAM offsets)
-	static constexpr uint32_t PLAYING_P1 = 0x7483, PLAYING_P2 = 0x7503;  // (backup RAM offsets: bit 0x10)
+	static constexpr uint32_t PLAYING_P1 = 0x7483, PLAYING_P2 = 0x7503;  // (backup RAM offsets: bits 0x18)
 	static constexpr bool known() { return true; }
 	static uint8_t players_in(const model1 &board);   // (bit 0 player 1, bit 1 player 2)
 private:
