@@ -2254,6 +2254,67 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 		for (int i = 0; i < int(name.size()); i++) { put(text + i, ROW, glyph(name[i])); put(text + i, ROW + 1, uint16_t(glyph(name[i]) + 0x10)); }
 		put(from + n - 1, ROW, 0x9b04); put(from + n - 1, ROW + 1, 0x9b14);
 	}
+	if (names && undo) hud_edges(*undo);
+}
+
+// The font's letters carry the box's edges in their own tiles (a dark line along the top of the upper tile, a light
+// one along the bottom of the lower), its space and its signs ('-', '.') not: in netplay's names (and the flag's
+// cells, spaces) the box's lines broke under them. Each of those in the names' cells is shown as a copy of itself with
+// a letter's top and bottom lines, put in the tiles of a character in the font no tile on the screen shows, for
+// this picture only (the undo puts the tile graphics back too: entries with CHAR_UNDO set).
+void model1::hud_edges(std::vector<std::pair<uint32_t, uint16_t>> &undo)
+{
+	constexpr int ROW = 6, W = 64;
+	constexpr uint32_t FONT = 0x1b00, A = FONT + 2 * 0x20 + 1;   // (the font's tiles; 'A''s upper tile)
+	auto font_char = [](uint32_t code) { return code >= FONT && code < FONT + 0x80 && (code & 0x10) == 0; };   // (an upper tile)
+	auto words = [&](uint32_t code) { return code * 16; };
+	auto edged = [&](uint32_t code) {   // (its upper tile's top line and its lower's bottom line as a letter's)
+		for (int w = 0; w < 2; w++)
+			if (m_tiles.char_r(words(code) + w) != m_tiles.char_r(words(A) + w) || m_tiles.char_r(words(code + 0x10) + 14 + w) != m_tiles.char_r(words(A + 0x10) + 14 + w)) return false;
+		return true;
+	};
+	// the font's characters any tile shows now (the names' included)
+	bool shown[0x80] = {};
+	for (uint32_t e = 0; e < 0x4000; e++) {
+		const uint32_t code = m_tiles.tile_code(m_tiles.tile_r(e));
+		if (code >= FONT && code < FONT + 0x80) shown[code - FONT] = true;
+	}
+	int spare = 0x7f;
+	auto next_spare = [&]() -> int {
+		for (; spare >= 0; spare--)
+			if (!(spare & 0x10) && !shown[spare] && !shown[spare + 0x10]) return FONT + spare--;
+		return -1;
+	};
+	std::map<uint32_t, uint32_t> copies;   // (a character's upper tile: its edged copy's)
+	for (int pl = 0; pl < 2; pl++) {
+		if (m_hud_flag_x[pl] < 0 && m_hud_names[pl].empty()) continue;
+		for (int x = pl ? 32 : 0; x < (pl ? W : 32); x++) {
+			const uint16_t e = m_tiles.tile_r(uint32_t(ROW * W + x)), e2 = m_tiles.tile_r(uint32_t((ROW + 1) * W + x));
+			const uint32_t code = m_tiles.tile_code(e);
+			if (!font_char(code) || m_tiles.tile_code(e2) != code + 0x10 || code == FONT + 3 || code == FONT + 4 || edged(code)) continue;   // (the frame's ends, 1b03 and 1b04, as they are)
+			auto it = copies.find(code);
+			if (it == copies.end()) {
+				const int to = next_spare();
+				if (to < 0) return;
+				for (uint32_t t = 0; t < 2; t++)
+					for (uint32_t w = 0; w < 16; w++) {
+						uint16_t v = m_tiles.char_r(words(code + 0x10 * t) + w);
+						if (t == 0 && w < 2) v = m_tiles.char_r(words(A) + w);
+						if (t == 1 && w >= 14) v = m_tiles.char_r(words(A + 0x10) + w);
+						const uint32_t o = words(uint32_t(to) + 0x10 * t) + w;
+						if (m_tiles.char_r(o) == v) continue;
+						undo.push_back({ CHAR_UNDO | o, m_tiles.char_r(o) });
+						m_tiles.char_w(o, v, 0xffff);
+					}
+				it = copies.emplace(code, uint32_t(to)).first;
+			}
+			const uint16_t keep = uint16_t(e & ~0x3fff);   // (the entry's other bits: its colour's from the code's)
+			undo.push_back({ uint32_t(ROW * W + x), e });
+			m_tiles.tile_w(uint32_t(ROW * W + x), uint16_t(keep | it->second), 0xffff);
+			undo.push_back({ uint32_t((ROW + 1) * W + x), e2 });
+			m_tiles.tile_w(uint32_t((ROW + 1) * W + x), uint16_t((e2 & ~0x3fff) | (it->second + 0x10)), 0xffff);
+		}
+	}
 }
 
 // The ranking (backup RAM 40f800: 18 entries of 10 bytes, the time, 0, the character's number,
@@ -3404,7 +3465,12 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 	std::vector<std::pair<uint32_t, uint16_t>> undo;
 	struct put_back {
 		model1 &m; std::vector<std::pair<uint32_t, uint16_t>> &undo;
-		~put_back() { for (auto it = undo.rbegin(); it != undo.rend(); ++it) m.m_tiles.tile_w(it->first, it->second, 0xffff); }
+		~put_back()
+		{
+			for (auto it = undo.rbegin(); it != undo.rend(); ++it)
+				if (it->first & CHAR_UNDO) m.m_tiles.char_w(it->first & ~CHAR_UNDO, it->second, 0xffff);
+				else m.m_tiles.tile_w(it->first, it->second, 0xffff);
+		}
 	} hud_back{ *this, undo };
 	if (!m_hud_names[0].empty() || !m_hud_names[1].empty()) {
 		std::lock_guard<std::mutex> lk(m_hud_mx);

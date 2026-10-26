@@ -311,7 +311,9 @@ void Adapter::advance(const uint16_t input[2], bool resim)
 uint8_t Score::players_in(const model1 &board)
 {
 	const std::vector<uint8_t> &a = const_cast<model1 &>(board).nvram();
-	return uint8_t((a[PLAYING_P1] & 0x10 ? 1 : 0) | (a[PLAYING_P2] & 0x10 ? 2 : 0));
+	// (0x10 and 0x08 both: 0x10 stays set after a player's lost a versus, the CPU taking their side, until the game's over)
+	auto in = [&](uint32_t o) { return (a[o] & 0x18) == 0x18; };
+	return uint8_t((in(PLAYING_P1) ? 1 : 0) | (in(PLAYING_P2) ? 2 : 0));
 }
 
 void Score::frame(const model1 &board)
