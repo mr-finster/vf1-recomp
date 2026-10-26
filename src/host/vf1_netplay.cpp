@@ -233,6 +233,9 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	collecting = true;
 	pending.clear();
 	boot();
+	// the stages from the host's random place in their list, as VF3's (a cold start's at its start: every match's first
+	// fight was on the same stage), from the host's seed: the same on both sides
+	board.work_ram()[NEXT_STAGE] = uint8_t(((seed * 2654435761u) >> 16) % STAGES);
 	board.set_drawing(drawing);
 	frame = 0;
 	if (const char *d = getenv("VF1_DUMP_BEGIN")) {   // (tests: the state the match starts from, and its parts)
