@@ -475,8 +475,20 @@ public:
 	// Netplay: the players' names under the energy bars (up to 10 letters, in the HUD's own font, player 1's from
 	// the left, player 2's to the right), drawn into the picture only: in the tile map while a picture's drawn, the
 	// game's own entries put back after, so the board (and its save state) never holds them. Empty: none.
-	void set_hud_names(const std::string names[2]) { std::lock_guard<std::mutex> lk(m_hud_mx); m_hud_names[0] = names[0]; m_hud_names[1] = names[1]; }
+	// flags: room for each player's flag in their box (two cells, out from the middle: player 1's left of the name,
+	// player 2's right of it), which the host draws over the picture (hud_flag_at)
+	void set_hud_names(const std::string names[2], const bool flags[2] = nullptr)
+	{
+		std::lock_guard<std::mutex> lk(m_hud_mx);
+		for (int p = 0; p < 2; p++) { m_hud_names[p] = names[p]; m_hud_flag_on[p] = flags && flags[p]; m_hud_flag_x[p] = -1; }
+	}
+	// Where a player's flag goes in the last picture drawn (its two cells, 16 x 16 arcade pixels: x from the frame's
+	// left edge, widescreen's sides included; y from its top), false when it isn't on screen (no fight's HUD)
+	bool hud_flag_at(int pl, int &x, int &y) const { if (pl < 0 || pl > 1 || m_hud_flag_x[pl] < 0) return false; x = m_hud_flag_x[pl]; y = m_hud_flag_y[pl]; return true; }
+	int arcade_width() const { return SCREEN_W + 2 * m_ext; }   // (the frame, in arcade pixels)
 	std::string m_hud_names[2];
+	bool m_hud_flag_on[2] = { false, false };
+	int m_hud_flag_x[2] = { -1, -1 }, m_hud_flag_y[2] = { -1, -1 };
 	std::mutex m_hud_mx;
 	std::unique_ptr<class m1audio> take_audio() { return std::move(m_audio); }
 	void give_audio(std::unique_ptr<class m1audio> a) { m_audio = std::move(a); }
