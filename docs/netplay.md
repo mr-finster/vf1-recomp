@@ -47,6 +47,13 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
   moves tables it builds) and its maps, in key order; the build's flashes, the heads' turns and the poses' easing
   are the picture's. The VS reveal shows each one's fighter under the name, smaller ("RANDOM", "SECRET: SIBA").
 
+- **The character select in lockstep**, as VF3's (`vf1net::in_select`: work RAM 501138, the game's mode, 7 from
+  Start to the VS screen, the challenger's select too): no frame on a guess, so a face never flashes as one is put
+  right.
+- **The flags on the HUD**: two cells left in the name's box (`model1::set_hud_names`), the host drawing the 48 x 36
+  flag there on the window's pixels; the box's top and bottom lines under them and under signs ('-') by edged copies
+  of those characters in font characters no tile shows, for the picture only (`model1::hud_edges`).
+
 ## Fixed on the way
 
 - The TGP's GPIO lines (`mb86233`) were never set, and they're branch conditions: they held whatever the memory
@@ -63,7 +70,7 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
 | The game online | Two copies through a stand-in lobby: a room code's match in step |
 | `src/net` and its tests | VF3's: `nettest` 22, `delaytest`, `netfuzz` 2,000 runs, `roomtest` |
 | Random fighters | `vf1soak --random-fighters`: 6,000 frames identical; `vf1net --p1 R --p2 S1234`, `--p1 X3 --p2 R` at 90 ms with 3% lost: in step, the score the same |
-| To do | The flags on the HUD, a match against another machine (the Mac and the Deck), arm64 against x86-64 (`vf1soak --hashes`) |
+| To do | A match against another machine (the Mac and the Deck), arm64 against x86-64 (`vf1soak --hashes`) |
 
 ```sh
 build/bin/vf1soak --frames 20000            # the save state, every frame rolled back

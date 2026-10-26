@@ -2359,6 +2359,7 @@ int main(int argc, char **argv)
 	uint8_t own_eeprom[model1::EEPROM_SIZE] = {};
 	std::string own_rank_names;
 	bool match_on = false, resimmed = false;
+	bool menu_closed_elsewhere = false;   // (the menu closed by a match starting: its closing's bookkeeping still owed)
 	// The match's sound: the board's own sound board, taken off it for the match (the main board then never hears back
 	// from it, the same on both sides), on a thread of its own to the real clock, fed the bytes the match's board sends
 	// it; the queue kept topped up whatever the frames do (held back for the other side, slowed to keep in time), so it
@@ -2712,7 +2713,8 @@ int main(int argc, char **argv)
 					const bool fl[2] = { flags::index_of(hud_country[0]) >= 0, flags::index_of(hud_country[1]) >= 0 };
 					m.set_hud_names(names, fl);
 				}
-				if (menu.is_open()) menu.close();
+				assign_before.reset();   // (the board's arcade settings are the host's now: no restart for them)
+				if (menu.is_open()) { menu.close(); menu_closed_elsewhere = true; }
 				restart_clock();
 				// who's playing who, over the title screen for a moment (the host is player 1)
 				// (with each one's fighter under the name: Random, a secret character, a seed's)
@@ -2923,7 +2925,9 @@ int main(int argc, char **argv)
 			if (menu.is_open()) SDL_PauseAudioStreamDevice(audio);
 			else SDL_ResumeAudioStreamDevice(audio);
 		}
-		if (menu.is_open() != menu_was_open && !menu.is_open()) {
+		if ((menu.is_open() != menu_was_open && !menu.is_open()) || std::exchange(menu_closed_elsewhere, false)) {
+			// (not a match just left from the menu: Leave closes it before end_match has shown MATCH OVER, which it then didn't)
+			if (online.phase() == Online::Phase::off && !match_on) { online.set_last_match({}); online.forget_failure(); }   // (MATCH OVER, COULDN'T CONNECT: just after, not for ever)
 			// settings changed in the menu are saved as it closes (not only at quit: a crash or a
 			// force quit would lose them); test runs save nothing
 			if (cfg_dirty && quit_after < 0) {

@@ -55,6 +55,15 @@ std::string fighter_words(const std::string &extra);
 // hundred bytes at a frame's end
 constexpr size_t STACK_ROOM = 16384;
 
+// The character select on screen: work RAM 501138 (the game's mode; 501139 a copy) 7 from the first frame after
+// Start to the VS screen, the challenger's select too, and never elsewhere (3 the title and the attract, 6 Start's
+// frames, 8 the VS screen, 9 the fights, 10-14 the game over; found by probing every byte of RAM over a 1P and a
+// 2P run, a challenger's way back in, held then frame by frame). A match plays it in lockstep
+// (vfnet::Session::set_lockstep): no frame on a guess, so a face never flashes as a guess is put right. As VF3's.
+constexpr uint32_t SCENE_BYTE = 0x1138;
+inline int scene_byte(const model1 &board) { const std::vector<uint8_t> &r = const_cast<model1 &>(board).work_ram(); return r.size() > SCENE_BYTE ? r[SCENE_BYTE] : -1; }
+inline bool in_select(const model1 &board) { return scene_byte(board) == 7; }
+
 // The score between the two players, read from the game's own RAM after each frame (as Fightcade's detectors do):
 // each player's rounds won in the match on now (both back to 0 when it's over), and which players are playing (a
 // side not playing is the CPU's). A match counts only if both were playing at each round it was won (not the
