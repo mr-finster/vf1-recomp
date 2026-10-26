@@ -80,7 +80,7 @@ uint32_t v60_device::opCVTSW()
 	}
 
 	// Convert to uint32_t
-	m_modwritevalw = (uint32_t)(int64_t)val;
+	m_modwritevalw = (uint32_t)f2s64(val);   // (as x86-64 on every machine, out of range too: mame_shim.h)
 
 	_S = ((m_modwritevalw & 0x80000000) != 0);
 	_OV = (_S && val >= 0.0f) || (!_S && val <= -1.0f);
