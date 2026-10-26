@@ -2359,6 +2359,8 @@ int main(int argc, char **argv)
 	uint8_t own_eeprom[model1::EEPROM_SIZE] = {};
 	std::string own_rank_names;
 	bool match_on = false, resimmed = false;
+	std::string hud_player[2];   // (a match's: the players' names for the HUD, each shown while they're in the game)
+	int hud_in_shown = -1;
 	bool menu_closed_elsewhere = false;   // (the menu closed by a match starting: its closing's bookkeeping still owed)
 	// The match's sound: the board's own sound board, taken off it for the match (the main board then never hears back
 	// from it, the same on both sides), on a thread of its own to the real clock, fed the bytes the match's board sends
@@ -2710,8 +2712,9 @@ int main(int argc, char **argv)
 					names[online.local_player() ^ 1] = online.opponent();
 					hud_country[online.local_player()] = online.my_country();
 					hud_country[online.local_player() ^ 1] = online.peer_country();
-					const bool fl[2] = { flags::index_of(hud_country[0]) >= 0, flags::index_of(hud_country[1]) >= 0 };
-					m.set_hud_names(names, fl);
+					hud_player[0] = names[0];
+					hud_player[1] = names[1];
+					hud_in_shown = -1;   // (set on the HUD below, for the players in the game)
 				}
 				assign_before.reset();   // (the board's arcade settings are the host's now: no restart for them)
 				if (menu.is_open()) { menu.close(); menu_closed_elsewhere = true; }
@@ -2729,6 +2732,20 @@ int main(int argc, char **argv)
 				                   online.is_hosting() ? me_ft : them_ft, online.is_hosting() ? them_ft : me_ft });
 			}
 			fprintf(stderr, "online: %s\n", Online::log_masked(n.text).c_str());
+		}
+		if (match_on) {   // (each player's name and flag on the HUD only while they're in the game: a side the CPU has, the game's own)
+			const int in = online.players_in_game();
+			if (in != hud_in_shown) {
+				hud_in_shown = in;
+				fprintf(stderr, "online: the HUD's names: %s\n", in == 3 ? "both players'" : in == 1 ? "player 1's (player 2 the CPU's)" : in == 2 ? "player 2's (player 1 the CPU's)" : "the game's own (no one in the game yet)");
+				std::string names[2];
+				bool fl[2];
+				for (int p = 0; p < 2; p++) {
+					names[p] = in >> p & 1 ? hud_player[p] : std::string();
+					fl[p] = (in >> p & 1) && flags::index_of(hud_country[p]) >= 0;
+				}
+				m.set_hud_names(names, fl);
+			}
 		}
 		if ((match_on && !online.playing()) || (g_match_board && !online.playing() && !online.starting())) end_match();   // (ended, left, or never got going)
 		static bool said_interrupted = false;
