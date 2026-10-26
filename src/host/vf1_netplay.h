@@ -19,6 +19,10 @@
 namespace vf1net {
 
 constexpr int BOOT_FRAMES = 900;   // the boot, unseen, up to the attract's first camera (about 420)
+// The next fight's stage: work RAM 501160, 0-7 round the eight stages, one on after every fight, 1P or versus (found
+// against each fight's sky over a run of versus fights; set, the next fight's stage is that one)
+constexpr uint32_t NEXT_STAGE = 0x1160;
+constexpr int STAGES = 8;
 
 // A player's switches as the session's input word (the stick, Punch, Kick, Guard, Start and Coin; never test or
 // service), from the board's ports (active low) and back. Start is the press the host made of it (the PC way's 6
