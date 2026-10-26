@@ -2230,6 +2230,7 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 		if (auto it = m_secret_names.find(rec); !names && name.empty() && it != m_secret_names.end()) name = it->second;   // (a player's secret character)
 		// (Cheats' Secret character, with Random opponents too: the ROM's picture of its name was another's)
 		if (!names && name.empty() && rec && (rec == m_secret_recs[0] || rec == m_secret_recs[1])) name = record_name(rec);
+		if (names) m_hud_flag_x[pl] = -1;
 		if (name.empty() || !win[pl]) continue;
 		// the box: its cells on this player's half of the row
 		int x0 = -1, x1 = -1;
@@ -2238,12 +2239,19 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 		if (x0 < 0) continue;
 		const uint16_t blank = at(pl ? x0 - 1 : x1 + 1, ROW), blank2 = at(pl ? x0 - 1 : x1 + 1, ROW + 1);
 		if (label(blank) || font(blank)) continue;
-		const int n = int(name.size()) + 2;
+		const bool flag = names && m_hud_flag_on[pl];   // (netplay's: two cells for the flag, out from the middle)
+		const int n = int(name.size()) + 2 + (flag ? 2 : 0);
 		const int from = pl ? x1 - n + 1 : x0;
 		for (int x = std::min(x0, from); x <= std::max(x1, from + n - 1); x++) { put(x, ROW, blank); put(x, ROW + 1, blank2); }
 		auto glyph = [](char ch) { const int c = std::clamp(int(ch), 0x20, 0x5f) - 0x20; return uint16_t(0x9b00 + (c >> 4) * 0x20 + (c & 15)); };
 		put(from, ROW, 0x9b03); put(from, ROW + 1, 0x9b13);
-		for (int i = 0; i < int(name.size()); i++) { put(from + 1 + i, ROW, glyph(name[i])); put(from + 1 + i, ROW + 1, uint16_t(glyph(name[i]) + 0x10)); }
+		const int text = from + 1 + (flag && !pl ? 2 : 0), flag_at = pl ? from + 1 + int(name.size()) : from + 1;
+		if (flag) {
+			for (int k = 0; k < 2; k++) { put(flag_at + k, ROW, glyph(' ')); put(flag_at + k, ROW + 1, uint16_t(glyph(' ') + 0x10)); }
+			m_hud_flag_x[pl] = m_ext + 8 * flag_at;
+			m_hud_flag_y[pl] = 8 * ROW;
+		}
+		for (int i = 0; i < int(name.size()); i++) { put(text + i, ROW, glyph(name[i])); put(text + i, ROW + 1, uint16_t(glyph(name[i]) + 0x10)); }
 		put(from + n - 1, ROW, 0x9b04); put(from + n - 1, ROW + 1, 0x9b14);
 	}
 }

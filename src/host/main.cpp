@@ -7,6 +7,7 @@
 #include "png.h"
 #include "menu.h"
 #include "online.h"
+#include "flags.h"
 #include "crt_colours.h"
 #include "backgrounds.h"
 #include "scene_sync.h"
@@ -1636,6 +1637,66 @@ int main(int argc, char **argv)
 	const char *FILTER_NAMES[] = { "Off", "Scanlines", "CRT" };
 	SDL_Texture *glass = nullptr;
 	int glass_w = 0, glass_h = 0, glass_kind = 0;
+	// Online play's flags on the HUD, beside each player's name (model1::set_hud_names leaves two cells for one): the
+	// countries' flags (assets/ui/flags.png, 48 x 36 each) drawn over the game's picture into those cells, 12 x 9 of
+	// the arcade's pixels, after the picture and before the screen filter
+	// each player's flag as the HUD shows it: 12 x 9 of the arcade's pixels, each the 4 x 4 of the 48 x 36 flag it
+	// covers averaged (by their cover: a flag that isn't a rectangle, Nepal's), one mostly outside the flag left
+	// see-through, as VF2's (m2hud::Flag); drawn on the arcade's pixel grid, nearest, as the HUD's own pixels are
+	SDL_Surface *flag_atlas = nullptr;
+	SDL_Texture *flag_tex[2] = { nullptr, nullptr };
+	std::string hud_country[2], flag_made[2];   // (each player's, as the lobby has it: "" none; and the one each texture holds)
+	auto hud_flag = [&](int p) -> SDL_Texture * {
+		const int i = flags::index_of(hud_country[p]);
+		if (i < 0) return nullptr;
+		if (flag_tex[p] && flag_made[p] == hud_country[p]) return flag_tex[p];
+		if (!flag_atlas)
+			if (SDL_Surface *f = SDL_LoadSurface((find_assets() + "/ui/flags.png").c_str())) {
+				flag_atlas = SDL_ConvertSurface(f, SDL_PIXELFORMAT_ABGR8888);
+				SDL_DestroySurface(f);
+			}
+		if (!flag_atlas) return nullptr;
+		const int x0 = i % flags::COLS * flags::CELL_W + 1, y0 = i / flags::COLS * flags::CELL_H + 1;
+		if (x0 + flags::W > flag_atlas->w || y0 + flags::H > flag_atlas->h) return nullptr;
+		constexpr int FW = flags::W / 4, FH = flags::H / 4;
+		uint32_t px[FW * FH];
+		for (int y = 0; y < FH; y++)
+			for (int x = 0; x < FW; x++) {
+				unsigned sum[4] = {};
+				for (int dy = 0; dy < 4; dy++)
+					for (int dx = 0; dx < 4; dx++) {
+						const uint8_t *q = static_cast<const uint8_t *>(flag_atlas->pixels) + size_t(y0 + y * 4 + dy) * size_t(flag_atlas->pitch) + size_t(x0 + x * 4 + dx) * 4;
+						for (int c = 0; c < 3; c++) sum[c] += q[c] * q[3];
+						sum[3] += q[3];
+					}
+				const unsigned a = sum[3] / 16, d = sum[3] ? sum[3] : 1;
+				px[y * FW + x] = a < 128 ? 0u : 0xFF000000u | (sum[0] / d) << 16 | (sum[1] / d) << 8 | (sum[2] / d);   // (ABGR8888's bytes are R G B A: out as ARGB8888)
+			}
+		if (flag_tex[p]) SDL_DestroyTexture(flag_tex[p]);
+		flag_tex[p] = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, FW, FH);
+		if (!flag_tex[p]) return nullptr;
+		SDL_UpdateTexture(flag_tex[p], nullptr, px, FW * 4);
+		SDL_SetTextureScaleMode(flag_tex[p], SDL_SCALEMODE_NEAREST);
+		SDL_SetTextureBlendMode(flag_tex[p], SDL_BLENDMODE_BLEND);
+		flag_made[p] = hud_country[p];
+		return flag_tex[p];
+	};
+	auto draw_hud_flags = [&] {
+		if (hud_country[0].empty() && hud_country[1].empty()) return;
+		int lw = 0, lh = 0;
+		SDL_RendererLogicalPresentation mode;
+		SDL_GetRenderLogicalPresentation(ren, &lw, &lh, &mode);
+		if (lw <= 0 || lh <= 0) return;
+		const float sx = float(lw) / float(m.arcade_width()), sy = float(lh) / float(model1::SCREEN_H);
+		for (int p = 0; p < 2; p++) {
+			int x = 0, y = 0;
+			if (!m.hud_flag_at(p, x, y)) continue;
+			if (SDL_Texture *t = hud_flag(p)) {
+				const SDL_FRect dst{ float(x + 2) * sx, float(y + 4) * sy, float(flags::W / 4) * sx, float(flags::H / 4) * sy };   // (its two cells, 16 x 16: 2 in, 4 down)
+				SDL_RenderTexture(ren, t, nullptr, &dst);
+			}
+		}
+	};
 	// CRT colours, brightness and gamma (crt_colours.h): the game's picture drawn through them as it goes to the window
 	crt::Colours crt_paint;
 	bool crt_on = false;   // (any of them set: the menu says when this renderer can't)
@@ -2591,7 +2652,7 @@ int main(int argc, char **argv)
 		if (match_on) fprintf(stderr, "online: the match ended at frame %lld; back to playing alone\n", (long long)game_run);
 		match_on = false;
 		msound.stop();
-		{ const std::string none[2]; m.set_hud_names(none); }
+		{ const std::string none[2]; m.set_hud_names(none); hud_country[0].clear(); hud_country[1].clear(); }
 		if (audio) SDL_ClearAudioStream(audio);
 		menu.set_notice("");
 		menu.set_banner("");
@@ -2656,7 +2717,10 @@ int main(int argc, char **argv)
 					std::string names[2];
 					names[online.local_player()] = online.identity.name;
 					names[online.local_player() ^ 1] = online.opponent();
-					m.set_hud_names(names);
+					hud_country[online.local_player()] = online.my_country();
+					hud_country[online.local_player() ^ 1] = online.peer_country();
+					const bool fl[2] = { flags::index_of(hud_country[0]) >= 0, flags::index_of(hud_country[1]) >= 0 };
+					m.set_hud_names(names, fl);
 				}
 				if (menu.is_open()) menu.close();
 				restart_clock();
@@ -2818,6 +2882,7 @@ int main(int argc, char **argv)
 				gc.reset();
 				if (e.type == SDL_EVENT_RENDER_DEVICE_RESET) {
 					crt_paint.lost();
+					for (auto &t : flag_tex) if (t) { SDL_DestroyTexture(t); t = nullptr; }   // (made again when next drawn)
 					if (g3_tex[0]) {   // (the 3D's textures went with the device: back to the CPU from now on)
 						fprintf(stderr, "the 3D on the GPU: the renderer's device was reset: its pictures come back to the CPU from now on\n");
 						g3_unwrap();
@@ -3205,6 +3270,7 @@ int main(int argc, char **argv)
 		if (!m.random_select_hidden())
 			crt_paint.draw(ren, show_target ? (aa_now() > 1 && gc.resolved() ? gc.resolved() : gc.target()) : tex, nullptr, cfg.crt_colours, cfg.brightness, cfg.gamma);   // (CRT colours, brightness, gamma: the picture only)
 		crt_on = cfg.crt_colours || cfg.brightness != 100 || cfg.gamma != 100;
+		if (!m.random_select_hidden()) draw_hud_flags();
 		draw_filter();
 		menu.render(true);
 		static const int shot_at = getenv("VF_SHOT_AT") ? atoi(getenv("VF_SHOT_AT")) : -1;   // testing: the window at that pass too
