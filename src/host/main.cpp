@@ -2460,6 +2460,7 @@ int main(int argc, char **argv)
 			online_ready = true;
 		}
 		cfg.online.seed_name = cfg.random_named[0];   // (the Cheats page's seed name, offered as a fighter)
+		cfg.online.seed_ok = [&](const std::string &n) { return m.random_fighter_names().count(n) > 0; };
 		return online_menu::page(online, cfg.online, menu, [&] { cfg_dirty = true; });
 	};
 	auto main_page = [&] {
