@@ -111,7 +111,7 @@ bool fighter_setting(const std::string &x, model1 &b, std::string &setting)
 	return true;
 }
 
-std::string fighter_words(const std::string &x)
+std::string fighter_words(const std::string &x, model1 &b)
 {
 	if (x == "R") return "RANDOM";
 	if (x.size() > 1 && x[0] == 'X') {
@@ -123,7 +123,12 @@ std::string fighter_words(const std::string &x)
 			return "SECRET: " + n;
 		}
 	}
-	if (x.size() > 1 && x[0] == 'S') return "SEED " + x.substr(1);
+	if (x.size() > 1 && x[0] == 'S') {
+		const uint32_t seed = uint32_t(strtoul(x.c_str() + 1, nullptr, 10));
+		for (const auto &[name, s] : b.random_fighter_names())
+			if (s == seed) return name;
+		return "SEED " + x.substr(1);
+	}
 	return "";
 }
 
@@ -169,6 +174,9 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	const std::string host_x(reinterpret_cast<const char *>(blob.data()) + FIXED, blob[FIXED - 1]);
 	if (!fighter_setting(host_x, board, fighters[0]) || !fighter_setting(hosting ? their_extra : own_extra, board, fighters[1])) return false;
 	const bool random = !fighters[0].empty() || !fighters[1].empty();
+	// (a seed's fighter: every seed's name made now, before the boot, as a named fighter's own side does at the
+	// start (fighter_extra), so the VS screen names it, fighter_words; the board as it was after)
+	if ((fighters[0].size() > 1 && fighters[0][0] == 'S') || (fighters[1].size() > 1 && fighters[1][0] == 'S')) board.random_fighter_names();
 	if (settle) settle();
 	if (on_begin) on_begin();
 	collecting = false;

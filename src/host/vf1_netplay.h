@@ -52,8 +52,9 @@ std::vector<uint8_t> start_blob(model1 &board, const std::string &host_fighter =
 std::string fighter_extra(const std::string &random_player_setting, model1 &board);
 bool fighter_setting(const std::string &extra, model1 &board, std::string &setting);
 void set_players(model1 &board, const std::string fighters[2]);
-// A fighter as a word or two under a player's name (the VS reveal): "" for Normal, "RANDOM", "SECRET: SIBA", "SEED 1234"
-std::string fighter_words(const std::string &extra);
+// A fighter as a word or two under a player's name (the VS reveal): "" for Normal, "RANDOM", "SECRET: SIBA", a seed's
+// fighter by its name ("SAJACWOLF", from the board's names; "SEED 1234" for a seed no name has here)
+std::string fighter_words(const std::string &extra, model1 &board);
 
 // The room at a save state's start for the coroutine's stack (its bytes, then the board's state): VF1's is a few
 // hundred bytes at a frame's end
