@@ -34,7 +34,7 @@ void unpack(const uint16_t input[2], model1 &board);
 // The online version both sides compare in the handshake (with the ROMs' hash), apart from the release's: changed
 // only with what a match depends on (the board, the recompiler, their compiler flags, this adapter, the match's
 // settings, src/net's protocol). Named after the release that brings it (docs/RELEASING-ALL.md).
-inline constexpr const char *NET_VERSION = "vf1-online-1";
+inline constexpr const char *NET_VERSION = "v1.5.0";
 // NET_VERSION for a release's build (v1.4.3, or with a word after it), else the build's own (a test build plays
 // only the same build)
 std::string online_version(const std::string &build);
