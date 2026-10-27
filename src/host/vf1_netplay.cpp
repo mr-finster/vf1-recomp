@@ -85,7 +85,10 @@ std::string fighter_extra(const std::string &setting, model1 &b)
 {
 	if (setting.empty()) return "";
 	if (setting == "*") return "R";
-	if (setting[0] == '#') return "X" + std::to_string(atoi(setting.c_str() + 1));
+	if (setting[0] == '#') {   // (a secret character; one the game hasn't, from a settings.ini edited by hand: Normal, as the menu shows it)
+		const int k = atoi(setting.c_str() + 1);
+		return k >= 1 && k < int(std::size(model1::UNUSED_CHARACTERS)) ? "X" + std::to_string(k) : "";
+	}
 	std::string n;
 	for (char ch : setting) if (ch != ' ') n += char(toupper(uint8_t(ch)));
 	const auto &names = b.random_fighter_names();
@@ -141,7 +144,7 @@ void set_players(model1 &b, const std::string fighters[2])
 
 std::vector<uint8_t> Adapter::host_blob()
 {
-	uint32_t seed = uint32_t(std::chrono::steady_clock::now().time_since_epoch().count() * 2654435761u) ^ 0x9e3779b9u;
+	uint32_t seed = uint32_t(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) * 2654435761u) ^ 0x9e3779b9u;
 	if (!seed) seed = 1;
 	return start_blob(board, own_extra, seed);
 }
