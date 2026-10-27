@@ -394,11 +394,16 @@ dialog .x:hover{background:rgba(255,255,255,.2)}
       </div></span>
     <span class="info"><button class="lnk" aria-expanded="false">Changelog</button>
       <div class="pop" role="dialog" aria-label="Changelog">
-        <p><b>v1.4.2</b> &middot; %DATE%</p>
+        <p><b>v1.5.0</b> &middot; %DATE%</p>
         <ul>
+          <li><b>Online play.</b> Rollback netplay, as in Virtua Fighter 2 and 3 Recomp: Menu &gt; Online &gt; RANDOM finds an opponent near you, or HOST gives a room code for a friend (no setup, nothing to forward). Your name and flag on the energy bar, a random stage for the first fight, the arcade&rsquo;s rematch, a relay when a network blocks direct play, and Hide my IP address in Online &gt; Settings. Both players need v1.5.0 and the same vf.zip.</li>
+          <li><b>Your fighter online</b> (Online &gt; Settings): Normal, Random (a new mixed fighter every match), Seed (one named fighter, typed in) or a secret character. Your opponent sees it on the VS screen.</li>
+          <li><b>CRT colours</b> (an arcade monitor&rsquo;s), with brightness and gamma beside them.</li>
+        </ul>
+        <details><summary>v1.4.2</summary><ul>
           <li><b>Windows laptops</b> with two graphics chips: the game asks the drivers for the faster one.</li>
           <li><b>Linux on ARM</b> (a Raspberry Pi 5, an ARM laptop): Download &gt; Linux on ARM (Ubuntu 22.04, Debian 12, Raspberry Pi OS bookworm or newer).</li>
-        </ul>
+        </ul></details>
         <details><summary>v1.4.1</summary><ul>
           <li><b>Never slow on a working GPU.</b> One bad start or one failed check used to keep the game drawing on the CPU at every start after, so it was smooth at 1x and slow above (most often on Windows). Now every start tries the GPU again, a graphics driver that closes the game on Vulkan goes to Direct3D 12 by itself on Windows, the check only rejects a GPU that is really broken (a driver's rounding no longer counts), and if the game ever does draw on the CPU it tells you why on screen, with what to do.</li>
           <li><b>Windows:</b> Vulkan first on every graphics card (Direct3D 12 was much slower on many NVIDIA and AMD cards), with a Display &gt; Graphics driver setting; power throttling off, so Windows 11 never runs the game on its slow cores.</li>
