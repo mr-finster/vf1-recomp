@@ -1470,34 +1470,112 @@ void named(OnlineSettings &s, game_menu &menu, std::function<void()> changed, st
 	menu.push(name_page(s, menu, changed, go));
 }
 
-// VF1: this player's fighter online (OnlineSettings::fighter): Normal, Random, each secret character, and the
-// Cheats page's seed name when there is one
-menu_item fighter_row(OnlineSettings &s, std::function<void()> changed)
+menu_page settings_page(Online &o, OnlineSettings &s, game_menu &menu, std::function<void()> changed);
+
+// VF1: this player's fighter online (OnlineSettings::fighter): Normal, Random, Seed, each secret character; and under
+// it, for Seed, a row of its own to type the seed in (a mistake said under it), as the Cheats page's. Seed with none
+// typed yet plays as Random till one is
+struct SeedTyping { bool typing = false, pending = false; std::string typed, error; };
+SeedTyping &seed_typing() { static SeedTyping t; return t; }
+bool is_seed(const std::string &f) { return !f.empty() && f != "*" && f[0] != '#'; }
+
+void fighter_rows(Online &o, OnlineSettings &s, game_menu &menu, std::function<void()> changed, std::vector<menu_item> &items)
 {
-	auto choices = [&s] {
-		std::vector<std::string> c = { "", "*" };
+	const int row = int(items.size());
+	auto rebuild = [&o, &s, &menu, changed, row](bool sub) { menu.replace(settings_page(o, s, menu, changed), row + (sub ? 1 : 0)); };
+	// the choices: "" Normal, "*" Random, "=" Seed (the one typed, else the Cheats page's, else none yet), "#k" each secret
+	auto kinds = [] {
+		std::vector<std::string> c = { "", "*", "=" };
 		for (int k = 1; k < int(std::size(model1::UNUSED_CHARACTERS)); k++) c.push_back("#" + std::to_string(k));
-		const std::string named = !s.seed_name.empty() ? s.seed_name : (!s.fighter.empty() && s.fighter != "*" && s.fighter[0] != '#' ? s.fighter : "");
-		if (!named.empty()) c.push_back(named);
 		return c;
 	};
+	auto kind = [&s] { const SeedTyping &t = seed_typing(); return t.typing || t.pending || is_seed(s.fighter) ? std::string("=") : s.fighter; };
 	auto label = [](const std::string &f) -> std::string {
 		if (f.empty()) return "Normal";
 		if (f == "*") return "Random";
-		if (f[0] == '#') { const int k = atoi(f.c_str() + 1); return k > 0 && k < int(std::size(model1::UNUSED_CHARACTERS)) ? std::string("Secret: ") + model1::UNUSED_CHARACTERS[k] : "Normal"; }
-		return "Seed: " + f;
+		if (f == "=") return "Seed";
+		const int k = atoi(f.c_str() + 1);
+		return k > 0 && k < int(std::size(model1::UNUSED_CHARACTERS)) ? std::string("Secret: ") + model1::UNUSED_CHARACTERS[k] : "Normal";
 	};
-	return { "Your fighter",
-		"Online, whichever side you're on. Normal: you pick at the select. Random: a new random fighter at every select. Secret: one of the "
-		"characters left in the game. Seed: the named fighter from the Cheats page. Your opponent sees it before the fight.",
-		[&s, label] { return label(s.fighter); },
-		[&s, choices, changed](int d) {
-			const std::vector<std::string> c = choices();
+	items.push_back({ "Your fighter",
+		"Online, whichever side you're on. Normal: you pick at the select. Random: a new random fighter at every select. Seed: one mixed "
+		"fighter, the same build and moves every game (its name from its energy bar). Secret: one of the characters left in the game. "
+		"Your opponent sees it before the fight.",
+		[kind, label] { return label(kind()); },
+		[&s, changed, kinds, kind, rebuild](int d) {
+			const std::vector<std::string> c = kinds();
 			int i = 0;
-			for (int k = 0; k < int(c.size()); k++) if (c[k] == s.fighter) i = k;
-			s.fighter = c[size_t((i + d + int(c.size())) % int(c.size()))];
+			for (int k = 0; k < int(c.size()); k++) if (c[k] == kind()) i = k;
+			const std::string to = c[size_t((i + d + int(c.size())) % int(c.size()))];
+			SeedTyping &t = seed_typing();
+			t.typing = t.pending = false;
+			t.error.clear();
+			if (to != "=") s.fighter = to;
+			else if (!s.seed_name.empty() && (!s.seed_ok || s.seed_ok(s.seed_name))) s.fighter = s.seed_name;
+			else { t.pending = true; s.fighter = "*"; }   // (no seed yet: Random till one is typed in its row)
 			changed();
+			rebuild(false);
+		} });
+	if (kind() != "=") return;
+	auto entry = std::make_shared<std::function<bool(const SDL_Event &)>>();
+	static const char *HINT = "Letters type   Backspace delete   Enter play it   Esc cancel   "
+	                          "(a pad: Up / Down the letter, Right the next, Left delete, A play it, B cancel)";
+	*entry = [&s, &menu, changed, rebuild](const SDL_Event &e) {
+		SeedTyping &st = seed_typing();
+		bool enter = false;
+		if (e.type == SDL_EVENT_KEY_DOWN) {
+			const SDL_Scancode sc = e.key.scancode;
+			SDL_Keycode k = e.key.key;   // (the letter on the key, the keyboard's layout)
+			if (k == SDLK_UNKNOWN && sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_Z) k = SDLK_A + (sc - SDL_SCANCODE_A);
+			if (k >= SDLK_A && k <= SDLK_Z) { if (st.typed.size() < 12) st.typed += char('A' + (k - SDLK_A)); }
+			else if (sc == SDL_SCANCODE_BACKSPACE) { if (!st.typed.empty()) st.typed.pop_back(); }
+			else if (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER) enter = true;
+			else return false;
+		} else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+			std::string &t = st.typed;
+			auto turn = [&](int d) { if (t.empty()) t.push_back('A'); else t.back() = char('A' + ((t.back() - 'A' + d) % 26 + 26) % 26); };
+			switch (e.gbutton.button) {
+			case SDL_GAMEPAD_BUTTON_EAST: st.typing = false; st.error.clear(); rebuild(true); return true;   // (B: as it was)
+			case SDL_GAMEPAD_BUTTON_SOUTH: enter = true; break;
+			case SDL_GAMEPAD_BUTTON_DPAD_UP: turn(+1); break;
+			case SDL_GAMEPAD_BUTTON_DPAD_DOWN: turn(-1); break;
+			case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (t.size() < 12) t.push_back(t.empty() ? 'A' : t.back()); break;
+			case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if (!t.empty()) t.pop_back(); break;
+			default: return false;
+			}
+		} else
+			return false;
+		st.error.clear();
+		if (enter) {
+			if (st.typed.empty()) st.error = "Type a seed: a random fighter's name, from its energy bar";
+			else if (s.seed_ok && !s.seed_ok(st.typed)) st.error = "No fighter has the seed " + st.typed;
+			else {
+				s.fighter = s.seed_name = st.typed;
+				st.typing = st.pending = false;
+				changed();
+				rebuild(true);
+				return true;
+			}
+		}
+		menu.refresh();
+		return false;
+	};
+	menu_item it{ "Seed",
+		"A random fighter's name, from its energy bar: the same seed is the same build and moves on any machine, in new colours each game. "
+		"Enter: type a new one.",
+		[&s] { const SeedTyping &t = seed_typing(); return t.typing ? t.typed + "_" : t.pending ? std::string("Enter to type a seed (Random till then)") : s.fighter; },
+		{},
+		[&menu, entry, rebuild] {
+			SeedTyping &t = seed_typing();
+			t.typing = true;
+			t.typed.clear();
+			t.error.clear();
+			rebuild(true);
+			menu.capture(HINT, *entry, [rebuild] { SeedTyping &t = seed_typing(); t.typing = false; t.error.clear(); rebuild(true); });
 		} };
+	it.below = [] { const SeedTyping &t = seed_typing(); return t.typing ? t.error : std::string(); };
+	it.sub = true;
+	items.push_back(it);
 }
 
 menu_page settings_page(Online &o, OnlineSettings &s, game_menu &menu, std::function<void()> changed)
@@ -1508,7 +1586,7 @@ menu_page settings_page(Online &o, OnlineSettings &s, game_menu &menu, std::func
 	p.items.push_back({ "Hide my IP address", "On: every online match (a code's or a random one) goes through the relay (Cloudflare's), so the other "
 		"player never sees your address. A little more ping. Off: directly when the routers allow it, which is quickest.",
 		[&s] { return std::string(s.hide_ip ? "On" : "Off"); }, [&s, changed](int) { s.hide_ip = !s.hide_ip; changed(); } });
-	p.items.push_back(fighter_row(s, changed));
+	fighter_rows(o, s, menu, changed, p.items);
 	p.items.push_back({ "Back", "", {}, {}, [&menu] { menu.pop(); } });
 	return p;
 }

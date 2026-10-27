@@ -34,6 +34,7 @@ struct OnlineSettings
 	// new one at every select), "#k" a secret character (model1::UNUSED_CHARACTERS), or a named fighter's name
 	std::string fighter;
 	std::string seed_name;        // (the Cheats page's name last typed, offered as a choice; not saved here)
+	std::function<bool(const std::string &)> seed_ok;   // (whether a fighter has this seed: the host program's)
 };
 
 class Online
