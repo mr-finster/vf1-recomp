@@ -61,6 +61,12 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 
 // Every message box goes through here: a test run (VF_HIDDEN) never shows one (nor a file picker),
 // the message goes to stderr (log.txt without a console) instead.
+// The music's and effects' volumes an online match's own sound board plays at (0-100 each, 8 bits apiece): set by
+// the Sound page, taken by the match sound's thread before each frame (the match's board is the other one, unheard;
+// the overall volume is the stream's gain)
+static std::atomic<uint32_t> g_match_volumes{ 0 };
+static uint32_t pack_volumes(int music, int effects) { return uint32_t(music) | uint32_t(effects) << 8; }
+
 static bool message_box(SDL_MessageBoxFlags flags, const char *title, const std::string &msg)
 {
 	if (getenv("VF_HIDDEN")) { fprintf(stderr, "(hidden: no dialog) %s\n", msg.c_str()); return false; }
@@ -1990,12 +1996,14 @@ int main(int argc, char **argv)
 			[&](int d) {
 				cfg.music = std::clamp(cfg.music + 10 * d, 0, 100); cfg_dirty = true;
 				m.set_volumes(cfg.music / 100.0f, cfg.effects / 100.0f);
+				g_match_volumes = pack_volumes(cfg.music, cfg.effects);
 			} });
 		p.items.push_back({ "Effects and voices", "Hits, voices and the announcer, within the overall volume.",
 			[&] { return std::to_string(cfg.effects) + "%"; },
 			[&](int d) {
 				cfg.effects = std::clamp(cfg.effects + 10 * d, 0, 100); cfg_dirty = true;
 				m.set_volumes(cfg.music / 100.0f, cfg.effects / 100.0f);
+				g_match_volumes = pack_volumes(cfg.music, cfg.effects);
 			} });
 		p.items.push_back(back_item());
 		return p;
@@ -2390,7 +2398,7 @@ int main(int argc, char **argv)
 		if (!audio || !msound.board) return;
 		m1audio *bp = msound.board.get();
 		bp->reset();
-		bp->set_volumes(cfg.music / 100.0f, cfg.effects / 100.0f);
+		g_match_volumes = pack_volumes(cfg.music, cfg.effects);
 		{ std::lock_guard<std::mutex> lk(msound.mx); msound.in.clear(); }
 		SDL_ClearAudioStream(audio);
 		SDL_ResumeAudioStreamDevice(audio);
@@ -2399,11 +2407,13 @@ int main(int argc, char **argv)
 			m1audio &b = *bp;
 			std::vector<uint8_t> bytes;
 			std::vector<int16_t> out;
+			uint32_t volumes = ~0u;   // (the volumes it plays at: the Sound page's, as they change mid-match)
 			constexpr int LINES = 424, BYTE_LINES = 8;   // (a frame's scanlines; a byte on the link every 8, as the i8251 sends them)
 			const double line_us = 656 * 1e6 / 16e6;
 			while (!msound.quit) {
 				if (SDL_GetAudioStreamQueued(audio) >= target) { SDL_DelayNS(1000000); continue; }
 				{ std::lock_guard<std::mutex> lk(msound.mx); bytes.insert(bytes.end(), msound.in.begin(), msound.in.end()); msound.in.clear(); }
+				if (const uint32_t v = g_match_volumes; v != volumes) { volumes = v; b.set_volumes(float(v & 0xff) / 100.0f, float((v >> 8) & 0xff) / 100.0f); }
 				size_t sent = 0;
 				for (int line = 0; line < LINES; line++) {
 					if (line % BYTE_LINES == 0 && sent < bytes.size()) b.rx_byte(bytes[sent++]);
