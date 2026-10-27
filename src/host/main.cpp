@@ -2721,7 +2721,7 @@ int main(int argc, char **argv)
 				restart_clock();
 				// who's playing who, over the title screen for a moment (the host is player 1)
 				// (with each one's fighter under the name: Random, a secret character, a seed's)
-				const std::string me_ft = vf1net::fighter_words(online.identity.extra), them_ft = vf1net::fighter_words(online.opponent_extra());
+				const std::string me_ft = vf1net::fighter_words(online.identity.extra, m), them_ft = vf1net::fighter_words(online.opponent_extra(), m);
 				const std::string host = online.is_hosting() ? online.identity.name : online.opponent(), guest = online.is_hosting() ? online.opponent() : online.identity.name;
 				const int ms = online.ping();
 				menu.show_versus({ "PLAYER 1 \xC2\xB7 HOST", host, "PLAYER 2", guest,
