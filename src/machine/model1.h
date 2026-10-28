@@ -237,7 +237,7 @@ public:
 	// Heads worn on another's body, turned to sit as on their own (by poly address: the cosine and
 	// sine of a turn about the head's own side axis; see random_fighter_heads)
 	// and the hue its hair, hats and bands take (skin kept; -1: as they are)
-	struct head_style { float c = 1, s = 0, hue = -1, metal = -1, bright = 1; int pl = -1; bool strand = false; };   // (metal >= 0: Dural's head, tinted to that saturation, its brightness scaled; pl: whose; strand: hair that swings)
+	struct head_style { float c = 1, s = 0, hue = -1, metal = -1, bright = 1; int pl = -1; bool strand = false; int side = -1; };   // (metal >= 0: Dural's head, tinted to that saturation, its brightness scaled; pl: whose; strand: hair that swings; side: the select's portrait it's for, 0 the left)
 	// A head on another's torso: its neck's foot can sit above the torso's top (another's skeleton,
 	// a shorter torso): the head (and its strands) brought down onto it, in the torso's own frame
 	// (model1_video.cpp, neck_*). Each player's torso as last drawn, and the head's lowest point
