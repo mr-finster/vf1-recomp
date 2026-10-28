@@ -2671,16 +2671,21 @@ void model1::random_fighter_heads()
 			head_style st{ std::cos(d), std::sin(d), hue != m_random_hue.end() ? hue->second : -1.0f };
 			st.pl = pl;
 			if (std::fabs(d) < 1e-4f) st.c = 1, st.s = 0;
-			if (st.s != 0 || st.hue >= 0)
-				for (uint32_t k = 0; k < 121; k++) {   // (the head's models: its list after 16 words)
-					const uint32_t m = poly_of(rd(&rom[head + 0x40 + 4 * k]));
-					if (!m) break;
-					now.push_back({ m, st });
-				}
-			if (st.hue >= 0) {   // (the strands in the hair's hue, not turned: they hang as they swing)
+			const bool plain = st.s == 0 && st.hue < 0;   // (not turned or coloured: drawn as VF has it, its neck not fitted, as before)
+			if (plain) st.pl = -1;
+			// (its head's models listed even when not turned or coloured (a cast fighter as VF has it: Jacky against a
+			// random fighter wearing Jacky's head), so the one both wear is drawn with each one's own style, the first
+			// or second drawn; with only the random one's listed, the other's Jacky took its hair and eyes, the
+			// select's portraits too)
+			for (uint32_t k = 0; k < 121; k++) {   // (the head's models: its list after 16 words)
+				const uint32_t m = poly_of(rd(&rom[head + 0x40 + 4 * k]));
+				if (!m) break;
+				now.push_back({ m, st });
+			}
+			{   // (the strands in the hair's hue, not turned: they hang as they swing; as VF has them without one)
 				std::vector<uint32_t> strands;
 				strand_polys(pl, strands);
-				for (uint32_t m : strands) { head_style ss{ 1, 0, st.hue }; ss.pl = pl; ss.strand = true; now.push_back({ m, ss }); }
+				for (uint32_t m : strands) { head_style ss{ 1, 0, st.hue }; ss.pl = plain ? -1 : pl; ss.strand = true; now.push_back({ m, ss }); }
 			}
 		}
 		// (Dural's head, +16 with no head list: a metal of its own, from its hue: chrome, gold,

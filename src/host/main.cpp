@@ -511,7 +511,7 @@ struct settings
 		for (int p = 0; p < 2; p++)
 			if (auto it = kv.find(p ? "random_p2_name" : "random_p1_name"); it != kv.end()) random_named[p] = trimmed(it->second);
 		for (int p = 0; p < 2; p++)
-			if (auto it = kv.find(p ? "random_p2" : "random_p1"); it != kv.end()) random_player[p] = trimmed(it->second);
+			if (auto it = kv.find(p ? "random_p2" : "random_p1"); it != kv.end()) random_player[p] = trimmed(it->second) == "normal" ? std::string() : trimmed(it->second);
 			else if (random_fighter) random_player[p] = "*";   // (from before: Random fighter on, both players)
 		if (auto it = kv.find("random_name"); it != kv.end() && random_fighter && kv.find("random_p1") == kv.end())
 			random_player[0] = random_player[1] = trimmed(it->second);   // (from before: one name for both)
@@ -556,7 +556,8 @@ struct settings
 		if (graphics) fprintf(f, "graphics = %d\n", graphics);
 		if (akira_slot) fprintf(f, "akira_slot = %d\n", akira_slot);
 		for (int p = 0; p < 2; p++) {
-			if (!random_player[p].empty()) fprintf(f, "random_p%d = %s\n", p + 1, random_player[p].c_str());
+			// (Normal written as "normal": an empty value isn't read back, and a player missing came back as Random)
+			fprintf(f, "random_p%d = %s\n", p + 1, random_player[p].empty() ? "normal" : random_player[p].c_str());
 			if (!random_named[p].empty()) fprintf(f, "random_p%d_name = %s\n", p + 1, random_named[p].c_str());
 		}
 		if (random_cpu) fprintf(f, "random_opponents = 1\n");
