@@ -6,7 +6,9 @@
 // (the interpreter) runs the same inputs straight through, and both players' boards must have been in its state at
 // every checkpoint. Reports the rollbacks and what a frame cost each side. VF3's vf3net, for VF1.
 //   vf1net [regions dir] [--random SEED] [--frames N] [--latency MS] [--jitter MS] [--loss PERCENT] [--delay D]
-//          [--interp] [--soft] [--map FILE]
+//          [--interp] [--soft] [--map FILE] [--p1 F] [--p2 F] [--hashes FILE]
+// --hashes FILE: the straight board's state hash every 30 frames ("frame hash", hex): a release's file against the
+// last online release's says whether the two play each other (docs: the online version); the same every run
 #include "../src/host/regions.h"
 #include "../src/host/vf1_netplay.h"
 #include "../src/rt/native.h"
@@ -102,7 +104,8 @@ int main(int argc, char **argv)
 	uint32_t seed = 1;
 	vfnet::SimWire::Params p{ 40, 8, 0 };
 	int delay = 2;
-	bool interp = false, soft = false, names_host = false;   // soft: each side's clock a little slower while ahead, as the game's
+	bool interp = false, soft = false, names_host = false;
+	const char *hashes_path = nullptr;   // soft: each side's clock a little slower while ahead, as the game's
 	const char *usage = "usage: vf1net [regions dir] [--random SEED] [--frames N] [--latency MS] [--jitter MS] [--loss PERCENT] [--delay D] [--interp] [--soft] [--map FILE]\n";
 	for (int i = 1; i < argc; i++) {
 		std::string a = argv[i];
@@ -110,6 +113,7 @@ int main(int argc, char **argv)
 		else if (a == "--map" && i + 1 < argc) map_path = argv[++i];
 		else if (a == "--p1" && i + 1 < argc) p1 = argv[++i];   // (each player's fighter, as the handshake has it: R, S<seed>, X<k>)
 		else if (a == "--p2" && i + 1 < argc) p2 = argv[++i];
+		else if (a == "--hashes" && i + 1 < argc) hashes_path = argv[++i];
 		else if (a == "--names-host") names_host = true;   // (the host has looked up the seeds' names before: Random fighter's history on one side only)
 		else if (a == "--random" && i + 1 < argc) seed = uint32_t(strtoul(argv[++i], nullptr, 10));
 		else if (a == "--latency" && i + 1 < argc) p.latency_ms = atof(argv[++i]);
@@ -198,7 +202,7 @@ int main(int argc, char **argv)
 		auto pc = std::make_unique<Board>();
 		Board &C = *pc;
 		if (!C.open(dir, false, map_path, error) || (C.adapter->own_extra = p2, !C.adapter->begin(blob))) { fprintf(stderr, "vf1net: the straight board didn't start\n"); return 1; }
-		C.adapter->checkpoint_every = 300;
+		C.adapter->checkpoint_every = hashes_path ? 30 : 300;
 		C.adapter->keep_states = true;
 		C.adapter->sound_out = [&](const std::vector<uint8_t> &b) { straight_sound.insert(straight_sound.end(), b.begin(), b.end()); };
 		for (uint32_t f = 0; f < n; f++) {
@@ -215,8 +219,14 @@ int main(int argc, char **argv)
 				failed = true;
 				break;
 			}
+		if (hashes_path) {
+			FILE *hf = fopen(hashes_path, "w");
+			if (!hf) { fprintf(stderr, "vf1net: can't write %s\n", hashes_path); return 1; }
+			for (auto &[f, h] : C.adapter->checkpoints) if (f <= n) fprintf(hf, "%u %016llx\n", f, (unsigned long long)h);
+			fclose(hf);
+		}
 		for (auto &[f, h] : C.adapter->checkpoints) {
-			if (f > n) break;
+			if (f > n || f % 300) continue;
 			const bool ha = A.adapter->checkpoints[f] == h, hb = B.adapter->checkpoints[f] == h;
 			if (!ha || !hb) {
 				printf("after frame %u: the host's board %s a straight run, the guest's %s; host and guest %s\n", f, ha ? "is" : "differs from", hb ? "is" : "differs from",
