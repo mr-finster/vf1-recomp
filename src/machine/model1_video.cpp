@@ -1364,7 +1364,10 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 				// random fighter's neck fit and left a hole in its jaw)
 				const int n = m_head_seen[poly_adr]++;
 				bool second = n == 1;
-				if (m_neck[0].torso && m_neck[1].torso) {
+				// (the select's portraits: whose by its side of the screen, player 1's the left (the game draws each more
+				// than once a picture: by order, player 2's Jacky took a random fighter's hair and eyes))
+				if (m_select_seen) second = (m_view->lx1 + m_view->lx2) * 0.5f >= SCREEN_W * 0.5f;
+				else if (m_neck[0].torso && m_neck[1].torso) {
 					const float *T = m_view->translation;
 					auto d2 = [&](const neck_fit &f) { float s = 0; for (int k = 0; k < 3; k++) s += (T[9 + k] - f.t[k]) * (T[9 + k] - f.t[k]); return s; };
 					second = d2(m_neck[1]) < d2(m_neck[0]);
