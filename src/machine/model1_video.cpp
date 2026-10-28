@@ -2074,7 +2074,9 @@ int model1::get_list_number()
 
 void model1::end_frame()
 {
-	if((m_listctl[0] & 4) && (m_screen->frame_number() & 1))
+	// (by the frames since the reset, not the board's whole run: two machines' boards had run different lengths
+	// before an online match's cold start, and the toggle came out of step)
+	if((m_listctl[0] & 4) && ((m_frame - m_boot_at) & 1))
 		m_listctl[0] ^= 0x40;
 }
 

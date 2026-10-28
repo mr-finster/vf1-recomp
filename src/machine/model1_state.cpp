@@ -144,7 +144,8 @@ template <class IO> void model1::state(IO &io)
 		io.pod(m_akira_which);
 		io.pod(m_akira_track);
 		io.pod(m_akira_cam_now);
-		io.pod(m_dural_lm);
+		// (not m_dural_lm: the picture's, from the ROM, worked out the first time it's drawn: one side that had drawn a
+		// random Dural offline before the match, the other not, and the hashes differed from the first frame)
 		io.pod(m_run_on);
 		io.pod(m_run_idle);
 		io.raw(m_look_share);

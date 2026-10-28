@@ -44,7 +44,10 @@ template <typename T, typename U> constexpr std::make_signed_t<T> sext(T value, 
 { return std::make_signed_t<T>(value << (8 * sizeof(value) - width)) >> (8 * sizeof(value) - width); }
 }
 constexpr uint32_t swapendian_int32(uint32_t v) { return __builtin_bswap32(v); }
-inline uint32_t f2u(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+// (a NaN stored the same on every machine: x86-64's default, 0xffc00000. ARM64 makes 0x7fc00000 for an invalid
+// operation (0/0, inf - inf) and the V60 takes its S flag from the bits: a Mac and a PC online went out of step. Every
+// float the V60, the TGP and its glue store comes through here; as VF2's i960 and VF3's PowerPC have it)
+inline uint32_t f2u(float f) { uint32_t u; memcpy(&u, &f, 4); return (u & 0x7fffffffu) > 0x7f800000u ? 0xffc00000u : u; }
 inline float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 
 [[noreturn]] void v60_fatal(const char *fmt, ...);
