@@ -441,6 +441,7 @@ struct settings
 	std::string auto_3d;    // Auto's findings, per render scale and antialiasing ("3x1:g,2x0:c")
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	bool english_set = false;   // (the game's language made English once, its first start here: Japanese after is the player's choice)
+	bool vs_rounds_set = false;   // (Rounds to win (vs player) 2, the board's own, made 3 once: a 2 after is the player's choice)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
 	OnlineSettings online;   // the Online page's
@@ -497,6 +498,7 @@ struct settings
 		flag("no_time_limit", no_time_limit);
 		flag("kage_unmasked", kage_unmasked);
 		flag("english_set", english_set);
+		flag("vs_rounds_set", vs_rounds_set);
 		num("ring_cheat", ring_cheat, 0, 2);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
 		// (Auto's findings by another build (another version or commit) forgotten, so each new build looks
@@ -563,6 +565,7 @@ struct settings
 		if (no_time_limit) fprintf(f, "no_time_limit = 1\n");
 		if (kage_unmasked) fprintf(f, "kage_unmasked = 1\n");
 		if (english_set) fprintf(f, "english_set = 1\n");
+		if (vs_rounds_set) fprintf(f, "vs_rounds_set = 1\n");
 		fprintf(f, "crt_colours = %d\nbrightness = %d\ngamma = %d\n", crt_colours, brightness, gamma);
 		if (ring_cheat) fprintf(f, "ring_cheat = %d\n", ring_cheat);
 		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\nauto_3d_build = %s\n", auto_3d.c_str(), BUILD);
@@ -1057,10 +1060,19 @@ int main(int argc, char **argv)
 		cfg.english_set = true; cfg_dirty = true;
 		return m.set_assignment(model1::game_assignment::language, 1);
 	};
+	// Two players' matches first to 3 rounds, once, as VF3's and SEGA's tournaments: the board comes set to 2 (a new
+	// player's and an install from before it alike; Arcade settings' Rounds to win (vs player) changes it after)
+	auto settle_vs_rounds = [&]() -> bool {
+		if (cfg.vs_rounds_set || m.assignment(model1::game_assignment::match_vs) < 0) return false;   // (the game's very first boot writes the settings)
+		cfg.vs_rounds_set = true; cfg_dirty = true;
+		if (m.assignment(model1::game_assignment::match_vs) != 2) return false;
+		fprintf(stderr, "settings: Rounds to win (vs player) 2 (the board's own) to 3, once\n");
+		return m.set_assignment(model1::game_assignment::match_vs, 3);
+	};
 	auto apply_play_style = [&] { if (g_pc_mode) m.hide_free_play_text(); else m.show_free_play_text(); };
 	apply_play_style();
 	boot();
-	if (const bool coins = settle_coins(), language = settle_language(); coins || language) boot();   // (both, each its own)
+	if (const bool coins = settle_coins(), language = settle_language(), rounds = settle_vs_rounds(); coins || language || rounds) boot();   // (all, each its own)
 
 	// Video is a must (with a message if it fails: a player's build has no console); sound and
 	// pads aren't: without a sound device the game keeps time by the clock.
