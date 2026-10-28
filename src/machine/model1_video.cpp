@@ -1374,7 +1374,11 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 				}
 				if (second) st = &t2->second;
 			}
-			turn_c = st->c, turn_s = st->s, head_hue = st->hue, head_metal = st->metal, head_bright = st->bright;
+			// (the select: a portrait's style on its own side only. A model one portrait's list has and the other's
+			// doesn't, the other's drawn in a costume its list isn't (player 2's portrait is the second costume's):
+			// as VF has it there, not in the random fighter's colours)
+			if (m_select_seen && st->side >= 0 && st->side != ((m_view->lx1 + m_view->lx2) * 0.5f >= SCREEN_W * 0.5f ? 1 : 0)) st = nullptr;
+			if (st) turn_c = st->c, turn_s = st->s, head_hue = st->hue, head_metal = st->metal, head_bright = st->bright;
 		}
 	auto turn = [&](float &x, float &z) { const float tx = turn_c * x + turn_s * z; z = turn_c * z - turn_s * x; x = tx; };
 	// a random fighter's torso noted, its head brought down onto it (neck_torso, neck_head)

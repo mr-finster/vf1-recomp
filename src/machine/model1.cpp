@@ -2624,11 +2624,12 @@ void model1::random_fighter_heads()
 					const uint32_t m = poly_of(rd(&rom[list + 0x40 + 4 * k]));
 					if (!m) break;
 					head_style st;
+					st.side = pl;
 					if (hue != m_random_hue.end()) st.hue = hue->second;
 					now.push_back({ m, st });
 				}
 			if (auto sm = m_portrait_strand_models.find(shown); hue != m_random_hue.end() && sm != m_portrait_strand_models.end())   // (its strands: random_fighter_portrait_strands)
-				for (uint32_t m : sm->second) { head_style ss; ss.hue = hue->second; ss.strand = true; now.push_back({ m, ss }); }
+				for (uint32_t m : sm->second) { head_style ss; ss.hue = hue->second; ss.strand = true; ss.side = pl; now.push_back({ m, ss }); }
 			m_head_last[pl] = std::move(now);
 			m_head_lag_left[pl] = 0;
 			continue;
