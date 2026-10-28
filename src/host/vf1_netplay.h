@@ -69,6 +69,12 @@ constexpr uint32_t SCENE_BYTE = 0x1138;
 inline int scene_byte(const model1 &board) { const std::vector<uint8_t> &r = const_cast<model1 &>(board).work_ram(); return r.size() > SCENE_BYTE ? r[SCENE_BYTE] : -1; }
 inline bool in_select(const model1 &board) { return scene_byte(board) == 7; }
 
+// The select in lockstep (Session::set_lockstep) or not: off, the select played on guesses, as VF3's every public
+// release. On, it waited for the other side's inputs in the select, and after blips of its byte mid-match: VF3's
+// v0.1.11-alpha check (28 Oct, 180 ms through a relay) dropped fights to 40 fps where guessing held 57.5. The inputs
+// are the same either way (each side's own choice): the game, and the online version, unchanged
+constexpr bool SELECT_LOCKSTEP = false;
+
 // The score between the two players, read from the game's own RAM after each frame (as Fightcade's detectors do):
 // each player's rounds won in the match on now (both back to 0 when it's over), and which players are playing (a
 // side not playing is the CPU's). A match counts only if both were playing at each round it was won (not the
