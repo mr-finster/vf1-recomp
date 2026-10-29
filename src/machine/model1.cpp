@@ -2618,7 +2618,15 @@ void model1::random_fighter_heads()
 			const uint32_t slot = ch < 9 && SIDE[pl] + 9 <= rom.size() ? rom[SIDE[pl] + ch] : 0xff;
 			const uint32_t shown = slot < 26 ? rd(&rom[0xfd2e8f + 4 * slot]) : 0;
 			const uint32_t list = shown && shown + 0x76 <= rom.size() ? rd(&rom[shown + 0x72]) : 0;
-			const auto hue = m_random_names.count(shown) ? m_random_hue.find(shown) : m_random_hue.end();
+			auto hue = m_random_names.count(shown) ? m_random_hue.find(shown) : m_random_hue.end();
+			// (Akira's spot: the colours of the record this player plays, not of the one its side's table shows there.
+			// A random player alone on player 2's side has player 1's record (fd4f99) and keeps it when a challenger
+			// comes: the challenger's cursor on Akira showed it, in the random fighter's colours, and the random
+			// player's own portrait player 2's, Akira's as he is (reno, 29 Oct). A Normal player's: Akira's own)
+			if (shown == 0xfd4f99 || shown == 0xfd3f6f) {
+				const uint32_t mine = akira_record_of(pl);
+				hue = mine && m_random_names.count(mine) ? m_random_hue.find(mine) : m_random_hue.end();
+			}
 			if ((list >> 16) == 0xfd && list + 0x224 <= rom.size())
 				for (uint32_t k = 0; k < 121; k++) {
 					const uint32_t m = poly_of(rd(&rom[list + 0x40 + 4 * k]));
