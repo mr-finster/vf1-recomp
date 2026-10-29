@@ -3186,9 +3186,13 @@ int main(int argc, char **argv)
 				  vsync_on = SDL_GetRenderVSync(ren, &v) && v != 0;
 			  } }
 			const bool every_refresh = screen_hz > 0 && !hidden && vsync_on;
-			if (m.smooth() && !sync.holding() && !unseen && (due || every_refresh || smooth_budget >= 1)) {
+			// (in a match, each frame as it is, when it's run: a picture between two frames a rollback may yet change showed
+			// the change as a ghost, and with a rollback every few frames the motion jittered; as VF2's and VF3's, 57.5 a
+			// second online)
+			const bool match_frames = online.playing();
+			if (m.smooth() && !sync.holding() && !unseen && (match_frames ? due > 0 : (due || every_refresh || smooth_budget >= 1))) {
 				smooth_budget = std::max(0.0, smooth_budget - 1);
-				const double now = double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
+				const double now = match_frames ? double(m.frame_number()) : double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
 				const uint64_t tr = SDL_GetTicksNS();
 				const double t = std::min(now, double(m.frame_number()));
 				tp.now = t;
