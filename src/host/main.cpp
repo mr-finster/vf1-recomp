@@ -2431,7 +2431,7 @@ int main(int argc, char **argv)
 			auto data_bytes = [](uint8_t st) { const int k = st >> 4; return k == 0xc || k == 0xd ? 1 : k >= 0x8 && k <= 0xe ? 2 : 0; };
 			uint8_t status = 0;   // (the last status byte sent: running status, the data bytes of another of its kind)
 			int owed = 0;         // (the data bytes the message sent last still has to come)
-			int held = 0;         // (frames the bytes' end has been an unfinished message)
+			int held = 0;         // (frames in a row with only an unfinished message to send)
 			while (!msound.quit) {
 				if (SDL_GetAudioStreamQueued(audio) >= target) { SDL_DelayNS(1000000); continue; }
 				{ std::lock_guard<std::mutex> lk(msound.mx); bytes.insert(bytes.end(), msound.in.begin(), msound.in.end()); msound.in.clear(); }
@@ -2452,8 +2452,10 @@ int main(int argc, char **argv)
 						if (!need || --need == 0) whole = i + 1;   // (data with no status before it: as it is)
 					}
 				}
-				held = whole < bytes.size() ? held + 1 : 0;
-				if (held > 3 * 58) whole = bytes.size(), held = 0;
+				// (only frames with nothing to send count: a message waiting while the ones before it go isn't stuck; past 3 s
+				// the rest goes as it is, a frame's worth at a time until it's out)
+				held = whole == 0 && !bytes.empty() ? held + 1 : 0;
+				if (held > 3 * 58) whole = bytes.size();
 				size_t sent = 0;
 				for (int line = 0; line < LINES; line++) {
 					if (line % BYTE_LINES == 0 && sent < whole) {
