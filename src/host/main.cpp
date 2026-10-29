@@ -2423,13 +2423,46 @@ int main(int argc, char **argv)
 			uint32_t volumes = ~0u;   // (the volumes it plays at: the Sound page's, as they change mid-match)
 			constexpr int LINES = 424, BYTE_LINES = 8;   // (a frame's scanlines; a byte on the link every 8, as the i8251 sends them)
 			const double line_us = 656 * 1e6 / 16e6;
+			// The bytes are MIDI's (9x a note, Ax, Bx: a status byte, then its two data bytes), and a frame's often ends
+			// in a message's first byte, the rest in the next frame's. The sound program waits in its interrupt for the
+			// rest, its music's sequencer with it: a frame held for the other side (a second or two at a high ping) held
+			// every note playing until it came. So a message goes to the board whole: its start kept here till its
+			// data's here too (or 3 s, a message that never ends).
+			auto data_bytes = [](uint8_t st) { const int k = st >> 4; return k == 0xc || k == 0xd ? 1 : k >= 0x8 && k <= 0xe ? 2 : 0; };
+			uint8_t status = 0;   // (the last status byte sent: running status, the data bytes of another of its kind)
+			int owed = 0;         // (the data bytes the message sent last still has to come)
+			int held = 0;         // (frames the bytes' end has been an unfinished message)
 			while (!msound.quit) {
 				if (SDL_GetAudioStreamQueued(audio) >= target) { SDL_DelayNS(1000000); continue; }
 				{ std::lock_guard<std::mutex> lk(msound.mx); bytes.insert(bytes.end(), msound.in.begin(), msound.in.end()); msound.in.clear(); }
 				if (const uint32_t v = g_match_volumes; v != volumes) { volumes = v; b.set_volumes(float(v & 0xff) / 100.0f, float((v >> 8) & 0xff) / 100.0f); }
+				size_t whole = 0;   // (the bytes up to the last whole message)
+				{
+					uint8_t st = status;
+					int need = owed;
+					for (size_t i = 0; i < bytes.size(); i++) {
+						if (bytes[i] >= 0xf8) { if (!need) whole = i + 1; continue; }   // (a timing byte: one alone, wherever it comes)
+						if (bytes[i] & 0x80) {   // (a status byte: a message's start)
+							st = bytes[i];
+							need = data_bytes(st);
+							if (!need) whole = i + 1;
+							continue;
+						}
+						if (!need) need = data_bytes(st);   // (running status: another message of the same kind)
+						if (!need || --need == 0) whole = i + 1;   // (data with no status before it: as it is)
+					}
+				}
+				held = whole < bytes.size() ? held + 1 : 0;
+				if (held > 3 * 58) whole = bytes.size(), held = 0;
 				size_t sent = 0;
 				for (int line = 0; line < LINES; line++) {
-					if (line % BYTE_LINES == 0 && sent < bytes.size()) b.rx_byte(bytes[sent++]);
+					if (line % BYTE_LINES == 0 && sent < whole) {
+						const uint8_t x = bytes[sent++];
+						if (x >= 0xf8) {}
+						else if (x & 0x80) status = x, owed = data_bytes(x);
+						else if (owed || (owed = data_bytes(status))) owed--;
+						b.rx_byte(x);
+					}
 					b.run(line_us, out);
 					while (b.tx_pending()) b.tx_byte();   // (its answers: no one listens in a match)
 				}
