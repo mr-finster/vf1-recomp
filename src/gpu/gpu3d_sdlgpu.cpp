@@ -41,15 +41,15 @@ public:
 	{
 		const auto t0 = clk::now();
 		const SDL_GPUShaderFormat fm = SDL_GetGPUShaderFormats(m_dev);
-		const bool spirv = (fm & SDL_GPU_SHADERFORMAT_SPIRV) != 0, dxil = (fm & SDL_GPU_SHADERFORMAT_DXIL) != 0;
-		if (!spirv && !dxil) { fprintf(stderr, "gpu3d sdl_gpu: %s takes neither SPIR-V nor DXIL\n", SDL_GetGPUDeviceDriver(m_dev)); return false; }
-		auto make = [&](const uint8_t *spv, size_t spv_n, const uint8_t *dx, size_t dx_n, const char *name,
+		const bool spirv = (fm & SDL_GPU_SHADERFORMAT_SPIRV) != 0, dxil = (fm & SDL_GPU_SHADERFORMAT_DXIL) != 0, msl = (fm & SDL_GPU_SHADERFORMAT_MSL) != 0;   // (MSL: Metal, Macs)
+		if (!spirv && !dxil && !msl) { fprintf(stderr, "gpu3d sdl_gpu: %s takes none of SPIR-V, DXIL or MSL\n", SDL_GetGPUDeviceDriver(m_dev)); return false; }
+		auto make = [&](const uint8_t *spv, size_t spv_n, const uint8_t *dx, size_t dx_n, const char *ms, size_t ms_n, const char *name,
 			uint32_t ro, uint32_t rwb, uint32_t tx, uint32_t ty, uint32_t rwt = 0) -> SDL_GPUComputePipeline * {
 			SDL_GPUComputePipelineCreateInfo ci = {};
-			ci.code = spirv ? spv : dx;
-			ci.code_size = spirv ? spv_n : dx_n;
-			ci.format = spirv ? SDL_GPU_SHADERFORMAT_SPIRV : SDL_GPU_SHADERFORMAT_DXIL;
-			ci.entrypoint = "main";
+			ci.code = spirv ? spv : dxil ? dx : reinterpret_cast<const uint8_t *>(ms);
+			ci.code_size = spirv ? spv_n : dxil ? dx_n : ms_n - 1;   // (MSL: its source, less the end)
+			ci.format = spirv ? SDL_GPU_SHADERFORMAT_SPIRV : dxil ? SDL_GPU_SHADERFORMAT_DXIL : SDL_GPU_SHADERFORMAT_MSL;
+			ci.entrypoint = spirv || dxil ? "main" : "main0";   // (SPIRV-Cross's name for it: tools/gpu/shaders.sh)
 			ci.num_readonly_storage_buffers = ro;
 			ci.num_readwrite_storage_buffers = rwb;
 			ci.num_readwrite_storage_textures = rwt;
@@ -59,7 +59,7 @@ public:
 			if (!p) fprintf(stderr, "gpu3d sdl_gpu: %s: %s\n", name, SDL_GetError());
 			return p;
 		};
-#define K(n) gpu3d_##n##_spv, sizeof gpu3d_##n##_spv, gpu3d_##n##_dxil, sizeof gpu3d_##n##_dxil, #n
+#define K(n) gpu3d_##n##_spv, sizeof gpu3d_##n##_spv, gpu3d_##n##_dxil, sizeof gpu3d_##n##_dxil, gpu3d_##n##_msl, sizeof gpu3d_##n##_msl, #n
 		m_clear = make(K(clear), 0, 3, 64, 1);
 		m_rows = make(K(rows), 3, 1, 64, 1);
 		m_solid = make(K(solid), 2, 2, 64, 1);
@@ -70,9 +70,9 @@ public:
 		// (straight into the renderer's textures: only on its device, and where RGBA8 can be written)
 		if (!m_own && SDL_GPUTextureSupportsFormat(m_dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTURETYPE_2D,
 				SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE))
-			m_target = make(gpu3d_target_spv, sizeof gpu3d_target_spv, gpu3d_target_dxil, sizeof gpu3d_target_dxil, "target", 3, 0, 8, 8, 1);
+			m_target = make(gpu3d_target_spv, sizeof gpu3d_target_spv, gpu3d_target_dxil, sizeof gpu3d_target_dxil, gpu3d_target_msl, sizeof gpu3d_target_msl, "target", 3, 0, 8, 8, 1);
 		const char *dn = SDL_GetStringProperty(SDL_GetGPUDeviceProperties(m_dev), SDL_PROP_GPU_DEVICE_NAME_STRING, "?");
-		snprintf(m_name, sizeof m_name, "%s (%s)", SDL_GetGPUDeviceDriver(m_dev), spirv ? "SPIR-V" : "DXIL");
+		snprintf(m_name, sizeof m_name, "%s (%s)", SDL_GetGPUDeviceDriver(m_dev), spirv ? "SPIR-V" : dxil ? "DXIL" : "MSL");
 		m_software = strstr(dn, "llvmpipe") || strstr(dn, "lavapipe") || strstr(dn, "softpipe") || strstr(dn, "SwiftShader") || strstr(dn, "Software") || strstr(dn, "Basic Render");   // (Windows' WARP: "Microsoft Basic Render Driver")
 		fprintf(stderr, "gpu3d sdl_gpu: %s on %s, its pipelines ready in %.0f ms\n", m_name, dn,
 				std::chrono::duration<double, std::milli>(clk::now() - t0).count());
@@ -365,7 +365,7 @@ private:
 std::unique_ptr<gpu3d> gpu3d_create_sdlgpu(const char *driver)
 {
 	// (GPU3D_VALIDATE=1: the driver's validation, Vulkan's layers)
-	SDL_GPUDevice *dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL, getenv("GPU3D_VALIDATE") != nullptr, driver);
+	SDL_GPUDevice *dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, getenv("GPU3D_VALIDATE") != nullptr, driver);
 	if (!dev) { fprintf(stderr, "gpu3d sdl_gpu: no device: %s\n", SDL_GetError()); return nullptr; }
 	auto g = std::make_unique<gpu3d_sdlgpu>(dev, true);
 	if (!g->init()) return nullptr;

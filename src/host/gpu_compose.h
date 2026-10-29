@@ -43,8 +43,9 @@ public:
 		const SDL_GPUShaderFormat f = SDL_GetGPUShaderFormats(m_dev);
 		if (f & SDL_GPU_SHADERFORMAT_DXIL) { si.format = SDL_GPU_SHADERFORMAT_DXIL; si.code = gpu3d_edge_aa_dxil; si.code_size = sizeof gpu3d_edge_aa_dxil; }
 		else if (f & SDL_GPU_SHADERFORMAT_SPIRV) { si.format = SDL_GPU_SHADERFORMAT_SPIRV; si.code = gpu3d_edge_aa_spv; si.code_size = sizeof gpu3d_edge_aa_spv; }
+		else if (f & SDL_GPU_SHADERFORMAT_MSL) { si.format = SDL_GPU_SHADERFORMAT_MSL; si.code = reinterpret_cast<const uint8_t *>(gpu3d_edge_aa_msl); si.code_size = sizeof gpu3d_edge_aa_msl - 1; }   // (Metal: Macs)
 		else return false;
-		si.entrypoint = "main";
+		si.entrypoint = si.format == SDL_GPU_SHADERFORMAT_MSL ? "main0" : "main";
 		si.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
 		si.num_samplers = 2;
 		m_edge_shader = SDL_CreateGPUShader(m_dev, &si);
