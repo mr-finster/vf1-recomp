@@ -18,7 +18,7 @@
 <meta name="theme-color" content="#04061A">
 <link rel="icon" href="img/icon-64.png">
 <link rel="apple-touch-icon" href="img/icon-180.png">
-<link rel="preload" as="image" href="shots/00.webp">
+<link rel="preload" as="image" href="media/screen.webp">
 <link rel="preload" as="image" href="img/marquee.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -213,7 +213,7 @@ dialog .x:hover{background:rgba(255,255,255,.2)}
 
   <div class="fit">
     <div class="stage" id="stage">
-      <div class="cur-slot" id="slot"><video id="clip" src="media/screen.mp4" poster="shots/00.webp" muted loop playsinline webkit-playsinline autoplay disablepictureinpicture preload="auto" aria-hidden="true"></video><button id="screenbtn" aria-label="Watch the trailer with sound"></button></div>
+      <div class="cur-slot" id="slot"><video id="clip" src="media/screen.mp4" poster="media/screen.webp" muted loop playsinline webkit-playsinline autoplay disablepictureinpicture preload="auto" aria-hidden="true"></video><button id="screenbtn" aria-label="Watch the trailer with sound"></button></div>
       <svg class="cab" viewBox="0 0 440 640" aria-label="An arcade cabinet showing screenshots of the game" role="img">
         <defs>
           <linearGradient id="body" x1="0" x2="1">
@@ -551,7 +551,7 @@ dialog .x:hover{background:rgba(255,255,255,.2)}
 
 <dialog id="vid"><button class="x" aria-label="Close">&times;</button>
   <div class="yt" id="yt"></div>
-  <a class="ytlink" href="https://youtu.be/9H62laX0VAI" target="_blank" rel="noopener">Watch on YouTube &#8599;</a></dialog>
+  <a class="ytlink" href="https://youtu.be/LNuS-F0WIUc" target="_blank" rel="noopener">Watch on YouTube &#8599;</a></dialog>
 
 <script>
 const stage = document.getElementById('stage'), main = document.querySelector('main');
@@ -625,7 +625,7 @@ const vid = document.getElementById('vid'), yt = document.getElementById('yt');
 function watch(){
   vid.showModal(); clip.pause();
   const f = document.createElement('iframe');
-  f.src = 'https://www.youtube.com/embed/9H62laX0VAI?autoplay=1&rel=0&playsinline=1';
+  f.src = 'https://www.youtube.com/embed/LNuS-F0WIUc?autoplay=1&rel=0&playsinline=1';
   f.title = 'Virtua Fighter Recomp';
   f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
   f.allowFullscreen = true;

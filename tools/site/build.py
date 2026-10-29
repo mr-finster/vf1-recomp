@@ -6,7 +6,8 @@ production branch is on-device-recomp; any other branch is only a preview):
 The page (tools/site/index.html) holds nothing from the game. The screenshots, the video and its
 poster are made from it, so they live only in build/site (never in git):
   build/site/shots/NN.webp (the trailer itself is on YouTube, in the Watch popup),
-  media/screen.mp4 (the same at 640x360, 30 fps, no sound track: the cabinet's screen),
+  media/screen.mp4 and screen.webp (the online trailer's fights at 640x360, 30 fps, no sound track: the cabinet's
+  screen, and its poster; tools/site/media.py makes them from the trailer),
   media/poster.jpg, media/og.jpg
 The downloads are copied from build/release, build/win and build/deck, and each must be the build of
 this version (its program carries the version string exactly): a test build left there stops it.
@@ -88,7 +89,7 @@ def main():
     for f, _ in SHOTS:
         if not os.path.exists(os.path.join(OUT, 'shots', f)):
             raise SystemExit(f'missing build/site/shots/{f}')
-    for f in ('screen.mp4', 'poster.jpg', 'og.jpg'):
+    for f in ('screen.mp4', 'screen.webp', 'poster.jpg', 'og.jpg'):   # (tools/site/media.py makes them)
         if not os.path.exists(os.path.join(OUT, 'media', f)):
             raise SystemExit(f'missing build/site/media/{f}')
 
