@@ -170,10 +170,12 @@ $(OBJ)/src/host/stb_image_impl.o: CXXFLAGS += -w
 $(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o $(OBJ)/src/host/online.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
 $(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: $(OBJ)/version.h
 $(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: CXXFLAGS += -I$(OBJ)
-# The 3D on the GPU in the game (src/gpu, Display > 3D renderer): Metal for an Apple target; SDL_GPU
-# elsewhere (Direct3D 12 or Vulkan: gpu3d_sdlgpu.cpp, its shaders precompiled in gpu3d_shaders.h by
-# tools/gpu/shaders.sh); GPU3D=none: the CPU's only
-GPU3D ?= $(if $(findstring apple,$(shell $(CXX) -dumpmachine 2>/dev/null)),metal,sdlgpu)
+# The 3D on the GPU in the game (src/gpu, Display > 3D renderer): SDL_GPU everywhere (Direct3D 12, Vulkan or
+# Metal: gpu3d_sdlgpu.cpp, its shaders precompiled in gpu3d_shaders.h by tools/gpu/shaders.sh), on the device of
+# SDL's gpu renderer, drawing straight into its textures. (The Mac had its own Metal code, gpu3d_metal.mm, on SDL's
+# Metal renderer, where CRT colours, brightness and gamma can't run: GPU3D=metal builds it still.) GPU3D=none: the
+# CPU's only
+GPU3D ?= sdlgpu
 ifeq ($(GPU3D),metal)
 GPU3D_OBJ = $(OBJ)/src/gpu/gpu3d_metal.o
 GPU3D_LIBS = -framework Metal -framework Foundation -framework QuartzCore
