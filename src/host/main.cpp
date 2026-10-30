@@ -7,6 +7,7 @@
 #include "png.h"
 #include "menu.h"
 #include "online.h"
+#include "chime.h"
 #include "flags.h"
 #include "crt_colours.h"
 #include "backgrounds.h"
@@ -470,6 +471,8 @@ struct settings
 		num("online_port", online.port, 1024, 65535);
 		num("online_connection", online.show_connection, 0, 2);
 		flag("online_hide_ip", online.hide_ip);
+		num("online_max_ping", online.max_ping, 0, 1000);
+		flag("online_chime", online.chime);
 		if (auto it = kv.find("online_fighter"); it != kv.end()) { std::string v = it->second; while (!v.empty() && isspace(uint8_t(v.back()))) v.pop_back(); online.fighter = v.substr(0, 16); }
 		num("picture_shape", aspect, 0, 4);
 		num("volume", volume, 0, 100);
@@ -575,7 +578,7 @@ struct settings
 				online.show_connection, online.port);
 		if (!online.address.empty()) fprintf(f, "online_address = %s\n", online.address.c_str());
 		if (!online.lobby.empty()) fprintf(f, "online_lobby = %s\n", online.lobby.c_str());
-		fprintf(f, "online_hide_ip = %d\n", int(online.hide_ip));
+		fprintf(f, "online_hide_ip = %d\nonline_max_ping = %d\nonline_chime = %d\n", int(online.hide_ip), online.max_ping, int(online.chime));
 		if (!online.fighter.empty()) fprintf(f, "online_fighter = %s\n", online.fighter.c_str());
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
 		const bool flushed = flush_to_disk(f);
@@ -1785,6 +1788,7 @@ int main(int argc, char **argv)
 
 	SDL_AudioSpec spec{ SDL_AUDIO_S16, 2, m1audio::OUT_RATE };
 	SDL_AudioStream *audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+	SDL_AudioStream *chime_stream = nullptr;   // (the match found chime's: opened the first time)
 	if (audio) {
 		SDL_SetAudioStreamGain(audio, getenv("VF_HIDDEN") ? 0.0f : cfg.volume / 100.0f);   // tests: silent
 		m.set_volumes(cfg.music / 100.0f, cfg.effects / 100.0f);
@@ -2773,6 +2777,7 @@ int main(int argc, char **argv)
 		Online::Notice n;
 		while (online.next_notice(n)) {
 			if (n.kind == Online::Notice::joined) {
+				if (cfg.online.chime) chime::play(chime_stream, win, audio && !hidden ? float(cfg.volume) / 100.0f : 0.0f);
 				match_on = true;
 				match_sound_start();
 				{   // the players' names under the energy bars (the name the other side was sent; theirs as the HUD can show it)
@@ -3511,6 +3516,7 @@ int main(int argc, char **argv)
 	msound.stop();
 	online.stop();   // (closed in a match: the other side is told at once, not after a silence)
 	Online::flush(1500);   // (and the lobby told: a room closed, a search left)
+	if (chime_stream) SDL_DestroyAudioStream(chime_stream);
 	if (g_match_board) {   // (this player's own backup, not the host's, saved)
 		m.use_io_standin(false);
 		memcpy(m.nvram().data(), own_backup.data(), std::min(own_backup.size(), m.nvram().size()));
