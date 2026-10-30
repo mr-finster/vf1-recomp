@@ -1,7 +1,5 @@
 # The seed book
 
-A YouTube comment asked: "How to know what to write in seed?" Here's every name that works, and what each one gives.
-
 ## How Seed works
 
 A random fighter is made of three of the cast. Its head, body, arms and legs come mostly from those three (now and
