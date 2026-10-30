@@ -76,7 +76,8 @@ Menu > Cheats > **Player 1 fighter** (and **Player 2 fighter**):
   same three, so it plays like a mix of them, at the real game's timings. Its voice
   is one of the three's, and it gets a name made of theirs on the energy bar (JACPAIWOLF, WOLFLAURAH).
 - **Seed:** type a fighter's name, as seen on an energy bar, to get that fighter again: the same build and the same
-  moves on any machine. The colours are new every game.
+  moves on any machine. The colours are new every game. Every name, and what it gives: the seed book,
+  [docs/SEEDS.md](docs/SEEDS.md).
 - **Secret character:** one of the fighters cut from the game, below.
 
 Anything but Normal is picked for you at the select. Round 1 builds each random fighter from its polygons as the fight
@@ -244,7 +245,7 @@ On a controller, the code and name screens show letters to pick with A (X delete
 **Your fighter** (Online > Settings)
 - **Normal:** pick at the select, as ever.
 - **Random:** a new random fighter at every select: a head, a body and moves mixed from across the cast, as Menu > Cheats makes them.
-- **Seed:** one named fighter every game, the same build and moves on any machine. Type its name (from its energy bar, like `SAJACWOLF`) in the **Seed** row under it.
+- **Seed:** one named fighter every game, the same build and moves on any machine. Type its name (from its energy bar, like `SAJACWOLF`) in the **Seed** row under it. Every name: the seed book, [docs/SEEDS.md](docs/SEEDS.md).
 - **Secret:** one of the characters left in the game (Siba, Jeff, Takeru, the Koskol brothers, Dural).
 - It's yours whichever side you're on, and your opponent sees it under your name on the VS screen before the fight. Your own Cheats stay off in a match: both sides play the same game.
 
