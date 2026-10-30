@@ -27,7 +27,7 @@ brothers Rekka, Score and Aeon). **Moves** are dealt group by group from the thr
 
 Twenty-four of them, at the start of round 1 (on player 1's side). Their colours will be different in your game.
 
-![JACPAIWOLF, SAJACWOLF, WOLFLAURAH, JEFKARAH, KAWOLFKY, LAUJACWOLF](SEEDS-IMAGE-1)
+<img width="1260" height="1040" alt="seeds-sheet-1" src="https://github.com/user-attachments/assets/d56747d5-29e7-4d01-b852-3f0022c3debc" />
 
 | Seed | Head | Body | Arms | Legs | Moves (stance first) | Voice |
 |---|---|---|---|---|---|---|
@@ -38,7 +38,7 @@ Twenty-four of them, at the start of round 1 (on player 1's side). Their colours
 | **KAWOLFKY** | Kage | Wolf | Kage, Wolf | Jacky, Kage | Kage, Jacky, Wolf | Kage |
 | **LAUJACWOLF** | Dural | Lau, Siba | Jacky, Wolf | Wolf, Lau | Lau, Wolf, Jacky | Lau |
 
-![PAIJACGE, SAWOLFGE, WOLFPAIGE, PAIWOLFRY, SAJEFRA, JEFSAKY](SEEDS-IMAGE-2)
+<img width="1260" height="1040" alt="seeds-sheet-2" src="https://github.com/user-attachments/assets/2d3ccf3c-d7f0-4a76-91c0-9660a9379971" />
 
 | Seed | Head | Body | Arms | Legs | Moves (stance first) | Voice |
 |---|---|---|---|---|---|---|
@@ -49,7 +49,7 @@ Twenty-four of them, at the start of round 1 (on player 1's side). Their colours
 | **SAJEFRA** | Takeru | Sarah, Jeffry | Sarah, Akira | Sarah, Jeffry, Kage | Sarah, Jeffry, Akira | Sarah |
 | **JEFSAKY** | Dural | Sarah, Jacky | Sarah | Siba, Sarah, Rekka | Sarah, Jeffry, Jacky | Sarah |
 
-![PAIJACRA, WOLFPAIRA, WOLFKAFRY, AKIJEFKY, KAJACRAH, LAUPAIRAH](SEEDS-IMAGE-3)
+<img width="1260" height="1040" alt="seeds-sheet-3" src="https://github.com/user-attachments/assets/8ca9658a-86c7-44a7-99ae-498edf637bd6" />
 
 | Seed | Head | Body | Arms | Legs | Moves (stance first) | Voice |
 |---|---|---|---|---|---|---|
@@ -60,7 +60,7 @@ Twenty-four of them, at the start of round 1 (on player 1's side). Their colours
 | **KAJACRAH** | Takeru | Jeff, Pai | Jacky, Sarah, Kage | Takeru, Kage, Sarah | Kage, Jacky, Sarah | Kage |
 | **LAUPAIRAH** | Lau | Takeru, Lau | Pai, Sarah | Wolf, Sarah | Lau, Pai, Sarah | Lau |
 
-![SAWOLFRY, LAUKARAH, SAJEFPAI, AKILAUFRY, PAIWOLFLAU, LAUKIRAH](SEEDS-IMAGE-4)
+<img width="1260" height="1040" alt="seeds-sheet-4" src="https://github.com/user-attachments/assets/edf06408-f436-43ee-a2c7-651c2745a77b" />
 
 | Seed | Head | Body | Arms | Legs | Moves (stance first) | Voice |
 |---|---|---|---|---|---|---|
