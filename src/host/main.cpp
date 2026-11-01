@@ -444,6 +444,7 @@ struct settings
 	bool english_set = false;   // (the game's language made English once, its first start here: Japanese after is the player's choice)
 	bool vs_rounds_set = false;   // (Rounds to win (vs player) 2, the board's own, made 3 once: a 2 after is the player's choice)
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
+	bool log = true;   // log.txt written (Game > Log file: read before the log's opened, so from the next start)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
 	OnlineSettings online;   // the Online page's
 	player_controls ctl[2] = { player_controls::defaults(0), player_controls::defaults(1) };
@@ -487,6 +488,7 @@ struct settings
 		if (ring && (ring < 1200 || ring % 100)) ring = 0;   // 0: by difficulty
 		flag("fullscreen", fullscreen);
 		flag("frame_timings", timings);
+		flag("log", log);
 		flag("arcade_mode", arcade);
 		flag("background_filter", smooth_bg);
 		flag("show_fps", show_fps);
@@ -554,6 +556,7 @@ struct settings
 		fprintf(f, "scale = %d\npicture_shape = %d\nfullscreen = %d\nframe_timings = %d\nvolume = %d\narcade_mode = %d\n"
 				"background_filter = %d\nmusic_volume = %d\neffects_volume = %d\nantialiasing = %d\nshow_fps = %d\nscreen_filter = %d\nring_size = %d\n", scale, aspect,
 				int(fullscreen), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
+		if (!log) fprintf(f, "log = 0\n");
 		if (arcade_coin >= 0) fprintf(f, "arcade_coins = %d\n", arcade_coin);
 		fprintf(f, "renderer_3d = %d\n", renderer3d);
 		if (graphics) fprintf(f, "graphics = %d\n", graphics);
@@ -802,6 +805,26 @@ std::string find_assets()
 
 } // namespace
 
+// settings.ini's log line, read before the settings are (the log's opened first): false for log = 0
+static bool log_wanted(const std::string &path)
+{
+	bool on = true;
+	if (FILE *f = fopen(path.c_str(), "r")) {
+		char line[256];
+		while (fgets(line, sizeof line, f)) {
+			int v = 1;
+			if (sscanf(line, " log = %d", &v) == 1) on = v != 0;
+		}
+		fclose(f);
+	}
+	return on;
+}
+#ifdef _WIN32
+static const char *const NULL_DEVICE = "NUL";
+#else
+static const char *const NULL_DEVICE = "/dev/null";
+#endif
+
 int main(int argc, char **argv)
 {
 #ifdef __APPLE__
@@ -891,9 +914,13 @@ int main(int argc, char **argv)
 			while (dir.size() > 1 && (dir.back() == '/' || dir.back() == '\\') && dir[dir.size() - 2] != ':') dir.pop_back();   // (but a drive's root)
 			// A player's build has no console (a Mac app, a Windows GUI program, a Steam shortcut):
 			// its messages go to log.txt in the data folder instead, for when something goes wrong.
-			if (!isatty(fileno(stderr))) {
+			// settings.ini's log = 0 (Game > Log file): no log.txt written, the program's messages thrown away; read
+			// here, before the log's opened (the settings themselves are read below)
+			if (!log_wanted(dir + "/settings.ini")) {
+				if (!freopen(NULL_DEVICE, "w", stderr)) {}
+			} else if (!isatty(fileno(stderr))) {
 				std::filesystem::create_directories(dir, ec);
-				freopen((dir + "/log.txt").c_str(), "w", stderr);
+				if (!freopen((dir + "/log.txt").c_str(), "w", stderr)) {}
 				setvbuf(stderr, nullptr, _IONBF, 0);
 			}
 			// the log's first line: which build (as the menu's footer), and where it runs
@@ -2049,6 +2076,9 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Reset game",
 			"Restarts the game, like switching the arcade off and on. Rankings and settings are kept. (F3)",
 			{}, {}, [&] { reset_game(); } });
+		p.items.push_back({ "Log file",
+			"log.txt in the data folder: what the game did, a few kilobytes a session, kept for bug reports (send it with one). Off, nothing's written. From the next start.",
+			[&] { return on_off(cfg.log); }, [&](int) { cfg.log = !cfg.log; cfg_dirty = true; }, [&] { cfg.log = !cfg.log; cfg_dirty = true; } });
 		p.items.push_back(back_item());
 		return p;
 	};
