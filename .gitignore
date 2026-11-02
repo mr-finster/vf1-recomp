@@ -11,3 +11,5 @@ refs/
 /tools/site/strip/node_modules/
 /tools/site/strip/package-lock.json
 .DS_Store
+# the lobby's address (one line): the builds read it, git never has it
+.lobby-url
