@@ -40,9 +40,14 @@ inline constexpr const char *NET_VERSION = "v1.5.0";
 std::string online_version(const std::string &build);
 
 uint64_t content_hash(const model1 &board);
+// Every online match first to 3 rounds: the blob's Rounds to win (vs player) is this, whatever the host's own (kept for
+// offline). A guest puts the blob's assignments in its match board as they are (Adapter::begin), so a guest of any
+// version plays it, in step; an older host's blob has its own setting
+inline constexpr int ONLINE_VS_ROUNDS = 3;
 // The host's starting blob: its backup RAM and its GAME ASSIGNMENTS (the rounds, the difficulty: put in the match
-// board's EEPROM as values, whichever I/O board each side has offline), the match's random seed (Random fighter's
-// fighters made alike on both sides) and the host's fighter (player 1's: fighter_extra)
+// board's EEPROM as values, whichever I/O board each side has offline; Rounds to win (vs player) ONLINE_VS_ROUNDS),
+// the match's random seed (Random fighter's fighters made alike on both sides) and the host's fighter (player 1's:
+// fighter_extra)
 std::vector<uint8_t> start_blob(model1 &board, const std::string &host_fighter = "", uint32_t seed = 1);
 
 // A player's fighter as the handshake carries it (Identity::extra): "" the select as ever, "R" a random fighter, a

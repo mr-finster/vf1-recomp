@@ -70,7 +70,8 @@ std::vector<uint8_t> start_blob(model1 &b, const std::string &host_fighter, uint
 	const std::vector<uint8_t> &backup = b.nvram();
 	out.insert(out.end(), backup.begin(), backup.end());
 	for (model1::game_assignment a : ASSIGNMENTS) {
-		const int16_t v = int16_t(b.assignment(a));   // (-1: never set, the game's own)
+		// (-1: never set, the game's own; two players' rounds always ONLINE_VS_ROUNDS, the host's own setting untouched)
+		const int16_t v = int16_t(a == model1::game_assignment::match_vs ? ONLINE_VS_ROUNDS : b.assignment(a));
 		out.push_back(uint8_t(v));
 		out.push_back(uint8_t(uint16_t(v) >> 8));
 	}

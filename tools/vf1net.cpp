@@ -9,6 +9,9 @@
 //          [--interp] [--soft] [--map FILE] [--p1 F] [--p2 F] [--hashes FILE]
 // --hashes FILE: the straight board's state hash every 30 frames ("frame hash", hex): a release's file against the
 // last online release's says whether the two play each other (docs: the online version); the same every run
+// --vs-rounds N: the host's own Rounds to win (vs player), set before the match, as the menu does (the match plays the
+// blob's). --blob-out FILE: the host's start blob written to FILE; --blob-in FILE: the match started from FILE's blob
+// instead of this build's (a cross-version test: another build's host, this build's guest and straight board)
 #include "../src/host/regions.h"
 #include "../src/host/vf1_netplay.h"
 #include "../src/rt/native.h"
@@ -105,6 +108,8 @@ int main(int argc, char **argv)
 	vfnet::SimWire::Params p{ 40, 8, 0 };
 	int delay = 2;
 	bool interp = false, soft = false, names_host = false;
+	int vs_rounds = 0;
+	const char *blob_out = nullptr, *blob_in = nullptr;
 	const char *hashes_path = nullptr;   // soft: each side's clock a little slower while ahead, as the game's
 	const char *usage = "usage: vf1net [regions dir] [--random SEED] [--frames N] [--latency MS] [--jitter MS] [--loss PERCENT] [--delay D] [--interp] [--soft] [--map FILE]\n";
 	for (int i = 1; i < argc; i++) {
@@ -114,6 +119,9 @@ int main(int argc, char **argv)
 		else if (a == "--p1" && i + 1 < argc) p1 = argv[++i];   // (each player's fighter, as the handshake has it: R, S<seed>, X<k>)
 		else if (a == "--p2" && i + 1 < argc) p2 = argv[++i];
 		else if (a == "--hashes" && i + 1 < argc) hashes_path = argv[++i];
+		else if (a == "--vs-rounds" && i + 1 < argc) vs_rounds = atoi(argv[++i]);
+		else if (a == "--blob-out" && i + 1 < argc) blob_out = argv[++i];
+		else if (a == "--blob-in" && i + 1 < argc) blob_in = argv[++i];
 		else if (a == "--names-host") names_host = true;   // (the host has looked up the seeds' names before: Random fighter's history on one side only)
 		else if (a == "--random" && i + 1 < argc) seed = uint32_t(strtoul(argv[++i], nullptr, 10));
 		else if (a == "--latency" && i + 1 < argc) p.latency_ms = atof(argv[++i]);
@@ -141,7 +149,27 @@ int main(int argc, char **argv)
 	A.adapter->hosting = true;
 	A.adapter->own_extra = p1;
 	B.adapter->own_extra = p2;
-	const std::vector<uint8_t> blob = vf1net::start_blob(*A.m, p1, seed * 2654435761u + 1);
+	if (vs_rounds) {   // (the host's settings as its own game wrote them, then the round count changed, as the menu does)
+		if (!A.adapter->begin(vf1net::start_blob(*A.m, p1, 1))) { fprintf(stderr, "vf1net: the host's board didn't start\n"); return 1; }
+		A.m->set_assignment(model1::game_assignment::match_vs, vs_rounds);
+		printf("the host's Rounds to win (vs player): %d\n", A.m->assignment(model1::game_assignment::match_vs));
+	}
+	std::vector<uint8_t> blob = vf1net::start_blob(*A.m, p1, seed * 2654435761u + 1);
+	if (blob_in) {
+		FILE *f = fopen(blob_in, "rb");
+		if (!f) { fprintf(stderr, "vf1net: can't read %s\n", blob_in); return 1; }
+		blob.clear();
+		for (int ch; (ch = fgetc(f)) != EOF;) blob.push_back(uint8_t(ch));
+		fclose(f);
+		printf("the start blob from %s (%zu bytes)\n", blob_in, blob.size());
+	}
+	if (blob_out) {
+		FILE *f = fopen(blob_out, "wb");
+		if (!f || fwrite(blob.data(), 1, blob.size(), f) != blob.size()) { fprintf(stderr, "vf1net: can't write %s\n", blob_out); return 1; }
+		fclose(f);
+	}
+	if (const size_t at = 4 + A.m->nvram().size() + 2; blob.size() > at + 1)   // (the assignments after the backup RAM: match_vs the second)
+		printf("the blob's Rounds to win (vs player): %d\n", int(int16_t(blob[at] | blob[at + 1] << 8)));
 	const uint64_t content = vf1net::content_hash(*A.m);
 	if (content != vf1net::content_hash(*B.m)) { fprintf(stderr, "vf1net: the two boards' ROM hashes differ\n"); return 1; }
 
@@ -205,11 +233,17 @@ int main(int argc, char **argv)
 		C.adapter->checkpoint_every = hashes_path ? 30 : 300;
 		C.adapter->keep_states = true;
 		C.adapter->sound_out = [&](const std::vector<uint8_t> &b) { straight_sound.insert(straight_sound.end(), b.begin(), b.end()); };
+		int won[2] = {}, by[2] = {};   // (each versus match as it ends: its rounds)
 		for (uint32_t f = 0; f < n; f++) {
 			const uint16_t in[2] = { sa.inputs(0)[f], sa.inputs(1)[f] };
 			if (in[0] != sb.inputs(0)[f] || in[1] != sb.inputs(1)[f]) { printf("the two sides' inputs differ at frame %u\n", f); failed = true; break; }
 			C.adapter->advance(in, false);
 			score_c.frame(*C.m);
+			if (score_c.matches[0] + score_c.matches[1] != won[0] + won[1]) {
+				printf("a versus match over at frame %u: player %d won it, rounds %d-%d\n", f, score_c.matches[0] != won[0] ? 1 : 2,
+				       score_c.rounds[0] - by[0], score_c.rounds[1] - by[1]);
+				for (int q = 0; q < 2; q++) won[q] = score_c.matches[q], by[q] = score_c.rounds[q];
+			}
 		}
 		printf("the score: host %d-%d, guest %d-%d, straight %d-%d (rounds %d-%d)\n", score_a.matches[0], score_a.matches[1], score_b.matches[0],
 		       score_b.matches[1], score_c.matches[0], score_c.matches[1], score_c.rounds[0], score_c.rounds[1]);
