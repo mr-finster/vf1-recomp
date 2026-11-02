@@ -562,6 +562,9 @@ struct settings
 	int arcade_coin = -1;   // Arcade mode's coin/credit setting, kept while PC mode makes it free play (-1: not seen yet)
 	bool english_set = false;   // (the game's language made English once, its first start here: Japanese after is the player's choice)
 	bool vs_rounds_set = false;   // (Rounds to win (vs player) 2, the board's own, made 3 once: a 2 after is the player's choice)
+	// (and once more, from 2 Nov, for everyone, an install that had the first move too: its own flag. A missing
+	// settings.ini has neither, so its NVRAM's 2 moves too; vs_rounds_set still written, for older builds)
+	bool vs_rounds_3 = false;
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
 	bool log = true;   // log.txt written (Game > Log file: read before the log's opened, so from the next start)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
@@ -627,6 +630,7 @@ struct settings
 		flag("kage_unmasked", kage_unmasked);
 		flag("english_set", english_set);
 		flag("vs_rounds_set", vs_rounds_set);
+		flag("vs_rounds_3", vs_rounds_3);
 		num("ring_cheat", ring_cheat, 0, 2);
 		if (auto it = kv.find("auto_3d"); it != kv.end()) auto_3d = it->second;
 		// (Auto's findings by another build (another version or commit) forgotten, so each new build looks
@@ -696,6 +700,7 @@ struct settings
 		if (kage_unmasked) fprintf(f, "kage_unmasked = 1\n");
 		if (english_set) fprintf(f, "english_set = 1\n");
 		if (vs_rounds_set) fprintf(f, "vs_rounds_set = 1\n");
+		if (vs_rounds_3) fprintf(f, "vs_rounds_3 = 1\n");
 		fprintf(f, "crt_colours = %d\nbrightness = %d\ngamma = %d\n", crt_colours, brightness, gamma);
 		if (ring_cheat) fprintf(f, "ring_cheat = %d\n", ring_cheat);
 		if (!auto_3d.empty()) fprintf(f, "auto_3d = %s\nauto_3d_build = %s\n", auto_3d.c_str(), BUILD);
@@ -1225,11 +1230,12 @@ int main(int argc, char **argv)
 		cfg.english_set = true; cfg_dirty = true;
 		return m.set_assignment(model1::game_assignment::language, 1);
 	};
-	// Two players' matches first to 3 rounds, once, as VF3's and SEGA's tournaments: the board comes set to 2 (a new
-	// player's and an install from before it alike; Arcade settings' Rounds to win (vs player) changes it after)
+	// Two players' matches first to 3 rounds, once, as VF3's and SEGA's tournaments (and every online match): the
+	// board comes set to 2 (a new player's, an install from before it, and one whose settings.ini is gone alike: its
+	// NVRAM kept a 2; Arcade settings' Rounds to win (vs player) changes it after, and a 2 chosen then stays)
 	auto settle_vs_rounds = [&]() -> bool {
-		if (cfg.vs_rounds_set || m.assignment(model1::game_assignment::match_vs) < 0) return false;   // (the game's very first boot writes the settings)
-		cfg.vs_rounds_set = true; cfg_dirty = true;
+		if (cfg.vs_rounds_3 || m.assignment(model1::game_assignment::match_vs) < 0) return false;   // (the game's very first boot writes the settings)
+		cfg.vs_rounds_set = cfg.vs_rounds_3 = true; cfg_dirty = true;
 		if (m.assignment(model1::game_assignment::match_vs) != 2) return false;
 		fprintf(stderr, "settings: Rounds to win (vs player) 2 (the board's own) to 3, once\n");
 		return m.set_assignment(model1::game_assignment::match_vs, 3);
@@ -2267,6 +2273,7 @@ int main(int argc, char **argv)
 					int v = m.assignment(a); if (v >= 0) m.set_assignment(a, v + d);
 					// (the player's language: English's once-only setting not to overrule it at the restart)
 					if (v >= 0 && a == ga::language && !cfg.english_set) cfg.english_set = true, cfg_dirty = true;
+					if (v >= 0 && a == ga::match_vs && !cfg.vs_rounds_3) cfg.vs_rounds_set = cfg.vs_rounds_3 = true, cfg_dirty = true;   // (the same, the rounds')
 				} });
 		};
 		static const char *LANGUAGES[] = { "Japanese", "English" };
@@ -2287,7 +2294,7 @@ int main(int argc, char **argv)
 				m.set_ring_width(cfg.ring_now());
 			} });
 		choice("Rounds to win (vs CPU)", "Rounds needed to win a match against the computer.", ga::match_1p, [](int v) { return std::to_string(v); });
-		choice("Rounds to win (vs player)", "Rounds needed to win a match between two players.", ga::match_vs, [](int v) { return std::to_string(v); });
+		choice("Rounds to win (vs player)", "Rounds needed to win a match between two players. Online matches are always first to 3.", ga::match_vs, [](int v) { return std::to_string(v); });
 		choice("Continue", "Off ends the game when you lose to the computer.", ga::continues, [&](int v) { return on_off(v); });
 		choice("Demo sound", "Sound during the demo that plays between games.", ga::advertise_sound, [&](int v) { return on_off(v); });
 		p.items.push_back({ "Service menu",
