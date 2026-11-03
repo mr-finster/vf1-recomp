@@ -1097,8 +1097,13 @@ int main(int argc, char **argv)
 	model1 m(std::move(game));
 	m.enable_sound();
 	// antialiasing draws larger and averages down: within 8x the arcade's size in all (at 32:9 that is
-	// already 10,576 x 3,072 and about 600 MB of buffers; more would fail on ordinary machines)
-	auto aa_fit = [](int scale, int aa) { return std::max(1, std::min(aa, 8 / scale)); };
+	// already 10,576 x 3,072 and about 600 MB of buffers; more would fail on ordinary machines), and
+	// past 32:9 within that same 10,576 pixels across (80:9 at 8x would be 26,456: past a GPU's
+	// 16,384 and over 1.5 GB)
+	auto aa_fit = [&m](int scale, int aa) {
+		const int across = m.frame_w() / std::max(1, m.render_scale());   // the picture's arcade pixels across
+		return std::max(1, std::min({ aa, 8 / scale, 10576 / (std::max(1, across) * scale) }));
+	};
 	m.set_render_scale(scale * aa_fit(scale, cfg.aa));   // antialiasing: drawn larger, averaged down
 	m.set_edge_aa(cfg.aa == 0);                           // or Low: the edges smoothed
 	m.set_smooth(true);   // always: a picture for each refresh of the screen, between the arcade's 57.5 frames a second
@@ -1821,16 +1826,20 @@ int main(int argc, char **argv)
 		SDL_SetTextureScaleMode(tex, m.render_scale() > 1 ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
 	};
 	make_texture();
-	// the picture's shape: the chosen one, or the window's (between 4:3 and 32:9)
+	// the picture's shape: the chosen one, or the window's (between 4:3 and 80:9)
 	auto apply_aspect = [&] {
 		float a = ASPECTS[aspect_i];
 		if (a <= 0) {
 			int w = 0, h = 0;
 			SDL_GetWindowSizeInPixels(win, &w, &h);
-			a = h > 0 ? std::clamp(float(w) / float(h), 4.0f / 3.0f, 32.0f / 9.0f) : 16.0f / 9.0f;
+			a = h > 0 ? std::clamp(float(w) / float(h), 4.0f / 3.0f, model1::MAX_ASPECT) : 16.0f / 9.0f;
 		}
-		if (std::fabs(a - m.aspect()) > 0.001f)
+		if (std::fabs(a - m.aspect()) > 0.001f) {
 			m.set_aspect(a);
+			// (past 32:9 antialiasing may fit less, or again more, at the new width)
+			const int rs = cfg.scale * aa_fit(cfg.scale, cfg.aa);
+			if (rs != m.render_scale()) m.set_render_scale(rs);
+		}
 	};
 	// 496x384 fills a 4:3 tube on the cabinet; widescreen widens the same picture
 	auto present_shape = [&] {

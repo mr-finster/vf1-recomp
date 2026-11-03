@@ -514,7 +514,7 @@ void model1::set_render_scale(int scale)
 
 void model1::set_aspect(float aspect)
 {
-	m_aspect = std::clamp(aspect, 4.0f / 3.0f, 32.0f / 9.0f);
+	m_aspect = std::clamp(aspect, 4.0f / 3.0f, MAX_ASPECT);
 	// the arcade's pixels are slightly wide: 496x384 fills a 4:3 tube
 	float width = SCREEN_H * m_aspect * float(SCREEN_W) / (SCREEN_H * 4.0f / 3.0f);
 	m_ext = std::max(0, int(std::lround((width - SCREEN_W) / 2)));

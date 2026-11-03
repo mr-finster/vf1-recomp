@@ -60,6 +60,8 @@ public:
 	void set_render_scale(int scale);
 	// Widescreen: `aspect` is the picture's width/height (4/3 = the arcade's). The 3D view and the
 	// sky widen; the 2D text stays in the middle 4:3.
+	// Up to 80:9, five 16:9 screens side by side (a safety limit for odd window shapes).
+	static constexpr float MAX_ASPECT = 80.0f / 9.0f;
 	void set_aspect(float aspect);
 	float aspect() const { return m_aspect; }
 	int render_scale() const { return m_scale; }
