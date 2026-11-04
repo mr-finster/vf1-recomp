@@ -1612,6 +1612,11 @@ int main(int argc, char **argv)
 		}
 		cfg.auto_3d = out + (out.empty() ? "" : ",") + k + (gpu ? "g" : "c");
 	};
+	// The 3D gone to the CPU in play (a GPU error, or its picture not the CPU's: as VF3's issue #26, 0.5 pictures a
+	// second at 3x with 2x antialiasing there): drawn at 1x without antialiasing for this run (cpu_cut, at the pass's
+	// end, said with the notice); the settings saved stay the player's (a scale or antialiasing chosen puts them
+	// back). Drawing only: the game's the same
+	bool cpu_cut = false, cpu_cut_due = false;
 	auto apply_3d = [&] { m.set_gpu3d_on(g3 && !a3.broken && a3.gpu); m.m_gpu3d_chosen = cfg.renderer3d == 1; };
 	auto renderer_name = [&]() -> std::string {
 #if VF_GPU3D_METAL
@@ -1708,6 +1713,7 @@ int main(int argc, char **argv)
 				fprintf(stderr, "3D renderer: the GPU failed: the CPU for this run\n");
 				if (st.wrong) on_cpu_because("the GPU drew the 3D wrongly here", UPDATE);   // (a game's picture checked: not the CPU's)
 				else on_cpu_because("the GPU's 3D stopped working", NEXT);
+				cpu_cut_due = true;
 			}
 			a3.broken = true;
 			a3.gpu = false;
@@ -1837,7 +1843,7 @@ int main(int argc, char **argv)
 		if (std::fabs(a - m.aspect()) > 0.001f) {
 			m.set_aspect(a);
 			// (past 32:9 antialiasing may fit less, or again more, at the new width)
-			const int rs = cfg.scale * aa_fit(cfg.scale, cfg.aa);
+			const int rs = cpu_cut ? 1 : cfg.scale * aa_fit(cfg.scale, cfg.aa);
 			if (rs != m.render_scale()) m.set_render_scale(rs);
 		}
 	};
@@ -2111,6 +2117,7 @@ int main(int argc, char **argv)
 		gpu_check_from = gpu_pictures;
 		gpu_verified = 0;
 		gpu_recheck = 0;
+		cpu_cut = false;   // (the player's own: the 3D's CPU cut lifted)
 		cfg.scale = v; cfg_dirty = true;
 		m.set_render_scale(v * aa_fit(v, cfg.aa));
 		m.set_edge_aa(cfg.aa == 0);
@@ -3792,6 +3799,18 @@ int main(int argc, char **argv)
 			const uint64_t now = SDL_GetTicksNS();
 			// (the pictures or the 3D on the CPU with the setting not CPU: why, on screen once)
 			// (not over online play: after it, and one up as a match is joined is taken down and said again after)
+			if (cpu_cut_due) {
+				cpu_cut_due = false;
+				if (m.render_scale() > 1 || cfg.aa == 0) {
+					cpu_cut = true;
+					m.set_render_scale(1);
+					m.set_edge_aa(false);
+					sync.reset();
+					make_texture(); present_shape(); redraw_if_stopped();
+					fprintf(stderr, "the 3D on the CPU: drawn at 1x without antialiasing for this run (the settings kept)\n");
+					if (cpu_why_new) cpu_why += " Drawn at 1x without antialiasing for this run, as the CPU can keep up (Display's settings are kept).";
+				}
+			}
 			if (online.phase() != Online::Phase::off && !cpu_why.empty() && menu.toast_showing()) { menu.toast(""); cpu_why_new = true; }
 			if (cpu_why_new && online.phase() == Online::Phase::off) {
 				cpu_why_new = false;
