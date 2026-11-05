@@ -575,6 +575,10 @@ struct settings
 	// Mac, as SDL_CreateWindow takes them); window_w 0: none yet. Maximised: the size under it kept, maximised again
 	int window_w = 0, window_h = 0, window_x = 0, window_y = 0;
 	bool window_max = false;
+	// Fullscreen as a borderless window over the screen and a line past it (VF3's issue #7: AMD's driver on Windows
+	// froze in its own, exclusive fullscreen): the way on Windows unless fullscreen_exclusive = 1 (Display > Fullscreen
+	// mode); elsewhere the system's own fullscreen (a Mac's Spaces, the Deck's gamescope) unless fullscreen_window = 1
+	bool fs_window = false, fs_exclusive = false;
 	OnlineSettings online;   // the Online page's
 	player_controls ctl[2] = { player_controls::defaults(0), player_controls::defaults(1) };
 	std::vector<std::string> pad_mappings;   // pad_mapping lines: SDL mappings made in Controls > Set up buttons (one a pad)
@@ -620,6 +624,8 @@ struct settings
 		num("ring_size", ring, 0, 1500);
 		if (ring && (ring < 1200 || ring % 100)) ring = 0;   // 0: by difficulty
 		flag("fullscreen", fullscreen);
+		flag("fullscreen_window", fs_window);
+		flag("fullscreen_exclusive", fs_exclusive);
 		flag("frame_timings", timings);
 		flag("log", log);
 		flag("arcade_mode", arcade);
@@ -699,6 +705,8 @@ struct settings
 				int(fullscreen), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
 		if (!log) fprintf(f, "log = 0\n");
 		fprintf(f, "window_scale = %d\n", window_scale);
+		if (fs_window) fprintf(f, "fullscreen_window = 1\n");
+		if (fs_exclusive) fprintf(f, "fullscreen_exclusive = 1\n");
 		if (window_w > 0) fprintf(f, "window_w = %d\nwindow_h = %d\nwindow_x = %d\nwindow_y = %d\nwindow_maximised = %d\n", window_w, window_h, window_x, window_y, int(window_max));
 		if (arcade_coin >= 0) fprintf(f, "arcade_coins = %d\n", arcade_coin);
 		fprintf(f, "renderer_3d = %d\n", renderer3d);
@@ -1358,6 +1366,15 @@ int main(int argc, char **argv)
 			}
 		}
 	}
+	// Fullscreen's way (Config's fs_window): a borderless window over the screen and a line past it, so no driver
+	// takes it for a game's own fullscreen (VF3's issue #7: AMD's Vulkan on Windows froze there, every frame waiting),
+	// the window's place, size and maximised kept for the way back; or the system's own (SDL_WINDOW_FULLSCREEN)
+#ifdef _WIN32
+	static constexpr bool FS_BORDERLESS_DEFAULT = true;
+#else
+	static constexpr bool FS_BORDERLESS_DEFAULT = false;   // (a Mac's green button and Spaces, the Deck's gamescope)
+#endif
+	auto fs_borderless = [&] { return !cfg.fs_exclusive && (FS_BORDERLESS_DEFAULT || cfg.fs_window); };
 	SDL_PropertiesID wp = SDL_CreateProperties();
 	SDL_SetStringProperty(wp, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Virtua Fighter");
 	SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, win_w);
@@ -1367,9 +1384,12 @@ int main(int argc, char **argv)
 		SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_Y_NUMBER, win_y);
 	}
 	SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
-		(fullscreen ? SDL_WINDOW_FULLSCREEN : 0) | (win_placed && cfg.window_max ? SDL_WINDOW_MAXIMIZED : 0) |
+		(fullscreen && !fs_borderless() ? SDL_WINDOW_FULLSCREEN : 0) | (win_placed && cfg.window_max ? SDL_WINDOW_MAXIMIZED : 0) |
 		(getenv("VF_HIDDEN") ? SDL_WINDOW_HIDDEN : 0));   // testing: never on screen
 	SDL_Window *win = SDL_CreateWindowWithProperties(wp);
+	bool fs_win_on = false, fs_win_max = false;
+	SDL_Rect fs_win_was{ 0, 0, 0, 0 };
+	auto is_fullscreen = [&] { return fs_win_on || (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0; };
 	SDL_DestroyProperties(wp);
 	if (!win) return fail("Couldn't open the window");
 	SDL_HideCursor();
@@ -1969,9 +1989,14 @@ int main(int argc, char **argv)
 	crt::Colours crt_paint;
 	bool crt_on = false;   // (any of them set: the menu says when this renderer can't)
 	auto draw_filter = [&] {
-		SDL_FRect r;
-		if (!cfg.filter || !SDL_GetRenderLogicalPresentationRect(ren, &r)) return;
-		const int w = int(std::lround(r.w)), h = int(std::lround(r.h));
+		SDL_FRect pic;
+		if (!cfg.filter || !SDL_GetRenderLogicalPresentationRect(ren, &pic)) return;
+		// on whole pixels, one of the glass's to each (as VF3's, vf3-recomp #7): the picture's edges can fall between
+		// them (a borderless fullscreen's 1920 x 1081, 4:3: 1441.33 wide from 239.33), and the glass stretched by a
+		// fraction, sampled to the nearest, drew one column twice in the middle (a line down the screen)
+		const float x0 = std::round(pic.x), y0 = std::round(pic.y);
+		const SDL_FRect r{ x0, y0, std::round(pic.x + pic.w) - x0, std::round(pic.y + pic.h) - y0 };
+		const int w = int(r.w), h = int(r.h);
 		if (w < 1 || h < 1) return;
 		if (!glass || w != glass_w || h != glass_h || cfg.filter != glass_kind) {
 			if (glass) SDL_DestroyTexture(glass);
@@ -2029,7 +2054,13 @@ int main(int argc, char **argv)
 			SDL_UpdateTexture(glass, nullptr, px.data(), w * 4);
 			SDL_SetTextureScaleMode(glass, SDL_SCALEMODE_NEAREST);
 		}
-		SDL_RenderTexture(ren, glass, nullptr, nullptr);   // over the picture (the logical area), under the menu
+		// over the picture, under the menu: in the window's own pixels (the logical presentation off for it)
+		int lw = 0, lh = 0;
+		SDL_RendererLogicalPresentation mode = SDL_LOGICAL_PRESENTATION_DISABLED;
+		SDL_GetRenderLogicalPresentation(ren, &lw, &lh, &mode);
+		SDL_SetRenderLogicalPresentation(ren, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+		SDL_RenderTexture(ren, glass, nullptr, &r);
+		SDL_SetRenderLogicalPresentation(ren, lw, lh, mode);
 	};
 
 	SDL_AudioSpec spec{ SDL_AUDIO_S16, 2, m1audio::OUT_RATE };
@@ -2186,7 +2217,6 @@ int main(int argc, char **argv)
 	// height (4:3 and Fit: 512 x k, the 496 x 384 picture on its 4:3 tube; wider shapes the picture's own width, 384
 	// times theirs, times k), so the picture fills it and each arcade line is k of the screen's; only the sizes that
 	// fit the screen's usable area. In fullscreen it waits for the window. Resized by hand: Free again.
-	auto is_fullscreen = [&] { return (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0; };
 	int win_expect_w = 0, win_expect_h = 0;   // (the window's pixels as Window size made them)
 	int win_set_w = 0, win_set_h = 0;         // (and its points)
 	bool window_moved = false;                // (moved, resized, maximised: remembered after the pass's events)
@@ -2270,10 +2300,30 @@ int main(int argc, char **argv)
 	};
 	auto set_fullscreen = [&](bool on) {
 		cfg.fullscreen = on; cfg_dirty = true;
-		SDL_SetWindowFullscreen(win, on);
+		SDL_Rect b;
+		if (on && !fs_win_on && fs_borderless() && SDL_GetDisplayBounds(SDL_GetDisplayForWindow(win), &b)) {
+			if (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) { SDL_SetWindowFullscreen(win, false); SDL_SyncWindow(win); }
+			fs_win_max = (SDL_GetWindowFlags(win) & SDL_WINDOW_MAXIMIZED) != 0;
+			if (fs_win_max) { SDL_RestoreWindow(win); SDL_SyncWindow(win); }   // (the size under it, for the way back)
+			SDL_GetWindowPosition(win, &fs_win_was.x, &fs_win_was.y);
+			SDL_GetWindowSize(win, &fs_win_was.w, &fs_win_was.h);
+			SDL_SetWindowBordered(win, false);
+			SDL_SetWindowPosition(win, b.x, b.y);
+			SDL_SetWindowSize(win, b.w, b.h + 1);
+			fs_win_on = true;
+			fprintf(stderr, "fullscreen: a borderless window, %d x %d%s\n", b.w, b.h + 1,
+			        cfg.fs_window ? " (fullscreen_window)" : " (fullscreen_exclusive = 1 for the driver's own)");
+		} else if (!on && fs_win_on) {
+			SDL_SetWindowBordered(win, true);
+			if (fs_win_was.w > 0) { SDL_SetWindowSize(win, fs_win_was.w, fs_win_was.h); SDL_SetWindowPosition(win, fs_win_was.x, fs_win_was.y); }
+			if (fs_win_max) SDL_MaximizeWindow(win);
+			fs_win_on = false;
+		} else if (!fs_win_on) SDL_SetWindowFullscreen(win, on);
 		SDL_SyncWindow(win);     // macOS animates into fullscreen: wait for it to finish
 		if (!on) apply_window_scale();
 	};
+	// borderless fullscreen from the start: the window (made at its remembered place and size) over the screen
+	if (cfg.fullscreen && fs_borderless()) { const bool d = cfg_dirty; set_fullscreen(true); cfg_dirty = d; }
 	apply_window_scale();   // (the saved Window size from the start; VF_WINDOW's tests: the size they ask)
 	auto on_off = [](bool b) { return std::string(b ? "On" : "Off"); };
 	auto wrap = [](int v, int n) { return (v % n + n) % n; };
@@ -2361,8 +2411,20 @@ int main(int argc, char **argv)
 			},
 			[&](int d) { set_window_scale(wrap(cfg.window_scale + d, window_scale_most() + 1)); } });
 		p.items.push_back({ "Fullscreen", "Play fullscreen or in a window. (F11, F or Alt+Enter)",
-			[&] { return on_off(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN); },
-			[&](int) { set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN)); } });
+			[&] { return on_off(is_fullscreen()); },
+			[&](int) { set_fullscreen(!is_fullscreen()); } });
+#ifdef _WIN32
+		p.items.push_back({ "Fullscreen mode",
+			"Borderless covers the screen with a window without a frame, which every graphics driver handles. Exclusive gives the screen to the graphics driver itself, the old way: some AMD cards froze in it.",
+			[&] { return std::string(fs_borderless() ? "Borderless" : "Exclusive"); },
+			[&](int) {
+				const bool was = is_fullscreen();
+				if (was) set_fullscreen(false);
+				cfg.fs_exclusive = fs_borderless(); cfg_dirty = true;
+				if (was) set_fullscreen(true);
+				menu.refresh();
+			} });
+#endif
 		p.items.push_back(back_item());
 		return p;
 	};
@@ -3580,7 +3642,7 @@ int main(int argc, char **argv)
 				e.type == SDL_EVENT_WINDOW_RESTORED)
 				window_moved = true;
 			// (fullscreen by the system's own way, a Mac's green button: remembered as the menu's is)
-			if ((e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) &&
+			if ((e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) && !fs_win_on &&
 				cfg.fullscreen != (e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN)) {
 				cfg.fullscreen = e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN;
 				cfg_dirty = true;
@@ -3622,7 +3684,7 @@ int main(int argc, char **argv)
 			// (F11 and Alt+Enter with the menu open too, unless it's waiting for a key: Alt+Enter was its Enter)
 			else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && menu.is_open() && !menu.capturing()
 					 && (e.key.scancode == SDL_SCANCODE_F11 || (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT))))
-				set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
+				set_fullscreen(!is_fullscreen());
 			else if (menu.handle_event(e)) continue;
 			else if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) open_pads();
 			else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && ASPECTS[aspect_i] <= 0) {
@@ -3651,7 +3713,7 @@ int main(int argc, char **argv)
 					while (std::filesystem::exists(shots + name, ec) && shot < 9999);
 					write_png((shots + name).c_str(), saved_frame(), shown_w(), shown_h());
 				} else if (e.key.scancode == SDL_SCANCODE_F11 || fullscreen_key(e.key))
-					set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
+					set_fullscreen(!is_fullscreen());
 			}
 		}
 		setup_poll();
