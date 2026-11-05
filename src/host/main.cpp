@@ -51,6 +51,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include <vector>
 #include <set>
 #include <cerrno>
+#include <climits>
 #include <cstring>
 #include <thread>
 #include <mutex>
@@ -568,6 +569,12 @@ struct settings
 	std::string roms_folder;   // where the player keeps vf.zip (roms_folder = ...; read before the game starts, kept as written)
 	bool log = true;   // log.txt written (Game > Log file: read before the log's opened, so from the next start)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
+	int window_scale = 0;   // Display > Window size: the window k times the arcade's 384 lines high (4:3 and Fit 512 x k
+	                        // wide, wider shapes theirs), each arcade line k of the screen's; 0 Free (as the player sizes it)
+	// The window's place and size as last left in a window (VF3's issue #21), in the window's own units (points on a
+	// Mac, as SDL_CreateWindow takes them); window_w 0: none yet. Maximised: the size under it kept, maximised again
+	int window_w = 0, window_h = 0, window_x = 0, window_y = 0;
+	bool window_max = false;
 	OnlineSettings online;   // the Online page's
 	player_controls ctl[2] = { player_controls::defaults(0), player_controls::defaults(1) };
 	std::vector<std::string> pad_mappings;   // pad_mapping lines: SDL mappings made in Controls > Set up buttons (one a pad)
@@ -618,6 +625,13 @@ struct settings
 		flag("arcade_mode", arcade);
 		flag("background_filter", smooth_bg);
 		flag("show_fps", show_fps);
+		num("window_scale", window_scale, 0, 16);
+		num("window_w", window_w, 0, 65535);
+		num("window_h", window_h, 0, 65535);
+		num("window_x", window_x, -65535, 65535);
+		num("window_y", window_y, -65535, 65535);
+		flag("window_maximised", window_max);
+		if (window_w < 64 || window_h < 48) window_w = window_h = 0;
 		num("arcade_coins", arcade_coin, -1, 0xffff);
 		num("renderer_3d", renderer3d, 0, 2);
 		num("graphics", graphics, 0, 1);
@@ -684,6 +698,8 @@ struct settings
 				"background_filter = %d\nmusic_volume = %d\neffects_volume = %d\nantialiasing = %d\nshow_fps = %d\nscreen_filter = %d\nring_size = %d\n", scale, aspect,
 				int(fullscreen), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
 		if (!log) fprintf(f, "log = 0\n");
+		fprintf(f, "window_scale = %d\n", window_scale);
+		if (window_w > 0) fprintf(f, "window_w = %d\nwindow_h = %d\nwindow_x = %d\nwindow_y = %d\nwindow_maximised = %d\n", window_w, window_h, window_x, window_y, int(window_max));
 		if (arcade_coin >= 0) fprintf(f, "arcade_coins = %d\n", arcade_coin);
 		fprintf(f, "renderer_3d = %d\n", renderer3d);
 		if (graphics) fprintf(f, "graphics = %d\n", graphics);
@@ -1307,17 +1323,54 @@ int main(int argc, char **argv)
 	int win_w = 1366, win_h = 768;
 	// testing: VF_WINDOW=WxH, the window's size in points (a hidden one as large as a player's screen)
 	const bool fixed_window = getenv("VF_WINDOW") && sscanf(getenv("VF_WINDOW"), "%dx%d", &win_w, &win_h) == 2;
-	{
+	bool win_placed = false;   // (the window put where it was last left)
+	int win_x = 0, win_y = 0;
+	if (!fixed_window) {
 		SDL_Rect usable;
-		if (!fixed_window && SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) && usable.w > 0 && usable.h > 0) {
+		if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) && usable.w > 0 && usable.h > 0) {
 			const float k = std::min({ 1.0f, usable.w * 0.9f / win_w, usable.h * 0.9f / win_h });
 			win_w = int(win_w * k); win_h = int(win_h * k);
 		}
+		// The window as last left (settings.ini's window_w ...): there if it's still all on a connected screen's usable
+		// area; else at that size (no larger than the screen) in the middle of the screen it was most on, or the primary
+		if (cfg.window_w > 0) {
+			int n = 0;
+			SDL_DisplayID *ds = SDL_GetDisplays(&n);
+			const SDL_Rect r{ cfg.window_x, cfg.window_y, cfg.window_w, cfg.window_h };
+			SDL_Rect best{ 0, 0, 0, 0 };
+			long long best_area = -1;
+			for (int i = 0; ds && i < n; i++) {
+				SDL_Rect u, in;
+				if (!SDL_GetDisplayUsableBounds(ds[i], &u) || u.w <= 0 || u.h <= 0) continue;
+				const long long a = SDL_GetRectIntersection(&r, &u, &in) ? (long long)in.w * in.h : 0;
+				if (r.x >= u.x && r.y >= u.y && r.x + r.w <= u.x + u.w && r.y + r.h <= u.y + u.h) { best = u; best_area = LLONG_MAX; break; }
+				if (a > best_area || (best_area <= 0 && ds[i] == SDL_GetPrimaryDisplay())) { best = u; best_area = a; }
+			}
+			SDL_free(ds);
+			if (best.w > 0) {
+				win_w = std::min(cfg.window_w, best.w);
+				win_h = std::min(cfg.window_h, best.h);
+				if (best_area == LLONG_MAX) { win_x = cfg.window_x; win_y = cfg.window_y; }
+				else { win_x = best.x + (best.w - win_w) / 2; win_y = best.y + (best.h - win_h) / 2; }
+				win_placed = true;
+				fprintf(stderr, "the window as last left: %d x %d at %d, %d%s%s\n", win_w, win_h, win_x, win_y,
+				        best_area == LLONG_MAX ? "" : " (centred: not all on a screen now)", cfg.window_max ? ", maximised" : "");
+			}
+		}
 	}
-	SDL_Window *win = SDL_CreateWindow("Virtua Fighter", win_w, win_h,
-									   SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
-									   (fullscreen ? SDL_WINDOW_FULLSCREEN : 0) |
-									   (getenv("VF_HIDDEN") ? SDL_WINDOW_HIDDEN : 0));   // testing: never on screen
+	SDL_PropertiesID wp = SDL_CreateProperties();
+	SDL_SetStringProperty(wp, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Virtua Fighter");
+	SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, win_w);
+	SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, win_h);
+	if (win_placed) {
+		SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_X_NUMBER, win_x);
+		SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_Y_NUMBER, win_y);
+	}
+	SDL_SetNumberProperty(wp, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+		(fullscreen ? SDL_WINDOW_FULLSCREEN : 0) | (win_placed && cfg.window_max ? SDL_WINDOW_MAXIMIZED : 0) |
+		(getenv("VF_HIDDEN") ? SDL_WINDOW_HIDDEN : 0));   // testing: never on screen
+	SDL_Window *win = SDL_CreateWindowWithProperties(wp);
+	SDL_DestroyProperties(wp);
 	if (!win) return fail("Couldn't open the window");
 	SDL_HideCursor();
 	// Started from a terminal, the window can open behind it or without the keyboard (the keys go
@@ -2128,16 +2181,100 @@ int main(int argc, char **argv)
 		log_state("the player's scale or antialiasing");
 	};
 	auto player_scale_to = [&](int v) { set_scale(v); };
+	// Display > Window size: the window k times the arcade's 384 lines high, in the window's own pixels (a Mac's
+	// Retina window is sized in points: the pixel density's share of them), its width the picture shape's at that
+	// height (4:3 and Fit: 512 x k, the 496 x 384 picture on its 4:3 tube; wider shapes the picture's own width, 384
+	// times theirs, times k), so the picture fills it and each arcade line is k of the screen's; only the sizes that
+	// fit the screen's usable area. In fullscreen it waits for the window. Resized by hand: Free again.
+	auto is_fullscreen = [&] { return (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0; };
+	int win_expect_w = 0, win_expect_h = 0;   // (the window's pixels as Window size made them)
+	int win_set_w = 0, win_set_h = 0;         // (and its points)
+	bool window_moved = false;                // (moved, resized, maximised: remembered after the pass's events)
+	bool window_rescale = false;              // (made again after this pass's events: out of the OS's fullscreen, or
+	                                          // moved to a screen of another pixel density)
+	auto window_target = [&](int k, int &w, int &h) {
+		h = 384 * k;
+		w = ASPECTS[aspect_i] <= 0 ? 512 * k : int(std::lround(384 * ASPECTS[aspect_i])) * k;
+	};
+	auto window_fits = [&](int k) {
+		int w, h;
+		window_target(k, w, h);
+		const float d = std::max(SDL_GetWindowPixelDensity(win), 0.25f);
+		SDL_Rect usable;
+		if (!SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(win), &usable) || usable.w <= 0 || usable.h <= 0) return k == 1;
+		int top = 0, left = 0, bottom = 0, right = 0;
+		if (!SDL_GetWindowBordersSize(win, &top, &left, &bottom, &right)) top = left = bottom = right = 0;
+		return w / d + left + right <= usable.w && h / d + top + bottom <= usable.h;
+	};
+	auto window_scale_most = [&] {
+		int k = 0;
+		while (k < 16 && window_fits(k + 1)) k++;
+		return k;
+	};
+	auto apply_window_scale = [&] {
+		if (cfg.window_scale <= 0 || is_fullscreen() || fixed_window) return;
+		const int most = window_scale_most();
+		if (cfg.window_scale > most) {
+			fprintf(stderr, "window size %dx: larger than the screen, %s\n", cfg.window_scale, most ? "the largest that fits" : "Free");
+			cfg.window_scale = most;
+			cfg_dirty = true;
+			if (!most) return;
+		}
+		int w, h;
+		window_target(cfg.window_scale, w, h);
+		if (SDL_GetWindowFlags(win) & SDL_WINDOW_MAXIMIZED) { SDL_RestoreWindow(win); SDL_SyncWindow(win); }
+		const float d = std::max(SDL_GetWindowPixelDensity(win), 0.25f);
+		int pw = int(std::lround(w / d)), ph = int(std::lround(h / d));
+		SDL_SetWindowSize(win, pw, ph);
+		SDL_SyncWindow(win);
+		int gw = 0, gh = 0;
+		SDL_GetWindowSizeInPixels(win, &gw, &gh);
+		if ((gw != w || gh != h) && gw > 0 && gh > 0) {   // (a fractional density's rounding: a point more or less)
+			pw += gw < w ? 1 : gw > w ? -1 : 0;
+			ph += gh < h ? 1 : gh > h ? -1 : 0;
+			SDL_SetWindowSize(win, pw, ph);
+			SDL_SyncWindow(win);
+			SDL_GetWindowSizeInPixels(win, &gw, &gh);
+		}
+		win_expect_w = gw; win_expect_h = gh;
+		win_set_w = pw; win_set_h = ph;
+		SDL_FlushEvent(SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED);   // (its own sizes on the way: not the player's resize)
+		fprintf(stderr, "window size %dx: %d x %d pixels (%d x %d points, density %.2f)%s\n", cfg.window_scale, gw, gh, pw, ph, d,
+		        gw == w && gh == h ? "" : ": not the size asked");
+		if (ASPECTS[aspect_i] <= 0) {   // (Fit: the picture's shape the window's new one)
+			const float before = m.aspect();
+			apply_aspect();
+			if (m.aspect() != before) { sync.reset(); make_texture(); present_shape(); redraw_if_stopped(); }
+		}
+	};
+	// the window's place and size kept in the settings as the player leaves them, in a window only (not fullscreen;
+	// maximised: said so, the size under it kept); not for VF_WINDOW's tests
+	auto remember_window = [&] {
+		if (fixed_window || is_fullscreen()) return;
+		const SDL_WindowFlags fl = SDL_GetWindowFlags(win);
+		if (fl & SDL_WINDOW_MINIMIZED) return;
+		const bool mx = (fl & SDL_WINDOW_MAXIMIZED) != 0;
+		int w = cfg.window_w, h = cfg.window_h, x = cfg.window_x, y = cfg.window_y;
+		if (!mx || w <= 0) { SDL_GetWindowSize(win, &w, &h); SDL_GetWindowPosition(win, &x, &y); }   // (maximised from the first: its size then)
+		if (w <= 0 || h <= 0) return;
+		if (w == cfg.window_w && h == cfg.window_h && x == cfg.window_x && y == cfg.window_y && mx == cfg.window_max) return;
+		cfg.window_w = w; cfg.window_h = h; cfg.window_x = x; cfg.window_y = y; cfg.window_max = mx;
+		cfg_dirty = true;
+	};
+	auto set_window_scale = [&](int k) { cfg.window_scale = std::max(k, 0); cfg_dirty = true; apply_window_scale(); };
 	auto set_shape = [&](int v) {
 		aspect_i = cfg.aspect = v; cfg_dirty = true;
 		sync.reset();
+		apply_window_scale();   // (Window size: the new shape's width)
 		apply_aspect(); make_texture(); present_shape(); redraw_if_stopped();
 	};
 	auto set_fullscreen = [&](bool on) {
 		cfg.fullscreen = on; cfg_dirty = true;
 		SDL_SetWindowFullscreen(win, on);
 		SDL_SyncWindow(win);     // macOS animates into fullscreen: wait for it to finish
+		if (!on) apply_window_scale();
 	};
+	apply_window_scale();   // (the saved Window size from the start; VF_WINDOW's tests: the size they ask)
 	auto on_off = [](bool b) { return std::string(b ? "On" : "Off"); };
 	auto wrap = [](int v, int n) { return (v % n + n) % n; };
 	auto back_item = [&] { return menu_item{ "Back", "Back to the previous page.", {}, {}, [&] { menu.pop(); } }; };
@@ -2212,6 +2349,17 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Show FPS", "Shows the frame rate in the top right corner.",
 			[&] { return on_off(cfg.show_fps); },
 			[&](int) { cfg.show_fps = !cfg.show_fps; cfg_dirty = true; if (!cfg.show_fps) menu.set_fps(""); } });
+		p.items.push_back({ "Window size",
+			"Sizes the window to a whole multiple of the arcade's 384 lines (1x: 512 x 384 for the 4:3 picture, wider for a wider shape), each arcade line that many of your screen's: Render scale 1x with Window size 1x shows the arcade's 384 lines one to one, Window size 2x with Render scale 1x doubles each of them. Only the sizes your screen holds; for playing in a window (in fullscreen it waits for the window). Resizing the window by hand sets it back to Free. The window's size and place are remembered either way.",
+			[&] {
+				if (cfg.window_scale <= 0) return std::string("Free");
+				int w, h;
+				window_target(cfg.window_scale, w, h);
+				std::string v = std::to_string(cfg.window_scale) + "x (" + std::to_string(w) + " x " + std::to_string(h) + ")";
+				if (is_fullscreen()) v += " in a window";
+				return v;
+			},
+			[&](int d) { set_window_scale(wrap(cfg.window_scale + d, window_scale_most() + 1)); } });
 		p.items.push_back({ "Fullscreen", "Play fullscreen or in a window. (F11, F or Alt+Enter)",
 			[&] { return on_off(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN); },
 			[&](int) { set_fullscreen(!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN)); } });
@@ -3422,10 +3570,35 @@ int main(int argc, char **argv)
 				else if (t.what == 'p' && on && !test_vjoy) attach_vjoy();
 				if (on) fprintf(stderr, "test: pass %lld: the virtual stick: %c%d\n", (long long)pass, t.what, t.n);
 			}
+		if (window_rescale) { window_rescale = false; apply_window_scale(); menu.refresh(); }   // (the last pass's events asked)
+		if (window_moved) { window_moved = false; remember_window(); }
 		SDL_Event e;
 		const bool menu_was_open = menu.is_open();
 		while (SDL_PollEvent(&e)) {
 			if (e.type == SDL_EVENT_QUIT) running = false;
+			if (e.type == SDL_EVENT_WINDOW_MOVED || e.type == SDL_EVENT_WINDOW_RESIZED || e.type == SDL_EVENT_WINDOW_MAXIMIZED ||
+				e.type == SDL_EVENT_WINDOW_RESTORED)
+				window_moved = true;
+			// (fullscreen by the system's own way, a Mac's green button: remembered as the menu's is)
+			if ((e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) &&
+				cfg.fullscreen != (e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN)) {
+				cfg.fullscreen = e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN;
+				cfg_dirty = true;
+			}
+			if (e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN && cfg.window_scale > 0) window_rescale = true;
+			// Window size: the window resized by hand (a corner dragged, maximised): Free again
+			if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && cfg.window_scale > 0 && !window_rescale && !is_fullscreen() &&
+				(e.window.data1 != win_expect_w || e.window.data2 != win_expect_h)) {
+				int pw = 0, ph = 0;
+				SDL_GetWindowSize(win, &pw, &ph);
+				if (pw == win_set_w && ph == win_set_h) window_rescale = true;   // (the same points: another density)
+				else {
+					fprintf(stderr, "window size: resized to %d x %d pixels: Free\n", e.window.data1, e.window.data2);
+					cfg.window_scale = 0;
+					cfg_dirty = true;
+					menu.refresh();
+				}
+			}
 			if (e.type == SDL_EVENT_JOYSTICK_ADDED) give_unknown_sticks();   // (a gamepad's added event follows for one given a layout)
 			else if (e.type == SDL_EVENT_RENDER_TARGETS_RESET || e.type == SDL_EVENT_RENDER_DEVICE_RESET) {
 				// Direct3D lost what render targets held (a device reset: every texture). The GPU's
@@ -3846,6 +4019,19 @@ int main(int argc, char **argv)
 		draw_filter();
 		menu.render(true);
 		static const int shot_at = getenv("VF_SHOT_AT") ? atoi(getenv("VF_SHOT_AT")) : -1;   // testing: the window at that pass too
+		if (static const char *rs = getenv("VF_TEST_RESIZE"); rs) {   // (tests: the window resized as by hand, "WxH@pass", "WxH+X+Y@pass")
+			int rw = 0, rh = 0, rx = 0, ry = 0;
+			long long at = 0;
+			if (sscanf(rs, "%dx%d+%d+%d@%lld", &rw, &rh, &rx, &ry, &at) == 5 && frames_run == at) { SDL_SetWindowSize(win, rw, rh); SDL_SetWindowPosition(win, rx, ry); SDL_SyncWindow(win); }
+			else if (sscanf(rs, "%dx%d@%lld", &rw, &rh, &at) == 3 && frames_run == at) { SDL_SetWindowSize(win, rw, rh); SDL_SyncWindow(win); }
+		}
+		if (getenv("VF_TEST_WINDOW_LOG") && frames_run % 20 == 0) {   // (tests: the window's pixels and Window size)
+			int pw = 0, ph = 0, x = 0, y = 0;
+			SDL_GetWindowSizeInPixels(win, &pw, &ph);
+			SDL_GetWindowPosition(win, &x, &y);
+			fprintf(stderr, "test: pass %lld: the window %d x %d pixels at %d, %d, window_scale %d, the picture %.4f wide\n",
+			        (long long)frames_run, pw, ph, x, y, cfg.window_scale, m.aspect());
+		}
 		if ((quit_after >= 0 && frames_run == quit_after) || (shot_at >= 0 && frames_run == shot_at)) {
 			int lw, lh;
 			SDL_RendererLogicalPresentation mode;
@@ -3989,6 +4175,7 @@ int main(int argc, char **argv)
 		m.set_ranking_names(own_rank_names);
 		g_match_board = false;
 	}
+	remember_window();
 	if (quit_after >= 0 && !getenv("VF_SAVE")) { SDL_Quit(); return 0; }   // test runs leave the saves and settings alone (VF_SAVE: they save, as a player's)
 	keep_arcade_coins();
 	saver.finish();   // (an autosave still being written, done before the last save: the same files)
