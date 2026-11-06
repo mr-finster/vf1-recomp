@@ -2622,7 +2622,7 @@ void model1::random_fighter_heads()
 			// (Akira's spot: the colours of the record this player plays, not of the one its side's table shows there.
 			// A random player alone on player 2's side has player 1's record (fd4f99) and keeps it when a challenger
 			// comes: the challenger's cursor on Akira showed it, in the random fighter's colours, and the random
-			// player's own portrait player 2's, Akira's as he is (reno, 29 Oct). A Normal player's: Akira's own)
+			// player's own portrait player 2's, Akira's as he is (29 Oct). A Normal player's: Akira's own)
 			if (shown == 0xfd4f99 || shown == 0xfd3f6f) {
 				const uint32_t mine = akira_record_of(pl);
 				hue = mine && m_random_names.count(mine) ? m_random_hue.find(mine) : m_random_hue.end();
