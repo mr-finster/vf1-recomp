@@ -61,6 +61,58 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
 - `hide_free_play_text` kept the bytes it replaced in a static: a second board kept its notices.
 - `-ffp-contract=off` on every platform (the V60's and the TGP's floating point is game state).
 
+## Rooms and watching (VF3's)
+
+The Online screen is VF3's room browser: the lobby's listed rooms, VF1's (game `vf1`), a row each (its name, host and
+flag, Open or the match on with its score, how many watch), open ones first and nearest first, then the matches; All /
+Open / Playing; Quick match, Create room and Enter code its buttons, By address and Settings under More. Create room: a
+name and Listed in Rooms (off by default: the code only, as ever); every match in it may be watched by anyone with the
+code, and the room stays for the next in line. Quick match games are listed too, to watch only (both players, a QUICK
+MATCH label, no code to join), when the host's game is a new build (an older one sends nothing: never listed) and both
+players have More > Settings > Show my Quick Match games in Rooms On (the default; Off sends `qm_listed:false` with the
+search); either way one can be watched by its code, and the browser and Quick match's searching screen say "Quick Match
+games can be watched by anyone." 400 watch a match at most; one more is told "Too many watching right now". The
+lobby down: one plain line each (Enter code, Quick match, the browser, a watcher after 20 s), the players' match as it
+was. The host sends five times a second on a WebSocket to the match's Watch, and each watcher gets the frames on a
+WebSocket of its own (`http::Socket`; the HTTPS feed, stream and pieces as the fallbacks); past the lobby's monthly
+ceiling the host's sending is answered `off` (it stops, the match goes on) and a new watcher is told the lobby is busy. The
+host sends at the pace the lobby says (`every`, 200 ms to 30 s: slow while nobody watches, woken by the first
+watcher); a room waits for its player on a WebSocket of its own (`/v1/room/ws`, `/v1/wait` as before if it's refused).
+The lobby's off switches (`SWITCH_ROOMS`, `SWITCH_LISTING`, `SWITCH_WATCH`, `SWITCH_WEBSOCKETS`) and an older lobby
+are taken as they come: `features` in `/v1/online` says what's on (none: neither rooms nor watching), the browser
+then says "Rooms aren't available right now", a watcher "Watching isn't available right now"; room codes and Quick
+match work as ever. Every line these screens show is in src/host/online_text.h (whole sentences, `{name}` places: `tr::fill`), for
+the translations. The site's Online page opens the game with `vf1recomp://vf1/join/CODE`
+and `.../watch/CODE` (src/host/links.cpp: that form only; a Mac's Info.plist, else this user's registry or .desktop
+file, written at start). How watching works, the lobby's side and the numbers: VF3's docs/netplay.md and
+review/spectate/spectate-design.md; `src/net/watch.*` is VF3's byte for byte.
+
+What's VF1's own:
+
+- **The fighters.** A guest's fighter (Random, a seed's, a secret character) is in its hello, not the host's blob, and a
+  watcher has no hello. So the host sends the lobby the session's blob with the guest's fighter after it
+  (`vf1net::watch_blob`: the blob, the fighter, its length, "VF1W"); a watcher's adapter (`watching`) takes both from
+  it and makes the same fighters from the host's seed as the players' boards. The session's blob and handshake are as
+  before: `NET_VERSION` stays v1.5.0 and old and new builds play each other as ever. Without the guest's fighter a
+  watcher of a match with one goes out of step at its first check (tried: `vf1net --p2 X3`, frame 94).
+- **A late watcher runs the match from its start**, unseen (here ~3,300 frames in a few seconds, as fast as the machine
+  allows), as in every game now: no watcher's state is ever handed to another (one could be forged to the players'
+  hash). A VF1 state couldn't be anyway: it holds the recompiled code's stack, return addresses of this process's own.
+- **Sound.** The match's sound board starts with the watched match's start, so the boot's set-up bytes reach it
+  (`Adapter::mute` lets the first frame's through); the frames caught up unseen are silent, at the start and after a
+  long spell cut off alike (`Spectator::on_catch_up`); from the first picture on, every frame's bytes as a player's.
+- **Old builds.** An old build sends no `watchable`: its rooms are never listed and its matches can't be watched. A new
+  host with an old guest is watchable (the host uploads); the guest's fighter comes from its hello, as ever.
+
+Tests: `watchsim` (no ROM; 0, 1 and 50 watchers: the players' every count the same, every watcher frame for frame;
+also under ASan/UBSan, and `--lobby http://127.0.0.1:8787` through VF3's lobby, `node tools/lobby/test/serve.mjs
+src/index.js 8787` in vf3-recomp); `vf1net --watchers 2 [--watch-late F] [--p1 R --p2 X3]` (the ROM: each watcher's
+fighters the players', its board the straight run's at every checkpoint, a late one's checks of every one of the
+players' hashes from the start, the players' figures the same as without);
+`menutest` (no ROM: every Online page drawn offscreen, `MENUTEST_RENDERER=gpu` for SDL's GPU renderer, the links'
+parser, the watch blob); the game: `VF1_WATCH_CODE=XXXXXX` watches at pass 60, `VF1_HOST_PUBLIC=1` lists
+`VF1_HOST_ROOM`'s room.
+
 ## Where it stands
 
 | Part | State |
@@ -69,6 +121,7 @@ rollback, Auto input delay, keeping in time, the handshake, the lobby, privacy a
 | The adapter, two boards | `vf1net`: in step over 12,000 frames; 90 ms with 5% lost; delay 0; 120 ms with jitter 30; the score the same on all three boards |
 | The game online | Two copies through a stand-in lobby: a room code's match in step |
 | `src/net` and its tests | VF3's: `nettest` 22, `delaytest`, `netfuzz` 2,000 runs, `roomtest` |
+| Watching | `watchsim` 0/1/50 watchers identical for the players; `vf1net --watchers 2` with `R`/`R` and `S1234`/`X3`: both watchers' boards the straight run's at all 19 checkpoints, 120 hashes matched, the players' rollbacks and waits unchanged; three copies of the game through a local lobby (host, guest, a watcher 20 s late) |
 | Random fighters | `vf1soak --random-fighters`: 6,000 frames identical; `vf1net --p1 R --p2 S1234`, `--p1 X3 --p2 R` at 90 ms with 3% lost: in step, the score the same |
 | To do | A match against another machine (the Mac and the Deck), arm64 against x86-64 (`vf1soak --hashes`) |
 
@@ -77,10 +130,13 @@ build/bin/vf1soak --frames 20000            # the save state, every frame rolled
 build/bin/vf1soak --draw --frames 6000      # the same, the straight board drawing every frame
 build/bin/vf1net --frames 4000              # two boards, 40 ms each way
 build/bin/vf1net --p1 R --p2 X3             # with random fighters (R, S<seed>, X<secret>)
-build/bin/nettest && build/bin/delaytest && build/bin/netfuzz
+build/bin/vf1net --watchers 2 --p1 R --p2 X3   # and two boards watching (one from frame 1500)
+build/bin/nettest && build/bin/delaytest && build/bin/netfuzz && build/bin/watchsim && build/bin/wsfuzz
+SDL_VIDEO_DRIVER=offscreen build/bin/menutest shots   # the Online pages as pictures, no ROM
 ```
 
-Tests with the real game: `VF1_HOST_ROOM=1`, `VF1_JOIN_CODE=XXXXXX`, `VF1_RANDOM=1` (at pass 60, as the menu's),
+Tests with the real game: `VF1_HOST_ROOM=1`, `VF1_JOIN_CODE=XXXXXX`, `VF1_RANDOM=1`, `VF1_WATCH_CODE=XXXXXX` (at pass 60,
+as the menu's; `VF1_HOST_PUBLIC=1` lists the room),
 `VF_LOBBY=http://127.0.0.1:8787` (a lobby on this machine), `VF3_NET_LAG` (the shared library's: a worse network),
 `VF1_DUMP_BEGIN=file` (the state a match starts from), `VF_MATCH_SOUND=file` (what the match's sound board played).
 
