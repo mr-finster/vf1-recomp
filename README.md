@@ -394,7 +394,7 @@ then picks the GPU unless it's clearly slower than the CPU on that machine.
 | `src/host` | the SDL 3 host: window, input, pacing, the RmlUi menu |
 | `src/gpu` | the GPU renderer for the 3D: Metal (`gpu3d_metal.mm`), SDL_GPU (`gpu3d_sdlgpu.cpp`), its HLSL compute shaders (`gpu3d.hlsl`) and their compiled SPIR-V / DXIL (`gpu3d_shaders.h`) |
 | `tools/gpu/shaders.sh` | compiles `gpu3d.hlsl` into `gpu3d_shaders.h` with DXC |
-| `assets/` | `vf_map.txt` (function addresses), the app icon, the menu (`ui/`) and its font |
+| `assets/` | `vf_map.txt` (function addresses), the app icon, the menu (`ui/`) and its fonts |
 | `third_party/` | MAME code, Musashi, ymfm, SLJIT, the Z80 core, RmlUi, GLM, stb_image |
 | `tools/recomp` | the ahead-of-time recompiler (V60 to C++), for development |
 | `tools/port` | the script that ported MAME's TGP and rasterizer |
@@ -435,8 +435,8 @@ Built on MAME's work on the Model 1: the V60 core and disassembler (Farfetch'd, 
 rasterizer, the System 24 tile chip and the machine (Olivier Galibert), the MultiPCM (Miguel Angel Horna) and the
 sound board (R. Belmont), all BSD-3-Clause. Also Musashi (Karl Stenerud, MIT), ymfm (Aaron Giles, BSD-3-Clause),
 SLJIT (Zoltan Herczeg, BSD-2-Clause), the Z80 core (Nicolas Allemand, MIT), RmlUi (MIT), GLM (MIT), stb_image
-(Sean Barrett, public domain / MIT), SDL 3 (zlib), FreeType (FreeType License) and the Barlow Condensed font (SIL
-Open Font License). `tools/release/licenses.sh` gathers their notices for the downloads.
+(Sean Barrett, public domain / MIT), SDL 3 (zlib), FreeType (FreeType License), the Barlow Condensed and JetBrains Mono fonts and, for the menus'
+Korean, Japanese, Chinese and Cyrillic, Noto Sans (all SIL Open Font License). `tools/release/licenses.sh` gathers their notices for the downloads.
 
 Thanks to everyone who tested and reported: [svera](https://github.com/svera) (portable mode, the unused
 characters), [terryarcade](https://github.com/terryarcade), [chocolatelily-0716](https://github.com/chocolatelily-0716),
@@ -448,7 +448,8 @@ Virtua Fighter is SEGA's. This project is not affiliated with or endorsed by SEG
 ## Licence
 
 MIT for this project's own code: see [LICENSE](LICENSE). Code from MAME keeps its BSD-3-Clause licence and notices;
-the rest of `third_party/` keeps its own.
+the rest of `third_party/` keeps its own, and the fonts (Barlow Condensed, JetBrains Mono, Noto Sans:
+`assets/fonts/README.txt`) the SIL Open Font License.
 
 ## Support
 

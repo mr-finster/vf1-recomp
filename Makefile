@@ -25,7 +25,9 @@ endif
 CORE = src/core/v60_device.cpp src/core/mb86233.cpp
 # online play: netplay (src/net, VF3's), the game as a session's Game, the Online screens
 NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp src/net/watch.cpp
-ONLINE = src/host/online.cpp src/host/links.cpp src/host/vf1_netplay.cpp $(NET)
+# the menus' languages (src/host/i18n.cpp, text.cpp and lang/*.inc: docs/i18n-design.md, VF3's)
+I18N = src/host/i18n.cpp src/host/text.cpp
+ONLINE = src/host/online.cpp src/host/links.cpp src/host/vf1_netplay.cpp $(I18N) $(NET)
 SOUND = src/machine/m1audio.cpp src/machine/multipcm.cpp third_party/ymfm/ymfm_opn.cpp third_party/ymfm/ymfm_adpcm.cpp third_party/ymfm/ymfm_ssg.cpp
 MUSASHI_OBJ = $(OBJ)/musashi/m68kcpu.o $(OBJ)/musashi/m68kops.o $(OBJ)/musashi/m68kdasm.o $(OBJ)/musashi/softfloat.o
 MACHINE = src/machine/model1.cpp src/machine/model1_tgp.cpp src/machine/model1_tgp_lle.cpp src/machine/model1_video.cpp src/machine/model1_sky.cpp src/machine/model1_interp.cpp src/machine/model1_gpu.cpp src/machine/model1_edge_aa.cpp src/machine/model1io.cpp src/machine/model1_state.cpp
@@ -177,13 +179,20 @@ RML_SRC = $(wildcard third_party/rmlui/Source/Core/*.cpp third_party/rmlui/Sourc
 RML_CFLAGS = -DRMLUI_STATIC_LIB -DRMLUI_FONT_ENGINE_FREETYPE -DRMLUI_SDL_VERSION_MAJOR=3 -Ithird_party/rmlui/Include -Ithird_party/rmlui/Backends
 $(OBJ)/third_party/rmlui/%.o: CXXFLAGS += $(RML_CFLAGS) $(FT_CFLAGS) $(SDL_CFLAGS) -w
 $(OBJ)/src/host/stb_image_impl.o: CXXFLAGS += -w
-$(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o $(OBJ)/src/host/online.o $(OBJ)/tools/menutest.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
+$(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o $(OBJ)/src/host/online.o $(OBJ)/src/host/i18n.o $(OBJ)/tools/langtest.o $(OBJ)/tools/menutest.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
 $(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: $(OBJ)/version.h
 $(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: CXXFLAGS += -I$(OBJ)
 # menutest: the Online pages drawn offscreen to pictures (SDL_VIDEO_DRIVER=offscreen), no ROM (VF3's)
 $(BIN)/menutest: $(call objs,tools/menutest.cpp src/host/menu.cpp $(ONLINE) src/rt/rec_table_none.cpp $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE) $(RML_SRC)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) $(SDL_LIBS) $(FT_LIBS)
+
+# langtest: the strings' tables (src/host/lang): every ID in every language once, the same {places} as the English, each
+# language's letters in the menus' fonts, the settings' language codes; no ROM, no window (VF3's)
+$(BIN)/langtest: $(call objs,$(I18N) tools/langtest.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(SDL_LIBS) $(FT_LIBS)
+$(OBJ)/tools/langtest.o: CXXFLAGS += $(FT_CFLAGS)
 
 # The 3D on the GPU in the game (src/gpu, Display > 3D renderer): SDL_GPU everywhere (Direct3D 12, Vulkan or
 # Metal: gpu3d_sdlgpu.cpp, its shaders precompiled in gpu3d_shaders.h by tools/gpu/shaders.sh), on the device of

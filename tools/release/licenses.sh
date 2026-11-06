@@ -44,4 +44,7 @@ sec "FreeType (FreeType License)"
 echo "Portions of this software are copyright (c) The FreeType Project (www.freetype.org). All rights reserved."
 echo; cat $D/freetype-2.14.3/docs/FTL.TXT
 sec "Barlow Condensed font (SIL Open Font License 1.1)"; cat assets/fonts/OFL.txt
+sec "JetBrains Mono font (SIL Open Font License 1.1)"; cat assets/fonts/OFL-JetBrainsMono.txt
+sec "Noto Sans KR, JP, SC and TC fonts (SIL Open Font License 1.1)"; cat assets/fonts/OFL-NotoSansCJK.txt
+sec "Noto Sans font (SIL Open Font License 1.1)"; cat assets/fonts/OFL-NotoSans.txt
 } > build/release/LICENSES.txt
