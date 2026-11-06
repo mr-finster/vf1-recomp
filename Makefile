@@ -24,7 +24,7 @@ endif
 
 CORE = src/core/v60_device.cpp src/core/mb86233.cpp
 # online play: netplay (src/net, VF3's), the game as a session's Game, the Online screens
-NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp
+NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp src/net/watch.cpp
 ONLINE = src/host/online.cpp src/host/vf1_netplay.cpp $(NET)
 SOUND = src/machine/m1audio.cpp src/machine/multipcm.cpp third_party/ymfm/ymfm_opn.cpp third_party/ymfm/ymfm_adpcm.cpp third_party/ymfm/ymfm_ssg.cpp
 MUSASHI_OBJ = $(OBJ)/musashi/m68kcpu.o $(OBJ)/musashi/m68kops.o $(OBJ)/musashi/m68kdasm.o $(OBJ)/musashi/softfloat.o
@@ -132,6 +132,11 @@ $(BIN)/nettest: $(call objs,$(NET) tools/nettest.cpp)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
+# watchsim: watching a match, simulated (no ROM): the players the same with 0, 1 or 50 watchers, each watcher's game theirs
+$(BIN)/watchsim: $(call objs,$(NET) tools/watchsim.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
 # delaytest: Auto's input delay against simulated pings (full speed at any; raised and lowered as it should)
 $(BIN)/delaytest: $(call objs,$(NET) tools/delaytest.cpp)
 	@mkdir -p $(dir $@)
@@ -141,6 +146,11 @@ $(BIN)/delaytest: $(call objs,$(NET) tools/delaytest.cpp)
 $(BIN)/roomtest: $(call objs,$(NET) tools/roomtest.cpp)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+
+# wsfuzz: the WebSocket frame reader against anything a server could send, with AddressSanitizer and UBSan (VF3's)
+$(BIN)/wsfuzz: src/net/http.cpp tools/wsfuzz.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -std=c++20 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $^ -o $@ -lpthread
 
 # netfuzz: the session against a peer who sends anything, with AddressSanitizer and UBSan (its own objects)
 $(BIN)/netfuzz: $(NET) tools/netfuzz.cpp
