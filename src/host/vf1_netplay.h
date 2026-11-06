@@ -61,6 +61,14 @@ void set_players(model1 &board, const std::string fighters[2]);
 // fighter by its name ("SAJACWOLF", from the board's names; "SEED 1234" for a seed no name has here)
 std::string fighter_words(const std::string &extra, model1 &board);
 
+// Watching a match (src/net/watch.h): its start as the host sends it to the lobby. A watcher has no hello, so the
+// guest's fighter (the handshake's extra, not in the session's blob) goes after the blob: [the session's blob][the
+// guest's fighter][its length, a byte]["VF1W"]. The session's blob and handshake are as ever (old and new builds
+// play each other the same); only what goes to the lobby has it. watch_parts: the session's blob and both players'
+// fighters (fighter_extra's), false if it isn't one
+std::vector<uint8_t> watch_blob(const std::vector<uint8_t> &blob, const std::string &guest_fighter);
+bool watch_parts(const std::vector<uint8_t> &watch, std::vector<uint8_t> &blob, std::string fighters[2]);
+
 // The room at a save state's start for the coroutine's stack (its bytes, then the board's state): VF1's is a few
 // hundred bytes at a frame's end
 constexpr size_t STACK_ROOM = 16384;
@@ -141,6 +149,11 @@ public:
 	std::vector<uint8_t> host_blob();   // (start_blob with this side's fighter and a fresh seed)
 	void peer_extra(const std::string &extra) override { their_extra = extra; }
 	std::string fighters[2];   // (the match's, as begin set them: model1::set_random_player's settings)
+	// A watcher's (Online::watch): begin takes watch_blob's form, both fighters from it, as the players have them
+	bool watching = false;
+	// (a watcher catching up from the match's start, unseen: the frames' bytes for the sound board dropped, not played
+	// in a burst; the first frame's, the boot's set-up of the sound board, still go. Only what's heard, never the game)
+	bool mute = false;
 
 	// tests: the state's hash after each frame a multiple of this, the last time it ran (0: none kept)
 	uint32_t checkpoint_every = 0;

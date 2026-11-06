@@ -7,6 +7,8 @@
 #include "png.h"
 #include "menu.h"
 #include "online.h"
+#include "links.h"
+#include "online_text.h"
 #include "chime.h"
 #include "flags.h"
 #include "crt_colours.h"
@@ -612,6 +614,10 @@ struct settings
 		num("online_max_ping", online.max_ping, 0, 1000);
 		flag("online_chime", online.chime);
 		if (auto it = kv.find("online_fighter"); it != kv.end()) { std::string v = it->second; while (!v.empty() && isspace(uint8_t(v.back()))) v.pop_back(); online.fighter = v.substr(0, 16); }
+		if (auto it = kv.find("online_room_name"); it != kv.end()) online.room_name = online_menu::clean_room(it->second);
+		num("online_room_listed", online.room_who, 0, 2);
+		num("online_rooms_show", online.rooms_show, 0, 2);
+		flag("online_quick_listed", online.quick_listed);
 		num("picture_shape", aspect, 0, 4);
 		num("volume", volume, 0, 100);
 		num("antialiasing", aa, 0, 3);   // 1 off, 0 Low (the 3D's edges smoothed), 2 and 3 drawn larger
@@ -735,6 +741,8 @@ struct settings
 		if (!online.lobby.empty()) fprintf(f, "online_lobby = %s\n", online.lobby.c_str());
 		fprintf(f, "online_hide_ip = %d\nonline_max_ping = %d\nonline_chime = %d\n", int(online.hide_ip), online.max_ping, int(online.chime));
 		if (!online.fighter.empty()) fprintf(f, "online_fighter = %s\n", online.fighter.c_str());
+		if (!online.room_name.empty()) fprintf(f, "online_room_name = %s\n", online.room_name.c_str());
+		fprintf(f, "online_room_listed = %d\nonline_rooms_show = %d\nonline_quick_listed = %d\n", online.room_who, online.rooms_show, int(online.quick_listed));
 		for (int p = 0; p < 2; p++) ctl[p].save(f, p);
 		for (const std::string &m : pad_mappings) fprintf(f, "pad_mapping = %s\n", m.c_str());
 		const bool flushed = flush_to_disk(f);
@@ -1007,6 +1015,7 @@ int main(int argc, char **argv)
 	bool arg_host = false;
 	std::string arg_join;
 	int arg_port = 0;
+	std::string arg_link;   // (a link from the Online page on the web: vf1recomp://vf1/join/CODE, links.h)
 	for (int i = 1; i < argc; i++) {
 		std::string a = argv[i];
 		if (a == "--scale" && i + 1 < argc) arg_scale = atoi(argv[++i]);
@@ -1025,6 +1034,7 @@ int main(int argc, char **argv)
 		else if (a.rfind("--join=", 0) == 0) arg_join = a.substr(7);
 		else if (a == "--port" && i + 1 < argc) arg_port = std::clamp(atoi(argv[++i]), 1024, 65535);
 		else if (a.rfind("--port=", 0) == 0) arg_port = std::clamp(atoi(a.c_str() + 7), 1024, 65535);
+		else if (links::is_link(a)) { arg_link = a.substr(0, 64); break; }   // (nothing after a link read: on Windows that would be its own text, past a quote in it)
 		else if (a.rfind("--", 0) == 0) { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
 		else {
 			// a regions folder named on the command line: one that's there (a stray word, say a value
@@ -1065,6 +1075,9 @@ int main(int argc, char **argv)
 			SDL_free(pref);
 			while (!keep.empty() && keep.back() == '/') keep.pop_back();
 			while (dir.size() > 1 && (dir.back() == '/' || dir.back() == '\\') && dir[dir.size() - 2] != ':') dir.pop_back();   // (but a drive's root)
+			// a link with the game already running (Windows, Linux): handed to it, and this copy's done, before its
+			// log.txt is opened (the running copy's left as it is)
+			if (!arg_link.empty() && links::hand_over(dir, arg_link)) return 0;
 			// A player's build has no console (a Mac app, a Windows GUI program, a Steam shortcut):
 			// its messages go to log.txt in the data folder instead, for when something goes wrong.
 			// settings.ini's log = 0 (Game > Log file): no log.txt written, the program's messages thrown away; read
@@ -1096,6 +1109,11 @@ int main(int argc, char **argv)
 			if (!first_launch(dir, keep == dir ? std::string() : keep, roms_folder, game)) return getenv("VF_HIDDEN") ? 1 : 0;   // (a test run without the game: an error)
 		}
 	}
+	// a link with the game already running (Windows, Linux): handed to it, and this copy's done; else this one's the
+	// copy links go to, and this user's system told it opens them (not in tests)
+	if (!arg_link.empty() && links::hand_over(dir, arg_link)) { fprintf(stderr, "links: handed %s to the copy running\n", arg_link.c_str()); return 0; }
+	links::running(dir);
+	if (!getenv("VF_HIDDEN") && !getenv("VF_QUIT_AFTER")) { const std::string said = links::register_scheme(); if (!said.empty()) fprintf(stderr, "%s\n", said.c_str()); }
 	const std::string settings_path = dir + "/settings.ini";
 	settings cfg;
 	bool cfg_dirty = false;      // saved at exit only when the player changed something
@@ -3154,6 +3172,9 @@ int main(int argc, char **argv)
 			g_match_board = true;
 		}
 		if (!msound.board) msound.board = m.take_audio();
+		// (a watcher: the match's sound board started now, before its first frame, so the boot's set-up of it is heard
+		// (Adapter::mute lets the first frame's bytes through); the frames caught up unseen are silent)
+		if (online.watching()) match_sound_start();
 		m.set_ranking_names("");   // (the ranking's names are each player's own: none on the match's board, whose tiles they'd be drawn into)
 		online.adapter.native = !interp;
 		paused = false;
@@ -3171,6 +3192,8 @@ int main(int argc, char **argv)
 		cfg.online.seed_ok = [&](const std::string &n) { return m.random_fighter_names().count(n) > 0; };
 		return online_menu::page(online, cfg.online, menu, [&] { cfg_dirty = true; });
 	};
+	int online_at = 5;   // (the main page's Online row, as main_page last made it: where a match's end opens the Online page)
+	auto online_row = [&] { return online_at; };
 	auto main_page = [&] {
 		menu_page p{ "", "", {} };
 		if (online.playing() || g_match_board) {   // (the match goes on under the menu; or it's starting, on its board)
@@ -3189,6 +3212,7 @@ int main(int argc, char **argv)
 		p.items.push_back({ "Game", "Play style and reset.", {}, {}, [&] { menu.push(game_page()); } });
 		p.items.push_back({ "Arcade settings", "Difficulty, ring size, rounds, continues and the service menu. Changing them restarts the game.", {}, {},
 							[&] { menu.push(arcade_page()); } });
+		online_at = int(p.items.size());
 		p.items.push_back({ "Online", "Play someone over the network: a random opponent, or a friend with a room code.", {}, {}, [&] { menu.push(online_page()); } });
 		p.items.push_back({ "Controls", "Each player's controller, keys and buttons.", {}, {}, [&] { menu.push(controls_page()); } });
 		p.items.push_back({ "Cheats", "Secret characters, random fighters, Kage's mask and fight switches. Some restart the game.", {}, {},
@@ -3197,7 +3221,7 @@ int main(int argc, char **argv)
 		return p;
 	};
 	auto open_menu = [&] {
-		menu.set_title(online.playing() ? "ONLINE MATCH" : "PAUSED");
+		menu.set_title(online.watching() ? tr::WATCHING : online.playing() ? "ONLINE MATCH" : "PAUSED");
 		if (menu.ready() && !menu.is_open()) menu.open(main_page());
 	};
 	// The game's clock: game frames due since it started, paced by the wall clock at the arcade's
@@ -3393,7 +3417,7 @@ int main(int argc, char **argv)
 		if (reopen && menu.ready()) {
 			if (menu.is_open()) menu.close();
 			menu.open(main_page());
-			menu.select_row(5);   // (Online)
+			menu.select_row(online_row());
 			menu.push(online_page());
 		}
 		if (audio) { if (menu.is_open()) SDL_PauseAudioStreamDevice(audio); else SDL_ResumeAudioStreamDevice(audio); }
@@ -3425,34 +3449,35 @@ int main(int argc, char **argv)
 		online.poll(double(SDL_GetTicksNS()) / 1e6);
 		Online::Notice n;
 		while (online.next_notice(n)) {
-			if (n.kind == Online::Notice::joined) {
-				if (cfg.online.chime) chime::play(chime_stream, win, audio && !hidden ? float(cfg.volume) / 100.0f : 0.0f);
+			if (n.kind == Online::Notice::joined || n.kind == Online::Notice::watching) {
+				const bool watching = n.kind == Online::Notice::watching;
+				if (cfg.online.chime && !watching) chime::play(chime_stream, win, audio && !hidden ? float(cfg.volume) / 100.0f : 0.0f);
 				match_on = true;
-				match_sound_start();
-				{   // the players' names under the energy bars (the name the other side was sent; theirs as the HUD can show it)
-					std::string names[2];
-					names[online.local_player()] = online.identity.name;
-					names[online.local_player() ^ 1] = online.opponent();
-					hud_country[online.local_player()] = online.my_country();
-					hud_country[online.local_player() ^ 1] = online.peer_country();
-					hud_player[0] = names[0];
-					hud_player[1] = names[1];
-					hud_in_shown = -1;   // (set on the HUD below, for the players in the game)
+				if (!watching) match_sound_start();   // (a watcher's started with the match's start: on_begin)
+				// the players' names under the energy bars (the names the two sides were sent; a watched match's, as its
+				// host sent them; theirs as the HUD can show it)
+				for (int p = 0; p < 2; p++) {
+					hud_player[p] = online.player_name(p);
+					hud_country[p] = online.player_country(p);
 				}
+				hud_in_shown = -1;   // (set on the HUD below, for the players in the game)
 				assign_before.reset();   // (the board's arcade settings are the host's now: no restart for them)
 				if (menu.is_open()) { menu.close(); menu_closed_elsewhere = true; }
 				restart_clock();
 				// who's playing who, over the title screen for a moment (the host is player 1)
 				// (with each one's fighter under the name: Random, a secret character, a seed's)
-				const std::string me_ft = vf1net::fighter_words(online.identity.extra, m), them_ft = vf1net::fighter_words(online.opponent_extra(), m);
-				const std::string host = online.is_hosting() ? online.identity.name : online.opponent(), guest = online.is_hosting() ? online.opponent() : online.identity.name;
+				const std::string ft1 = vf1net::fighter_words(online.player_extra(0), m), ft2 = vf1net::fighter_words(online.player_extra(1), m);
+				const std::string host = online.player_name(0), guest = online.player_name(1);
 				const int ms = online.ping();
-				menu.show_versus({ "PLAYER 1 \xC2\xB7 HOST", host, "PLAYER 2", guest,
-				                   std::string(online.via_relay() ? "Connected through the relay" : "Connected directly") + (ms > 0 ? " \xC2\xB7 " + std::to_string(ms) + " ms" : ""),
-				                   online.slow_local() ? "Through the relay: this Mac blocks your network. Turn on Local Network (System Settings) for a faster match"
-				                                       : "Both press Start", online.via_relay(),
-				                   online.is_hosting() ? online.my_country() : online.peer_country(), online.is_hosting() ? online.peer_country() : online.my_country(),
-				                   online.is_hosting() ? me_ft : them_ft, online.is_hosting() ? them_ft : me_ft });
+				if (watching)
+					menu.show_versus({ "PLAYER 1", host, "PLAYER 2", guest, tr::WATCHING_BEHIND, tr::WATCHING_HOW_TO_STOP, false,
+					                   online.player_country(0), online.player_country(1), ft1, ft2 });
+				else
+					menu.show_versus({ "PLAYER 1 \xC2\xB7 HOST", host, "PLAYER 2", guest,
+					                   std::string(online.via_relay() ? "Connected through the relay" : "Connected directly") + (ms > 0 ? " \xC2\xB7 " + std::to_string(ms) + " ms" : ""),
+					                   online.slow_local() ? "Through the relay: this Mac blocks your network. Turn on Local Network (System Settings) for a faster match"
+					                                       : "Both press Start", online.via_relay(),
+					                   online.player_country(0), online.player_country(1), ft1, ft2 });
 			}
 			fprintf(stderr, "online: %s\n", Online::log_masked(n.text).c_str());
 		}
@@ -3504,11 +3529,11 @@ int main(int argc, char **argv)
 		static game_menu::net_cells cells;
 		static uint64_t cells_at = 0;
 		static bool had_cells = false;
-		if (!online.playing() || !cfg.online.show_connection || menu.versus_showing()) {
+		if (!online.playing() || (!cfg.online.show_connection && !online.watching()) || menu.versus_showing()) {
 			had_cells = false;
 			menu.set_net(menu.versus_showing() ? std::string() : line, 0);
 		} else if (!had_cells || SDL_GetTicks() - cells_at >= 250 || online.interrupted() != cells.interrupted) {
-			had_cells = online.connection(cells, cfg.online.show_connection == 2);
+			had_cells = online.connection(cells, cfg.online.show_connection == 2 && !online.watching());
 			cells_at = SDL_GetTicks();
 			if (had_cells) menu.set_net(cells);
 			else menu.set_net(std::string(), 0);
@@ -3528,8 +3553,12 @@ int main(int argc, char **argv)
 			if (const std::string now = online.status(); now != said) { said = now; menu.refresh(); }
 		}
 		else if (menu.is_open() && online.phase() == Online::Phase::off && menu.top_name() == "Online" && !menu.capturing()) {
-			static int said = -2;   // (the Online screen: how many play at random, as the lobby says)
-			if (const int nn = online.players_online(cfg.online); nn != said) { said = nn; menu.refresh(); }
+			// (the Online screen, the room browser: the rooms asked for every 10 s and the page made again as they come,
+			// the room selected kept; how many play at random, as the lobby says)
+			static int said = -2, seen = -1;
+			online.rooms_list(cfg.online);
+			if (online.rooms_version() != seen) { seen = online.rooms_version(); menu.replace(online_page(), -1); }
+			else if (const int nn = online.players_online(cfg.online); nn != said) { said = nn; menu.refresh(); }
 		}
 		online_was = online.phase();
 		if (!menu.capturing()) online_code_was = online.room_code();
@@ -3554,15 +3583,38 @@ int main(int argc, char **argv)
 			if (menu.ready()) {
 				if (menu.is_open()) menu.close();
 				menu.open(main_page());
-				menu.select_row(5);   // (Online)
+				menu.select_row(online_row());
 				menu.push(online_page());
 			}
 		}
 		static const char *test_host_room = getenv("VF1_HOST_ROOM"), *test_join_code = getenv("VF1_JOIN_CODE"), *test_random = getenv("VF1_RANDOM");
-		if ((test_host_room || test_join_code || test_random) && frames_run == 60) {
+		// a link (the command line, a Mac's open-URL event, or handed over by another copy): once the game's up, into
+		// the room or the match, as Online > Enter code (only the link's own form: links::parse)
+		if (frames_run % 60 == 0) { std::string handed; if (links::take(dir, handed)) arg_link = handed; }
+		if (!arg_link.empty() && frames_run >= 60 && menu.ready()) {
+			links::Link l;
+			const std::string url = arg_link;
+			arg_link.clear();
+			if (!links::parse(url, l)) fprintf(stderr, "links: not a link this game takes: %s\n", Online::log_masked(url.substr(0, 40)).c_str());
+			else if (online.playing() && !online.watching()) menu.toast(tr::LINK_FINISH_FIRST);
+			else {
+				online_page();   // (the identity, as opening the Online page sets it)
+				std::string err;
+				const bool ok = l.action == "watch" ? online.watch(cfg.online, l.code, err) : online.enter_code(cfg.online, l.code, err);
+				fprintf(stderr, "links: %s %s%s\n", l.action.c_str(), l.code.c_str(), ok ? "" : (": " + err).c_str());
+				if (menu.is_open()) menu.close();
+				menu.open(main_page());
+				menu.select_row(online_row());
+				menu.push(online_page());
+				SDL_RaiseWindow(win);
+			}
+		}
+		static const char *test_watch = getenv("VF1_WATCH_CODE");
+		if ((test_host_room || test_join_code || test_random || test_watch) && frames_run == 60) {
 			online_page();   // (the identity, as opening the Online page sets it)
 			std::string err;
-			if (!(test_random ? online.find_random(cfg.online, err)
+			if (getenv("VF1_HOST_PUBLIC")) cfg.online.room_who = 2;
+			if (!(test_watch ? online.watch(cfg.online, test_watch, err) : test_random ? online.find_random(cfg.online, err)
 			      : test_join_code ? online.join_room(cfg.online, test_join_code, err) : online.host_room(cfg.online, err)))
 				fprintf(stderr, "online: (test) %s\n", err.c_str());
 		}
@@ -3638,6 +3690,8 @@ int main(int argc, char **argv)
 		const bool menu_was_open = menu.is_open();
 		while (SDL_PollEvent(&e)) {
 			if (e.type == SDL_EVENT_QUIT) running = false;
+			// (a Mac's open-URL event, as SDL gives it: a link from the web, the game running or just started by it)
+			if (e.type == SDL_EVENT_DROP_FILE && e.drop.data && links::is_link(e.drop.data)) arg_link = std::string(e.drop.data).substr(0, 64);
 			if (e.type == SDL_EVENT_WINDOW_MOVED || e.type == SDL_EVENT_WINDOW_RESIZED || e.type == SDL_EVENT_WINDOW_MAXIMIZED ||
 				e.type == SDL_EVENT_WINDOW_RESTORED)
 				window_moved = true;
@@ -4229,6 +4283,7 @@ int main(int argc, char **argv)
 	msound.stop();
 	online.stop();   // (closed in a match: the other side is told at once, not after a silence)
 	Online::flush(1500);   // (and the lobby told: a room closed, a search left)
+	links::stopped(dir);
 	if (chime_stream) SDL_DestroyAudioStream(chime_stream);
 	if (g_match_board) {   // (this player's own backup, not the host's, saved)
 		m.use_io_standin(false);

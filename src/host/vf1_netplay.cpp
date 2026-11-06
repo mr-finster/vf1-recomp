@@ -143,6 +143,36 @@ void set_players(model1 &b, const std::string fighters[2])
 		else b.set_random_player(p, fighters[p]);
 }
 
+namespace {
+constexpr uint32_t WATCH_MAGIC = 0x57314656;   // "VF1W"
+}
+
+std::vector<uint8_t> watch_blob(const std::vector<uint8_t> &blob, const std::string &guest)
+{
+	const std::string g = guest.substr(0, vfnet::MAX_EXTRA);
+	std::vector<uint8_t> out = blob;
+	out.insert(out.end(), g.begin(), g.end());
+	out.push_back(uint8_t(g.size()));
+	for (int k = 0; k < 4; k++) out.push_back(uint8_t(WATCH_MAGIC >> (8 * k)));
+	return out;
+}
+
+bool watch_parts(const std::vector<uint8_t> &w, std::vector<uint8_t> &blob, std::string fighters[2])
+{
+	constexpr size_t FIXED = 4 + BACKUP_SIZE + 2 * N_ASSIGN + 4 + 1;   // (start_blob's, before the host's fighter)
+	uint32_t magic = 0;
+	if (w.size() < FIXED + 5) return false;
+	memcpy(&magic, w.data() + w.size() - 4, 4);
+	const size_t glen = w[w.size() - 5];
+	if (magic != WATCH_MAGIC || glen > vfnet::MAX_EXTRA || w.size() < FIXED + 5 + glen) return false;
+	const size_t n = w.size() - 5 - glen;   // (the session's blob)
+	if (n != FIXED + w[FIXED - 1]) return false;
+	blob.assign(w.begin(), w.begin() + ptrdiff_t(n));
+	fighters[0].assign(reinterpret_cast<const char *>(w.data()) + FIXED, w[FIXED - 1]);
+	fighters[1].assign(reinterpret_cast<const char *>(w.data()) + n, glen);
+	return true;
+}
+
 std::vector<uint8_t> Adapter::host_blob()
 {
 	uint32_t seed = uint32_t(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) * 2654435761u) ^ 0x9e3779b9u;
@@ -165,8 +195,13 @@ void Adapter::take_sound(std::vector<uint8_t> &out)
 	while (!sound_sent.empty() && sound_sent.begin()->first + 64 < frame) sound_sent.erase(sound_sent.begin());
 }
 
-bool Adapter::begin(const std::vector<uint8_t> &blob)
+bool Adapter::begin(const std::vector<uint8_t> &given)
 {
+	// (a watcher's: the session's blob, and the guest's fighter after it, as the host sent it to the lobby)
+	std::vector<uint8_t> watched;
+	std::string wx[2];
+	if (watching && !watch_parts(given, watched, wx)) return false;
+	const std::vector<uint8_t> &blob = watching ? watched : given;
 	uint32_t magic = 0;
 	constexpr size_t FIXED = 4 + BACKUP_SIZE + 2 * N_ASSIGN + 4 + 1;
 	if (blob.size() < FIXED || blob.size() != FIXED + blob[FIXED - 1] || board.nvram().size() != BACKUP_SIZE) return false;
@@ -176,7 +211,7 @@ bool Adapter::begin(const std::vector<uint8_t> &blob)
 	memcpy(&seed, blob.data() + FIXED - 5, 4);
 	// each player's fighter: the host's (player 1's) in its blob, the guest's in its hello
 	const std::string host_x(reinterpret_cast<const char *>(blob.data()) + FIXED, blob[FIXED - 1]);
-	if (!fighter_setting(host_x, board, fighters[0]) || !fighter_setting(hosting ? their_extra : own_extra, board, fighters[1])) return false;
+	if (!fighter_setting(host_x, board, fighters[0]) || !fighter_setting(watching ? wx[1] : hosting ? their_extra : own_extra, board, fighters[1])) return false;
 	const bool random = !fighters[0].empty() || !fighters[1].empty();
 	// (a seed's fighter: every seed's name made now, before the boot, as a named fighter's own side does at the
 	// start (fighter_extra), so the VS screen names it, fighter_words; the board as it was after)
@@ -313,7 +348,7 @@ void Adapter::advance(const uint16_t input[2], bool resim)
 	if (!sound_taken) {
 		std::vector<uint8_t> out;
 		take_sound(out);
-		if (!out.empty() && sound_out) sound_out(out);
+		if (!out.empty() && sound_out && (!mute || frame == 0)) sound_out(out);
 	}
 	frame++;
 	if (checkpoint_every && frame % checkpoint_every == 0) {
