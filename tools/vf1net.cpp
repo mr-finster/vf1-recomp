@@ -210,7 +210,8 @@ int main(int argc, char **argv)
 	struct Lobby { std::vector<uint8_t> start; std::vector<uint16_t> in; std::map<uint32_t, uint64_t> hashes; vw::Info info; uint64_t match = 0; } lobby;
 	struct Due { double at; std::function<void()> fn; };
 	std::deque<Due> dues;   // (the uploads and answers on their way, in the order sent: the same delay for all)
-	struct Watcher { std::unique_ptr<Board> b; std::unique_ptr<vw::Spectator> sp; long join = 0; bool on = false; };
+	struct Watcher { std::unique_ptr<Board> b; std::unique_ptr<vw::Spectator> sp; long join = 0; bool on = false; std::vector<double> ran_at; };   // (ran_at: when it ran each frame)
+	std::map<const vw::Spectator *, std::map<uint32_t, double>> hash_got;   // (when each of the players' hashes reached each watcher)
 	std::vector<Watcher> ws;
 	for (int i = 0; i < watchers; i++) {
 		Watcher w;
@@ -234,7 +235,7 @@ int main(int argc, char **argv)
 		r.frames.in.assign(lobby.in.begin() + ptrdiff_t(from) * 2, lobby.in.begin() + ptrdiff_t(from + n) * 2);
 		for (auto &[f, h] : lobby.hashes) if (f + 120 >= from && f <= from + n) r.frames.hashes.push_back({ f, h });   // (and those made late, as the lobby's)
 		r.frames.info = lobby.info;
-		return [&sp, r](double at) { sp.reply(r, at); };
+		return [&sp, r, &hash_got](double at) { if (sp.reply(r, at)) for (auto &[f, h] : r.frames.hashes) hash_got[&sp].emplace(f, at); };
 	};
 	auto watchers_pass = [&](double t) {   // (the uploads and answers due, the watchers asking and running theirs)
 		while (!dues.empty() && dues.front().at <= t) { auto fn = dues.front().fn; dues.pop_front(); fn(); }
@@ -250,6 +251,7 @@ int main(int argc, char **argv)
 				} });
 			}
 			w.sp->run(t);
+			while (w.ran_at.size() < w.sp->frame()) w.ran_at.push_back(t);
 		}
 	};
 	Timing ta, tb;
@@ -401,14 +403,20 @@ int main(int argc, char **argv)
 			}
 			const bool fighters = w.b->adapter->fighters[0] == C.adapter->fighters[0] && w.b->adapter->fighters[1] == C.adapter->fighters[1];
 			const bool whole = w.sp->frame() + 60 >= n;
-			// (one come late ran the match from its start: every one of the players' hashes in it checked, none skipped)
+			// (one come late ran the match from its start: every one of the players' hashes in it checked, none skipped; and
+			// every watcher, at the live edge, every one that reached it before it ran the hash's frame: one made a few
+			// frames after its frame and come just after the watcher ran that frame can't be checked)
 			uint32_t there = 0;
-			for (auto &[f, h] : lobby.hashes) there += f + vw::HASH_PARTS < w.sp->frame();
-			const bool all = !w.join || w.sp->hashes_checked >= there;
+			const std::map<uint32_t, double> &got = hash_got[w.sp.get()];
+			for (auto &[f, h] : lobby.hashes) {
+				const auto at = got.find(f);
+				there += f + vw::HASH_PARTS < w.sp->frame() && at != got.end() && f < w.ran_at.size() && at->second <= w.ran_at[f];
+			}
+			const bool all = w.sp->hashes_checked >= there;
 			printf("watcher %zu (from frame %ld): fighters %s/%s%s, ran %u frames (%llu unseen, catching up), the straight run's board at %u checkpoints, %u of the players' hashes matched%s%s\n",
 			       i + 1, w.join, w.b->adapter->fighters[0].empty() ? "-" : w.b->adapter->fighters[0].c_str(), w.b->adapter->fighters[1].empty() ? "-" : w.b->adapter->fighters[1].c_str(),
 			       fighters ? " (the players')" : " (NOT the players')", w.sp->frame(), (unsigned long long)w.sp->frames_unseen, same, w.sp->hashes_checked,
-			       w.join ? (" (all " + std::to_string(there) + " there: from the match's start)").c_str() : "", whole ? "" : " (NOT to the end)");
+			       w.join ? (" (all " + std::to_string(there) + " that reached it before it ran their frames: from the match's start)").c_str() : "", whole ? "" : " (NOT to the end)");
 			if (!fighters || !whole || !same || !w.sp->hashes_checked || !all || w.sp->state() == vw::Spectator::State::out_of_step) failed = true;
 		}
 		if (!ws.empty()) printf("the host's uploads: %llu, %llu bytes (the start %zu)\n", (unsigned long long)feed.uploads, (unsigned long long)feed.bytes, lobby.start.size());
