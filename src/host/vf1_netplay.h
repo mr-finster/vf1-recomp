@@ -11,6 +11,7 @@
 #include "../machine/model1.h"
 #include "../net/session.h"
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <string>
@@ -113,13 +114,60 @@ private:
 	bool versus = false;   // (the match on now: both playing at every round so far)
 };
 
+// The match's sound thread's queue of a watcher's frames caught up unseen (Adapter::sound_unheard), for its sound
+// board to run through unheard, in time, alongside the catch-up, as fast as it can (so the music a cue started is
+// where the players' is), and the bytes sent heard while some wait (they go with the next). Bounded, as the thread can
+// fall behind a long catch-up (a watcher come in an hour into a session of rematches: 200,000 frames): past
+// UNHEARD_TIMED frames waiting, the oldest are let go (their notes, sounds long over; the rest, a control's last value
+// and the like, go with the next), but for those round the music's last cue (MUSIC_CUE): the MUSIC_CUE_BEFORE before
+// it (the scene's set-up, sent about 120 frames before a stage's song: without it, VF2's stage was silent; no more
+// than UNHEARD_TIMED, the most kept as the cue comes) and the MUSIC_CUE_FRAMES from it. Bytes sent in a burst, out of
+// time, instead lost VF2's song (its sound program takes its time over a song's start and its set-up), VF1's taken
+// the same way. So the board's at most 420 frames' work behind when the picture's up, a fifth of a second's (VF1's
+// sound board takes about 0.4 ms a frame), the heard sound after it; the music then from its song's start, not where
+// the players are in it
+constexpr size_t UNHEARD_TIMED = 180, MUSIC_CUE_BEFORE = 180, MUSIC_CUE_FRAMES = 60;
+constexpr uint8_t MUSIC_CUE[2] = { 0xae, 0x10 };   // (AE 10 nn: the song, from the bytes a match sends: one at each scene, the stage's as its fight starts)
+class UnheardQueue
+{
+public:
+	struct Piece
+	{
+		enum Kind : uint8_t { frame, heard };   // (a frame's bytes, in its time; heard ones, with the next)
+		Kind kind = frame;
+		std::vector<uint8_t> bytes;
+		uint64_t n = 0;                // (a frame's: which, from the first)
+		uint8_t st0 = 0;               // (the running status its bytes start with)
+		std::vector<uint8_t> carry;    // (what's kept of frames let go just before it, to send first: UnheardQueue::carry)
+	};
+	void frame(const std::vector<uint8_t> &bytes);   // (a frame unheard: its bytes, or none)
+	void heard(const std::vector<uint8_t> &bytes);
+	bool next(Piece &p);                             // (the oldest, taken off)
+	bool empty() const { return q.empty(); }
+	size_t frames() const { return timed; }          // (the frames waiting)
+	void clear();
+	size_t most_timed = UNHEARD_TIMED, before_cue = MUSIC_CUE_BEFORE, cue_timed = MUSIC_CUE_FRAMES;   // (tests may change them)
+	uint64_t dropped = 0;                                                                         // (frames let go)
+private:
+	std::deque<Piece> q;
+	size_t timed = 0;
+	uint64_t frames_in = 0, cue = UINT64_MAX;   // (the frames put in; the last cue's frame)
+	uint8_t st = 0, d1 = 0;                     // (the MIDI read so far, for the cues)
+	int need = 0, got = 0;
+	bool strip = false;                // (frames let go just now: the next bytes from a status byte)
+	std::vector<uint8_t> carry_next;   // (the carry for the next piece put in)
+	void look(const std::vector<uint8_t> &bytes, bool is_frame);
+	void strip_front(size_t i);
+	static void carry(std::vector<uint8_t> &c, const std::vector<uint8_t> &bytes, uint8_t st);
+};
 // The data bytes after a MIDI status byte (none for one without, or for a byte that isn't a status byte)
 inline int midi_data_bytes(uint8_t st) { const int k = st >> 4; return k == 0xc || k == 0xd ? 1 : k >= 0x8 && k <= 0xe ? 2 : 0; }
-// A frame of the match's sound board unheard (a watcher's caught up unseen: Adapter::sound_unheard), its output
-// thrown away, as the match's sound thread runs one: its 424 scanlines, the bytes from the front of bytes a whole MIDI
-// message at a time, a byte every 8 (those sent taken off). status and owed: the running status and the data bytes
+// A piece of the queue run through the match's sound board unheard, its output thrown away, as the match's sound
+// thread sends bytes: its bytes put after those the thread has still to send (bytes), then those sent a whole MIDI
+// message at a time, a byte every 8 scanlines (those sent taken off): a frame's 424 scanlines, heard bytes none (they
+// go with the next); a piece's carry before its bytes. status and owed: the running status and the data bytes
 // still to come of the message sent last, as the thread keeps them
-void run_unheard(m1audio &board, std::vector<uint8_t> &bytes, uint8_t &status, int &owed);
+void run_unheard(m1audio &board, const UnheardQueue::Piece &piece, std::vector<uint8_t> &bytes, uint8_t &status, int &owed);
 
 class Adapter : public vfnet::Game
 {
