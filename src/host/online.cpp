@@ -872,7 +872,7 @@ bool Online::watch_start(const vfnet::watch::Start &st, tr::line &why)
 	adapter.watching = true;
 	watch_meta = st.meta;
 	score = {};
-	adapter.mute = true;   // (catching up unseen: its sound dropped)
+	adapter.mute = false;   // (heard from its first frame seen; muted as it catches up unseen: on_catch_up)
 	if (adapter.settle) adapter.settle();
 	if (!spec->start(st)) { why = tr::WATCH_START_BAD; return false; }
 	const std::string ft = watch_extra[0].empty() && watch_extra[1].empty() ? "" : "; fighters " + (watch_extra[0].empty() ? std::string("the select's") : watch_extra[0]) +
@@ -965,7 +965,7 @@ void Online::watch_poll()
 		Spectator::Config c;
 		stream_stop();
 		spec = std::make_unique<Spectator>(adapter, c);
-		spec->on_catch_up = [this](bool on) { adapter.mute = on || !watch_shown; };   // (catching up, unseen: no sound, then none late)
+		spec->on_catch_up = [this](bool on) { adapter.mute = on; };   // (catching up, unseen: its sound kept, run through unheard before the next frame heard)
 		watch_job.reset();
 		watch_shown = false;
 		watch_gone = false;
@@ -1979,9 +1979,8 @@ bool Online::step(uint16_t input)
 		bool shown = false;
 		const int ran = spec->tick(&shown, 10.0);
 		if (ran) score.frame(board);
-		if (shown && !watch_shown) {   // (caught up: its first picture, the sound from now on)
+		if (shown && !watch_shown) {   // (caught up: its first picture, its sound with it)
 			watch_shown = true;
-			adapter.mute = false;
 			notices.push_back({ Notice::watching, tr::line(tr::WATCHING_P1_VS_P2, { { "p1", player_name(0) }, { "p2", player_name(1) } }) });
 		}
 		return shown;

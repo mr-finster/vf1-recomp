@@ -113,6 +113,14 @@ private:
 	bool versus = false;   // (the match on now: both playing at every round so far)
 };
 
+// The data bytes after a MIDI status byte (none for one without, or for a byte that isn't a status byte)
+inline int midi_data_bytes(uint8_t st) { const int k = st >> 4; return k == 0xc || k == 0xd ? 1 : k >= 0x8 && k <= 0xe ? 2 : 0; }
+// A frame of the match's sound board unheard (a watcher's caught up unseen: Adapter::sound_unheard), its output
+// thrown away, as the match's sound thread runs one: its 424 scanlines, the bytes from the front of bytes a whole MIDI
+// message at a time, a byte every 8 (those sent taken off). status and owed: the running status and the data bytes
+// still to come of the message sent last, as the thread keeps them
+void run_unheard(m1audio &board, std::vector<uint8_t> &bytes, uint8_t &status, int &owed);
+
 class Adapter : public vfnet::Game
 {
 public:
@@ -151,9 +159,13 @@ public:
 	std::string fighters[2];   // (the match's, as begin set them: model1::set_random_player's settings)
 	// A watcher's (Online::watch): begin takes watch_blob's form, both fighters from it, as the players have them
 	bool watching = false;
-	// (a watcher catching up from the match's start, unseen: the frames' bytes for the sound board dropped, not played
-	// in a burst; the first frame's, the boot's set-up of the sound board, still go. Only what's heard, never the game)
+	// (a watcher catching up unseen: the frames' bytes for the sound board not played as they run, a burst, but given
+	// to sound_unheard, a frame's at a time (none too), for the sound board to run through unheard, in time
+	// (run_unheard): they're commands sent once (a stage's music is started by one); dropped, a watcher who came in
+	// mid-fight heard its effects and voices but no music till the next cue. The first frame's, the boot's set-up of
+	// the sound board, still go to sound_out. Only what's heard, never the game)
 	bool mute = false;
+	std::function<void(const std::vector<uint8_t> &)> sound_unheard;   // (none: they're dropped)
 
 	// tests: the state's hash after each frame a multiple of this, the last time it ran (0: none kept)
 	uint32_t checkpoint_every = 0;
@@ -168,6 +180,7 @@ private:
 	std::vector<uint8_t> pending, stack_buf, check_buf;
 	bool collecting = false, sound_taken = false;
 	std::map<uint32_t, std::vector<uint8_t>> sound_sent;
+	bool dropped = false;   // (bytes for the sound board muted with no sound_unheard: none heard since)
 	void save_into(std::vector<uint8_t> &state);
 };
 

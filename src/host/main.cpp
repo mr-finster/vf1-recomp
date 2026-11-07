@@ -49,6 +49,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include <optional>
 #include <tuple>
 #include <cmath>
+#include <deque>
 #include <map>
 #include <vector>
 #include <set>
@@ -3092,7 +3093,27 @@ int main(int argc, char **argv)
 		std::vector<uint8_t> in;
 		std::atomic<bool> quit{ false };
 		std::atomic<uint64_t> frames{ 0 }, bytes_in{ 0 };   // (the log's: what it played)
-		void put(const std::vector<uint8_t> &b) { std::lock_guard<std::mutex> lk(mx); in.insert(in.end(), b.begin(), b.end()); bytes_in += b.size(); }
+		// (a watcher's frames caught up unseen, a frame's bytes each, for the board to run through unheard, in time, as
+		// fast as it can (vf1net::run_unheard): after in's first unheard_at bytes; while there are some, put's go after
+		// them (heard), so the bytes keep their order)
+		std::deque<std::pair<bool, std::vector<uint8_t>>> unheard;   // (heard, the bytes)
+		size_t unheard_at = 0;
+		std::atomic<bool> unheard_on{ false };
+		void put(const std::vector<uint8_t> &b)
+		{
+			std::lock_guard<std::mutex> lk(mx);
+			if (unheard_on) unheard.emplace_back(true, b);
+			else in.insert(in.end(), b.begin(), b.end());
+			bytes_in += b.size();
+		}
+		void put_unheard(const std::vector<uint8_t> &b)
+		{
+			if (!th.joinable()) return;   // (no board playing: none to run them through)
+			std::lock_guard<std::mutex> lk(mx);
+			if (!unheard_on) unheard_at = in.size();
+			unheard.emplace_back(false, b);
+			unheard_on = true;
+		}
 		void stop()
 		{
 			if (th.joinable()) {
@@ -3110,7 +3131,7 @@ int main(int argc, char **argv)
 		m1audio *bp = msound.board.get();
 		bp->reset();
 		g_match_volumes = pack_volumes(cfg.music, cfg.effects);
-		{ std::lock_guard<std::mutex> lk(msound.mx); msound.in.clear(); }
+		{ std::lock_guard<std::mutex> lk(msound.mx); msound.in.clear(); msound.unheard.clear(); msound.unheard_on = false; }
 		SDL_ClearAudioStream(audio);
 		SDL_ResumeAudioStreamDevice(audio);
 		const int target = frame_bytes * QUEUED;
@@ -3131,6 +3152,23 @@ int main(int argc, char **argv)
 			int owed = 0;         // (the data bytes the message sent last still has to come)
 			int held = 0;         // (frames in a row with only an unfinished message to send)
 			while (!msound.quit) {
+				if (msound.unheard_on) {   // (a watcher's frames caught up unseen: run through unheard, the bytes put before them first)
+					std::deque<std::pair<bool, std::vector<uint8_t>>> un;
+					{
+						std::lock_guard<std::mutex> lk(msound.mx);
+						const size_t at = std::min(msound.unheard_at, msound.in.size());
+						bytes.insert(bytes.end(), msound.in.begin(), msound.in.begin() + ptrdiff_t(at));
+						msound.in.erase(msound.in.begin(), msound.in.begin() + ptrdiff_t(at));
+						un.swap(msound.unheard);
+						msound.unheard_on = false;
+					}
+					for (const auto &[heard, f] : un) {
+						if (msound.quit) break;
+						bytes.insert(bytes.end(), f.begin(), f.end());
+						if (!heard) vf1net::run_unheard(b, bytes, status, owed);
+					}
+					continue;
+				}
 				if (SDL_GetAudioStreamQueued(audio) >= target) { SDL_DelayNS(1000000); continue; }
 				{ std::lock_guard<std::mutex> lk(msound.mx); bytes.insert(bytes.end(), msound.in.begin(), msound.in.end()); msound.in.clear(); }
 				if (const uint32_t v = g_match_volumes; v != volumes) { volumes = v; b.set_volumes(float(v & 0xff) / 100.0f, float((v >> 8) & 0xff) / 100.0f); }
@@ -3203,7 +3241,8 @@ int main(int argc, char **argv)
 		}
 		if (!msound.board) msound.board = m.take_audio();
 		// (a watcher: the match's sound board started now, before its first frame, so the boot's set-up of it is heard
-		// (Adapter::mute lets the first frame's bytes through); the frames caught up unseen are silent)
+		// (Adapter::mute lets the first frame's bytes through); the frames caught up unseen run through it unheard, in
+		// time (Adapter::sound_unheard): the stage's music on when the picture's up, as the players hear it)
 		if (online.watching()) match_sound_start();
 		m.set_ranking_names("");   // (the ranking's names are each player's own: none on the match's board, whose tiles they'd be drawn into)
 		online.adapter.native = !interp;
@@ -3212,6 +3251,7 @@ int main(int argc, char **argv)
 		g_test_pending = false;
 	};
 	online.adapter.sound_out = [&](const std::vector<uint8_t> &b) { msound.put(b); };
+	online.adapter.sound_unheard = [&](const std::vector<uint8_t> &b) { msound.put_unheard(b); };
 	bool online_ready = false;
 	auto online_page = [&] {
 		if (!online_ready) {   // (the ROMs' hash for the handshake, once)

@@ -293,6 +293,7 @@ bool Adapter::begin(const std::vector<uint8_t> &given)
 		if (FILE *f = fopen((std::string(d) + ".txt").c_str(), "w")) { for (auto &x : sec) fprintf(f, "%s %zu\n", x.name, x.offset); fclose(f); }
 	}
 	sound_sent.clear();
+	dropped = false;
 	checkpoints.clear();
 	failed_stack = false;
 	return board.past_boot();
@@ -348,7 +349,15 @@ void Adapter::advance(const uint16_t input[2], bool resim)
 	if (!sound_taken) {
 		std::vector<uint8_t> out;
 		take_sound(out);
-		if (!out.empty() && sound_out && (!mute || frame == 0)) sound_out(out);
+		if (mute && frame != 0) {   // (a watcher catching up: unheard, in time)
+			if (sound_unheard) sound_unheard(out);
+			else dropped = dropped || !out.empty();
+		} else if (!out.empty() && sound_out) {
+			if (dropped)   // (bytes dropped before these: from a status byte, their first data bytes no message's start)
+				out.erase(out.begin(), std::find_if(out.begin(), out.end(), [](uint8_t x) { return x >= 0x80; }));
+			dropped = false;
+			if (!out.empty()) sound_out(out);
+		}
 	}
 	frame++;
 	if (checkpoint_every && frame % checkpoint_every == 0) {
@@ -356,6 +365,38 @@ void Adapter::advance(const uint16_t input[2], bool resim)
 		checkpoints[frame] = hash(check_buf);
 		if (keep_states) checkpoint_states[frame] = check_buf;
 	}
+}
+
+void run_unheard(m1audio &b, std::vector<uint8_t> &q, uint8_t &status, int &owed)
+{
+	constexpr int LINES = 424, BYTE_LINES = 8;   // (as the match's sound thread: a frame's scanlines, a byte every 8)
+	const double line_us = 656 * 1e6 / 16e6;
+	size_t whole = 0;   // (the bytes up to the last whole message, as the thread works it out)
+	{
+		uint8_t st = status;
+		int need = owed;
+		for (size_t i = 0; i < q.size(); i++) {
+			if (q[i] >= 0xf8) { if (!need) whole = i + 1; continue; }
+			if (q[i] & 0x80) { st = q[i]; need = midi_data_bytes(st); if (!need) whole = i + 1; continue; }
+			if (!need) need = midi_data_bytes(st);
+			if (!need || --need == 0) whole = i + 1;
+		}
+	}
+	std::vector<int16_t> out;
+	size_t sent = 0;
+	for (int line = 0; line < LINES; line++) {
+		if (line % BYTE_LINES == 0 && sent < whole) {
+			const uint8_t x = q[sent++];
+			if (x >= 0xf8) {}
+			else if (x & 0x80) status = x, owed = midi_data_bytes(x);
+			else if (owed || (owed = midi_data_bytes(status))) owed--;
+			b.rx_byte(x);
+		}
+		b.run(line_us, out);
+		out.clear();
+		while (b.tx_pending()) b.tx_byte();
+	}
+	q.erase(q.begin(), q.begin() + ptrdiff_t(sent));
 }
 
 uint8_t Score::players_in(const model1 &board)
