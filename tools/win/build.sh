@@ -110,7 +110,20 @@ cp $D/sdl/bin/SDL3.dll $P/
 cp -R assets/ui assets/fonts assets/backgrounds assets/vf_map.txt $P/assets/
 [ -d assets/icons ] && cp -R assets/icons $P/assets/   # (the secret characters' select icons: made from the game, so not in the repository)
 cp tools/win/README.txt $P/
-[ -f build/release/LICENSES.txt ] && cp build/release/LICENSES.txt $P/
+# the notices of everything built in, made now (tools/release/licenses.sh, SDL3's and FreeType's from their sources),
+# and of what the exe links in besides: zlib and MinGW-w64's runtime (VF2's and VF3's licenses.sh --windows)
+[ -d build/deps/SDL3-$SDL_VERSION ] || tar xzf build/deps/SDL3.tar.gz -C build/deps
+[ -d build/deps/freetype-$FT_VERSION ] || tar xJf build/deps/freetype.tar.xz -C build/deps
+mkdir -p build/release && sh tools/release/licenses.sh
+sec() { printf '\n\n==============================================================================\n%s\n==============================================================================\n\n' "$1"; }
+{
+	cat build/release/LICENSES.txt
+	sec "zlib, Jean-loup Gailly and Mark Adler"; tar xzf build/deps/zlib.tar.gz -O zlib-$ZLIB_VERSION/LICENSE
+	sec "MinGW-w64 runtime (the Windows build links it in)"; cat tools/win/licenses/mingw-w64-runtime.txt
+	sec "winpthreads, the MinGW-w64 project (the Windows build links it in)"; cat tools/win/licenses/winpthreads.txt
+} > $P/LICENSES.txt
+grep -q "Sam Lantinga" $P/LICENSES.txt && grep -q "The FreeType Project LICENSE" $P/LICENSES.txt && grep -q "Mark Adler" $P/LICENSES.txt ||
+	{ echo "LICENSES.txt isn't whole (SDL3's, FreeType's or zlib's notice missing)"; exit 1; }
 rm -f $D/VirtuaFighterRecomp-windows.zip
 (cd $D && zip -qr VirtuaFighterRecomp-windows.zip VirtuaFighter)
 ls -la $P $D/VirtuaFighterRecomp-windows.zip

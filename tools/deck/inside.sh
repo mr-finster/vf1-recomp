@@ -46,7 +46,13 @@ cp -R assets/ui assets/fonts assets/backgrounds assets/vf_map.txt $P/assets/
 [ -d assets/icons ] && cp -R assets/icons $P/assets/   # (the secret characters' select icons: made from the game, so not in the repository)
 cp assets/icon/icon.png $P/icon.png
 cp tools/deck/README.txt tools/deck/VirtuaFighter.sh $P/
-[ -f build/release/LICENSES.txt ] && cp build/release/LICENSES.txt $P/
+# the notices of everything built in, made now (tools/release/licenses.sh, SDL3's and FreeType's from their sources)
+[ -d build/deps/SDL3-$SDL_VERSION ] || tar xzf build/deps/SDL3.tar.gz -C build/deps
+[ -d build/deps/freetype-$FT_VERSION ] || tar xJf build/deps/freetype.tar.xz -C build/deps
+mkdir -p build/release && sh tools/release/licenses.sh
+grep -q "Sam Lantinga" build/release/LICENSES.txt && grep -q "The FreeType Project LICENSE" build/release/LICENSES.txt ||
+	{ echo "LICENSES.txt isn't whole (SDL3's or FreeType's notice missing)"; exit 1; }
+cp build/release/LICENSES.txt $P/
 chmod +x $P/vf $P/VirtuaFighter.sh
 tar czf $D/VirtuaFighterRecomp-deck.tar.gz -C $D VirtuaFighter
 
