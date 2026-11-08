@@ -139,6 +139,8 @@ enum class hotkey { none, menu, scale, aspect };
 int g_test_frames = 0;
 bool g_test_pending = false;   // the menu's Service menu: pressed once the game is past its boot (a restart first)
 
+// Testing: VF_TEST_RAM_LOG=file: the work RAM hashed every 30 game frames, and the game's mode (a display setting
+// changes no frame).
 // Testing: VF_SCRIPT=file plays a vfscript-style script of inputs (wait, press, hold, release, mash,
 // pokenv; rec and stop mark what VF_CAPTURE=dir saves: every picture shown, as the player sees it),
 // one step per game frame, so the real game loop can be checked at a point deep in a play.
@@ -584,6 +586,7 @@ struct settings
 	bool log = true;   // log.txt written (Game > Log file: read before the log's opened, so from the next start)
 	std::string language = "auto";   // Game > Language: auto (the system's), or a language's code (tr::choice_key)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
+	bool hud = true;   // Display > HUD: the 2D over a fight (energy bars, timer, names...) drawn; off: the 3D and the sky only
 	int window_scale = 0;   // Display > Window size: the window k times the arcade's 384 lines high (4:3 and Fit 512 x k
 	                        // wide, wider shapes theirs), each arcade line k of the screen's; 0 Free (as the player sizes it)
 	// The window's place and size as last left in a window (VF3's issue #21), in the window's own units (points on a
@@ -654,6 +657,7 @@ struct settings
 		flag("arcade_mode", arcade);
 		flag("background_filter", smooth_bg);
 		flag("show_fps", show_fps);
+		flag("hud", hud);
 		num("window_scale", window_scale, 0, 16);
 		num("window_w", window_w, 0, 65535);
 		num("window_h", window_h, 0, 65535);
@@ -729,6 +733,7 @@ struct settings
 		if (!log) fprintf(f, "log = 0\n");
 		fprintf(f, "language = %s\n", language.c_str());
 		fprintf(f, "window_scale = %d\n", window_scale);
+		fprintf(f, "hud = %d\n", int(hud));
 		if (fs_window) fprintf(f, "fullscreen_window = 1\n");
 		if (fs_exclusive) fprintf(f, "fullscreen_exclusive = 1\n");
 		if (window_w > 0) fprintf(f, "window_w = %d\nwindow_h = %d\nwindow_x = %d\nwindow_y = %d\nwindow_maximised = %d\n", window_w, window_h, window_x, window_y, int(window_max));
@@ -2114,6 +2119,7 @@ int main(int argc, char **argv)
 	SDL_AudioSpec spec{ SDL_AUDIO_S16, 2, m1audio::OUT_RATE };
 	SDL_AudioStream *audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
 	SDL_AudioStream *chime_stream = nullptr;   // (the match found chime's: opened the first time)
+	m.set_hud_hidden(!cfg.hud);   // (Display > HUD: drawing only)
 	if (audio) {
 		SDL_SetAudioStreamGain(audio, getenv("VF_HIDDEN") ? 0.0f : cfg.volume / 100.0f);   // tests: silent
 		m.set_volumes(cfg.music / 100.0f, cfg.effects / 100.0f);
@@ -2453,6 +2459,9 @@ int main(int argc, char **argv)
 		p.items.push_back({ tr::D_SHOW_FPS, tr::D_SHOW_FPS_HELP,
 			[&] { return on_off(cfg.show_fps); },
 			[&](int) { cfg.show_fps = !cfg.show_fps; cfg_dirty = true; if (!cfg.show_fps) menu.set_fps(""); } });
+		p.items.push_back({ tr::D_HUD, tr::D_HUD_HELP,
+			[&] { return on_off(cfg.hud); },
+			[&](int) { cfg.hud = !cfg.hud; cfg_dirty = true; m.set_hud_hidden(!cfg.hud); } });
 		p.items.push_back({ tr::D_WINDOW_SIZE, tr::D_WINDOW_SIZE_HELP,
 			[&] {
 				if (cfg.window_scale <= 0) return std::string(tr::D_FREE);
@@ -3401,6 +3410,14 @@ int main(int argc, char **argv)
 	bool curtain_on_gpu = false;       // a curtain shown during a hold, put together by the GPU
 	auto after_frame = [&](bool ff) -> bool {
 				game_run++;
+				// (tests: the game's work RAM hashed every 30 frames, VF_TEST_RAM_LOG=file, and its mode byte: the game the
+				// same whatever the display's settings, Display > HUD's, V-Sync's, the frame limit's)
+				if (static FILE *rl = getenv("VF_TEST_RAM_LOG") ? fopen(getenv("VF_TEST_RAM_LOG"), "w") : nullptr; rl && game_run % 30 == 0) {
+					uint64_t h = 1469598103934665603ull;
+					for (uint8_t b : m.work_ram()) h = (h ^ b) * 1099511628211ull;
+					fprintf(rl, "%llu %016llx %d\n", (unsigned long long)game_run, (unsigned long long)h, vf1net::scene_byte(m));
+					fflush(rl);
+				}
 				// leaving the service menu: the PC build restarts at once, past the boot screen
 				if (g_left_test_menu) { g_left_test_menu = false; if (g_pc_mode) { reset_game(); m.m_audio_out.clear(); return false; } }
 				// With smooth motion a frame is only drawn when shown: while a scene change is held,
@@ -4210,7 +4227,7 @@ int main(int argc, char **argv)
 		if (!m.random_select_hidden())
 			crt_paint.draw(ren, show_target ? (aa_now() > 1 && gc.resolved() ? gc.resolved() : gc.target()) : tex, nullptr, cfg.crt_colours, cfg.brightness, cfg.gamma);   // (CRT colours, brightness, gamma: the picture only)
 		crt_on = cfg.crt_colours || cfg.brightness != 100 || cfg.gamma != 100;
-		if (!m.random_select_hidden()) draw_hud_flags();
+		if (!m.random_select_hidden() && !m.hud_hidden_now()) draw_hud_flags();   // (Display > HUD Off: none over a fight)
 		draw_filter();
 		menu.render(true);
 		static const int shot_at = getenv("VF_SHOT_AT") ? atoi(getenv("VF_SHOT_AT")) : -1;   // testing: the window at that pass too

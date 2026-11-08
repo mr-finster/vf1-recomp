@@ -3618,7 +3618,8 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 	}
 
 	if (m_parts) {
-		parts_composite(m_top, m_top_key, m_top_gen, { 7, 5, 3, 1 });
+		if (hud_hidden_now()) parts_composite(m_top, m_top_key, m_top_gen, { 7, 5 });   // (Display > HUD Off: not the HUD's 3 and 1)
+		else parts_composite(m_top, m_top_key, m_top_gen, { 7, 5, 3, 1 });
 		m_parts->img[TEX_TOP] = { &m_top.pix(0), m_top.width(), m_top.height(), size_t(m_top.width()), m_top_gen };
 		gpu_op o; o.tex = TEX_TOP; o.sw = float(m_top.width()); o.sh = SCREEN_H; o.dw = float(m_top.width() * m_scale); o.dh = float(SCREEN_H * m_scale);
 		m_parts->ops.push_back(o);
@@ -3626,8 +3627,10 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 	} else {
 		draw_tiles(bitmap, cliprect, 7, 0);
 		draw_tiles(bitmap, cliprect, 5, 0);
-		draw_tiles(bitmap, cliprect, 3, 0);
-		draw_tiles(bitmap, cliprect, 1, 0);
+		if (!hud_hidden_now()) {   // (Display > HUD Off: not the HUD's)
+			draw_tiles(bitmap, cliprect, 3, 0);
+			draw_tiles(bitmap, cliprect, 1, 0);
+		}
 	}
 
 	// The above-HUD pass and its stencil copy the whole frame twice: only when there is something

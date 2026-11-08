@@ -436,6 +436,11 @@ public:
 	int frame_quads() const { return m_last_quads; }
 	uint32_t camera() const { const uint8_t *p = &m_ram_b[0x17f0]; return p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24; }
 	uint8_t game_mode() const { return m_ram_b[0x3002]; }   // 3 in its TEST MENU, but also for a moment in attract
+	// Display > HUD Off: in a fight (the scene byte, work RAM 501138, 9: vf1_netplay.h) the HUD's tile layers over the 3D
+	// (1 and 3: the energy bars, the timer, the names, the rounds won, the round calls' text) aren't drawn; the sky, the
+	// layers under the 3D and the 3D are. The picture only: what's drawn never reaches the board's state
+	void set_hud_hidden(bool hidden) { m_hud_hidden = hidden; }
+	bool hud_hidden_now() const { return m_hud_hidden && m_ram_b.size() > 0x1138 && m_ram_b[0x1138] == 9; }
 	uint8_t *eeprom() { return m_ioboard ? reinterpret_cast<uint8_t *>(m_ioboard->eeprom) : &m_dpram[0x100]; }
 	static constexpr size_t EEPROM_SIZE = 0x80;
 	bool real_ioboard() const { return bool(m_ioboard); }
@@ -824,6 +829,7 @@ private:
 	// Memory
 	std::vector<uint8_t> m_ram_a;      // 400000-40ffff (battery-backed)
 	std::vector<uint8_t> m_ram_b;      // 500000-53ffff
+	bool m_hud_hidden = false;         // (set_hud_hidden: the host's, read when a picture's 2D is drawn)
 	std::vector<uint16_t> m_display_list0_ram, m_display_list1_ram;
 	uint64_t m_list_written[2] = { ~0ull, ~0ull };   // the game frame each display list was last written in
 	const uint16_t *picture_list();                  // the display list to show (see model1_video.cpp)
