@@ -1,18 +1,21 @@
-/* The in-game menu. Sizes are in dp: the host sets 1dp = 1/720 of the window's height.
+/* The in-game menu. Sizes are in dp: the host sets 1dp = 1/720 of the window's height (or 1/1280 of its width,
+   if that's less: the panel is laid out for 720dp of height or more).
    Gradients are the vertex-colour kind (horizontal-gradient): the SDL renderer has no shaders.
 
    One column with a fixed space for each part, so nothing overlaps whatever the page:
-     top 26 + title 56 + crumb 30 + rows 14 x 32 = 448 + note 8 + 84 (4 lines) + hint 6 + 22
-     + version 2 + 18 = 700dp of 720: the longest page (a player's keys, 14 rows) fits without
-     scrolling at any window size (1dp follows the window's height). Longer pages would scroll
-     inside the rows; a long value is cut, never drawn over its label. */
+     top 21.3 + title 46 + crumb 24.6 + rows 19 x 26.2 = 498 + note 6.6 + 68.9 (4 lines) + hint 4.9
+     + 18 + version 1.6 + 14.8 = 705dp of 720. Every page fits whole, so none scrolls (a scroll can't be
+     seen: the rows below looked missing); the longest, Display on Windows, has 18 and Back. menutest fails
+     a page that doesn't fit. A long value is cut, never drawn over its label.
+   (Each size 0.82 of what it was up to v1.6.0, when 14 rows fit: the same look, a size smaller, for
+   Display's 19.) */
 
 body {
 	width: 100%;
 	height: 100%;
 	font-family: "Barlow Condensed";
 	font-weight: 600;
-	font-size: 24dp;
+	font-size: 19.7dp;
 	color: #dfe7fb;
 }
 
@@ -27,26 +30,26 @@ div { display: block; }
 #panel {
 	position: absolute;
 	left: 9%;
-	top: 26dp;
-	width: 540dp;
+	top: 21.3dp;
+	width: 442.8dp;
 }
 
 #title {
-	font-size: 48dp;
+	font-size: 39.4dp;
 	font-weight: bold;
 	font-style: italic;
 	color: #ffd23f;
-	height: 50dp;
-	line-height: 50dp;
-	padding-bottom: 3dp;
-	border-bottom: 3dp #ffd23f;
+	height: 41dp;
+	line-height: 41dp;
+	padding-bottom: 2.5dp;
+	border-bottom: 2.5dp #ffd23f;
 }
 
 #crumb {
-	height: 26dp;
-	line-height: 26dp;
-	margin-bottom: 4dp;
-	font-size: 19dp;
+	height: 21.3dp;
+	line-height: 21.3dp;
+	margin-bottom: 3.3dp;
+	font-size: 15.6dp;
 	font-weight: 500;
 	color: #8fa3d6;
 	white-space: nowrap;
@@ -54,17 +57,17 @@ div { display: block; }
 }
 
 #rows {
-	max-height: 448dp;      /* 14 rows; longer pages scroll, keeping the selected row in view */
+	max-height: 498dp;      /* 19 rows; a longer page would scroll, keeping the selected row in view */
 	overflow-y: hidden;
 }
 
 .row {
 	display: flex;
-	height: 30dp;
-	line-height: 30dp;
-	padding: 0 16dp;
-	margin-bottom: 2dp;
-	font-size: 23dp;
+	height: 24.6dp;
+	line-height: 24.6dp;
+	padding: 0 13.1dp;
+	margin-bottom: 1.6dp;
+	font-size: 18.9dp;
 	color: #c3cff0;
 	white-space: nowrap;
 	transition: padding-left 0.12s cubic-out;
@@ -72,7 +75,7 @@ div { display: block; }
 
 .row .label {
 	flex: 1 0 auto;
-	margin-right: 18dp;
+	margin-right: 14.8dp;
 }
 
 .row .value {
@@ -85,7 +88,7 @@ div { display: block; }
 .row.selected {
 	decorator: horizontal-gradient(#ffd23f #ff8f1f);
 	color: #0b1430;
-	padding-left: 28dp;
+	padding-left: 23dp;
 }
 
 .row.selected .value { color: #0b1430; }
@@ -94,9 +97,9 @@ div { display: block; }
 .row.selected .arrow { color: #0b1430; }
 
 .row.info {
-	height: 26dp;
-	line-height: 26dp;
-	font-size: 19dp;
+	height: 21.3dp;
+	line-height: 21.3dp;
+	font-size: 15.6dp;
 	font-weight: 500;
 	margin-bottom: 0;
 }
@@ -104,18 +107,18 @@ div { display: block; }
 .row.info .value { color: #dfe7fb; }
 
 /* a row belonging to the one above it (a player's seed, their secret character) */
-.row.sub { padding-left: 40dp; font-size: 21dp; }
+.row.sub { padding-left: 32.8dp; font-size: 17.2dp; }
 .row.sub .label { color: #9fb0dc; }
-.row.sub.selected { padding-left: 52dp; }
+.row.sub.selected { padding-left: 42.6dp; }
 .row.sub.selected .label { color: #0b1430; }
 
 /* a line under its row: a mistake to put right (red: a character seed no fighter has), or how it's going (green:
    online play's) */
 .row.error, .row.good {
 	height: auto;
-	line-height: 24dp;
-	padding-left: 52dp;
-	font-size: 18dp;
+	line-height: 19.7dp;
+	padding-left: 42.6dp;
+	font-size: 14.8dp;
 	color: #ff6b5a;
 	white-space: normal;   /* (a long one, a failed join's what to do, wraps) */
 }
@@ -124,9 +127,9 @@ div { display: block; }
 
 /* a big value to read out (a host's address) */
 .row.big {
-	height: 44dp;
-	line-height: 44dp;
-	font-size: 34dp;
+	height: 36.1dp;
+	line-height: 36.1dp;
+	font-size: 27.9dp;
 	font-style: italic;
 	font-weight: 700;
 	color: #ffd23f;
@@ -134,33 +137,33 @@ div { display: block; }
 
 /* a section's title: small capitals over a rule, a gap above it (not the first) */
 .row.heading {
-	height: 24dp;
-	line-height: 24dp;
-	margin-top: 10dp;
-	margin-bottom: 4dp;
-	font-size: 16dp;
+	height: 19.7dp;
+	line-height: 19.7dp;
+	margin-top: 8.2dp;
+	margin-bottom: 3.3dp;
+	font-size: 13.1dp;
 	font-weight: 700;
-	letter-spacing: 2dp;
+	letter-spacing: 1.6dp;
 	color: #8fa3d6;
-	border-bottom: 1dp #3a4a78;
+	border-bottom: 0.8dp #3a4a78;
 }
 .row.heading:first-child { margin-top: 0; }
 
 #note {
-	margin-top: 8dp;
-	height: 84dp;           /* four lines; the help texts are written to fit */
-	line-height: 21dp;
+	margin-top: 6.6dp;
+	height: 68.9dp;           /* four lines; the help texts are written to fit */
+	line-height: 17.2dp;
 	overflow: hidden;
-	font-size: 18dp;
+	font-size: 14.8dp;
 	font-weight: 500;
 	color: #8fa3d6;
 }
 
 #hint {
-	margin-top: 6dp;
-	height: 22dp;
-	line-height: 22dp;
-	font-size: 17dp;
+	margin-top: 4.9dp;
+	height: 18dp;
+	line-height: 18dp;
+	font-size: 13.9dp;
 	font-weight: 500;
 	color: #8fa3d6;
 	white-space: nowrap;
@@ -170,10 +173,10 @@ div { display: block; }
 
 /* the version and date, small, under the hint */
 #ver {
-	margin-top: 2dp;
-	height: 18dp;
-	line-height: 18dp;
-	font-size: 15dp;
+	margin-top: 1.6dp;
+	height: 14.8dp;
+	line-height: 14.8dp;
+	font-size: 12.3dp;
 	font-weight: 500;
 	color: #5f6f9c;
 	white-space: nowrap;
