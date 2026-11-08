@@ -1180,7 +1180,7 @@ int main(int argc, char **argv)
 	const bool fullscreen = cfg.fullscreen;
 	const int scale = cfg.scale;
 	// the match found chime: the game's coin sound, made by a sound board of its own before the game's exists (coin_sound.h)
-	const std::vector<int16_t> coin_pcm = coin_sound::make(game.sndcpu, game.pcm1, game.pcm2);
+	const std::vector<int16_t> coin_pcm = chime::coin_or_bell(coin_sound::make(game.sndcpu, game.pcm1, game.pcm2), coin_sound::RATE);   // (or the bell)
 	if (const char *cw = getenv("VF_TEST_CHIME_WAV")) {   // (tests: the match found chime's sound, the game's coin, to a .wav)
 		if (FILE *wf = fopen(cw, "wb")) {
 			const uint32_t rate = coin_sound::RATE, br = rate * 4, db = uint32_t(coin_pcm.size() * 2), sz = 36 + db, sixteen = 16;
