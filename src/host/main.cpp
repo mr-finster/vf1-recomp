@@ -589,6 +589,8 @@ struct settings
 	std::string language = "auto";   // Game > Language: auto (the system's), or a language's code (tr::choice_key)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
 	bool hud = true;   // Display > HUD: the 2D over a fight (energy bars, timer, names...) drawn; off: the 3D and the sky only
+	bool vsync = true;   // Display > V-Sync: each picture presented at a refresh (off: at once, maybe torn)
+	int frame_limit = -1;   // Display > Frame limit: the pictures a second at most, 30 60 120 144; 0 none, -1 the screen's refresh (as before with vsync)
 	int window_scale = 0;   // Display > Window size: the window k times the arcade's 384 lines high (4:3 and Fit 512 x k
 	                        // wide, wider shapes theirs), each arcade line k of the screen's; 0 Free (as the player sizes it)
 	// The window's place and size as last left in a window (VF3's issue #21), in the window's own units (points on a
@@ -660,6 +662,9 @@ struct settings
 		flag("background_filter", smooth_bg);
 		flag("show_fps", show_fps);
 		flag("hud", hud);
+		flag("vsync", vsync);
+		num("frame_limit", frame_limit, -1, 1000);
+		if (frame_limit != -1 && frame_limit != 0 && frame_limit != 30 && frame_limit != 60 && frame_limit != 120 && frame_limit != 144) frame_limit = -1;
 		num("window_scale", window_scale, 0, 16);
 		num("window_w", window_w, 0, 65535);
 		num("window_h", window_h, 0, 65535);
@@ -735,7 +740,7 @@ struct settings
 		if (!log) fprintf(f, "log = 0\n");
 		fprintf(f, "language = %s\n", language.c_str());
 		fprintf(f, "window_scale = %d\n", window_scale);
-		fprintf(f, "hud = %d\n", int(hud));
+		fprintf(f, "hud = %d\nvsync = %d\nframe_limit = %d\n", int(hud), int(vsync), frame_limit);
 		if (fs_window) fprintf(f, "fullscreen_window = 1\n");
 		if (fs_exclusive) fprintf(f, "fullscreen_exclusive = 1\n");
 		if (window_w > 0) fprintf(f, "window_w = %d\nwindow_h = %d\nwindow_x = %d\nwindow_y = %d\nwindow_maximised = %d\n", window_w, window_h, window_x, window_y, int(window_max));
@@ -1542,7 +1547,9 @@ int main(int argc, char **argv)
 #endif
 	if (!ren) ren = SDL_CreateRenderer(win, nullptr);
 	if (!ren) return fail(tr::FAIL_GRAPHICS);
-	SDL_SetRenderVSync(ren, 1);          // one picture per refresh of the screen (smooth motion fills them)
+	// one picture per refresh of the screen (smooth motion fills them); Display > V-Sync Off: none waited for (SDL sets it
+	// for whichever renderer this is; one without it says so)
+	if (!SDL_SetRenderVSync(ren, cfg.vsync ? 1 : 0)) fprintf(stderr, "vsync %s: not taken (%s)\n", cfg.vsync ? "on" : "off", SDL_GetError());
 	SDL_Texture *tex = nullptr;
 	auto aa_now = [&] { return m.render_scale() / std::max(1, cfg.scale); };   // the antialiasing in use
 	// Antialiasing: the picture is drawn cfg.aa times larger each way and each aa x aa block
@@ -1647,7 +1654,7 @@ int main(int argc, char **argv)
 			SDL_ResetHint(SDL_HINT_GPU_DRIVER);
 			if (!ren) ren = SDL_CreateRenderer(win, nullptr);
 			if (!ren) return fail(tr::FAIL_GRAPHICS);
-			SDL_SetRenderVSync(ren, 1);
+			SDL_SetRenderVSync(ren, cfg.vsync ? 1 : 0);
 			rname = SDL_GetRendererName(ren);
 			why.clear();
 			if (!gc.init(ren)) why = "this renderer can't";
@@ -1659,7 +1666,7 @@ int main(int argc, char **argv)
 			SDL_DestroyRenderer(ren);
 			ren = SDL_CreateRenderer(win, nullptr);
 			if (!ren) return fail(tr::FAIL_GRAPHICS);
-			SDL_SetRenderVSync(ren, 1);
+			SDL_SetRenderVSync(ren, cfg.vsync ? 1 : 0);
 			rname = SDL_GetRendererName(ren);
 			why.clear();
 			if (!gc.init(ren)) why = "this renderer can't";
@@ -2477,6 +2484,30 @@ int main(int argc, char **argv)
 		p.items.push_back({ tr::D_HUD, tr::D_HUD_HELP,
 			[&] { return on_off(cfg.hud); },
 			[&](int) { cfg.hud = !cfg.hud; cfg_dirty = true; m.set_hud_hidden(!cfg.hud); } });
+		p.items.push_back({ tr::D_VSYNC, tr::D_VSYNC_HELP,
+			[&] { return on_off(cfg.vsync); },
+			[&](int) {
+				cfg.vsync = !cfg.vsync; cfg_dirty = true;
+				const bool ok = SDL_SetRenderVSync(ren, cfg.vsync ? 1 : 0);
+				fprintf(stderr, "Display > V-Sync: %s%s%s\n", cfg.vsync ? "on" : "off", ok ? "" : " (not taken: ", ok ? "" : (std::string(SDL_GetError()) + ")").c_str());
+			} });
+		p.items.push_back({ tr::D_FRAME_LIMIT, tr::D_FRAME_LIMIT_HELP,
+			[&] {
+				if (cfg.frame_limit == 0) return std::string(tr::OFF);
+				if (cfg.frame_limit < 0) {
+					const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(win));
+					return tr::fill(tr::D_FRAME_LIMIT_SCREEN, { { "n", std::to_string(int(std::lround(dm && dm->refresh_rate > 0 ? dm->refresh_rate : 60.0f))) } });
+				}
+				return std::to_string(cfg.frame_limit);
+			},
+			[&](int d) {
+				static const int ORDER[] = { 0, 30, 60, 120, 144, -1 };
+				int i = 0;
+				while (i < 5 && ORDER[i] != cfg.frame_limit) i++;
+				cfg.frame_limit = ORDER[wrap(i + d, 6)];
+				cfg_dirty = true;
+				fprintf(stderr, "Display > Frame limit: %d (0 none, -1 the screen's)\n", cfg.frame_limit);
+			} });
 		p.items.push_back({ tr::D_WINDOW_SIZE, tr::D_WINDOW_SIZE_HELP,
 			[&] {
 				if (cfg.window_scale <= 0) return std::string(tr::D_FREE);
@@ -4061,9 +4092,6 @@ int main(int argc, char **argv)
 			}
 			static double smooth_budget = 1;
 			static uint64_t budget_t = SDL_GetTicksNS();
-			{ const uint64_t bt = SDL_GetTicksNS();
-			  smooth_budget = std::min(2.0, smooth_budget + double(bt - budget_t) / double(smooth_gap_ns));
-			  budget_t = bt; }
 			const bool unseen = SDL_GetWindowFlags(win) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_OCCLUDED);
 			// (a picture every refresh of the screen, vsync its pace, whatever its rate: no limit; the
 			// budget, refilled by a clock that drifts against the screen's, skipped one now and then: a
@@ -4077,12 +4105,24 @@ int main(int argc, char **argv)
 				  int v = 0;
 				  vsync_on = SDL_GetRenderVSync(ren, &v) && v != 0;
 			  } }
-			const bool every_refresh = screen_hz > 0 && !hidden && vsync_on;
+			// Display > Frame limit: the pictures a second at most, by the budget; the screen's (the default) or more with vsync
+			// a picture every refresh, as before; under the game's own 57.5 (30) a new frame's picture waits for the budget
+			// too. Only the pictures: the frames go by the clock (and online, the session's, each shown as it's run)
+			const double cap = cfg.frame_limit == 0 ? 1e6 : cfg.frame_limit < 0 ? (screen_hz > 0 ? screen_hz : 1e9 / double(smooth_gap_ns)) : double(cfg.frame_limit);
+			{ const uint64_t bt = SDL_GetTicksNS();
+			  smooth_budget = std::min(2.0, smooth_budget + double(bt - budget_t) * cap / 1e9);
+			  budget_t = bt; }
+			const bool every_refresh = screen_hz > 0 && !hidden && vsync_on && cap >= screen_hz * 0.95;
+			const bool capped_low = cap < FRAME_HZ * 0.95;
 			// (in a match, each frame as it is, when it's run: a picture between two frames a rollback may yet change showed
 			// the change as a ghost, and with a rollback every few frames the motion jittered; as VF2's and VF3's, 57.5 a
 			// second online)
 			const bool match_frames = online.playing();
-			if (m.smooth() && !sync.holding() && !unseen && (match_frames ? due > 0 : (due || every_refresh || smooth_budget >= 1))) {
+			const bool picture_now = match_frames ? due > 0 : ((due && !capped_low) || every_refresh || smooth_budget >= 1);
+			// (a frame run, here or ahead during the last present, but the limit says no picture this pass: the last one
+			// stays, not shown again)
+			if (m.smooth() && !sync.holding() && !unseen && !picture_now && !curtain && !game_stopped()) show_frame = false;
+			if (m.smooth() && !sync.holding() && !unseen && picture_now) {
 				smooth_budget = std::max(0.0, smooth_budget - 1);
 				const double now = match_frames ? double(m.frame_number()) : double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
 				const uint64_t tr = SDL_GetTicksNS();
