@@ -10,6 +10,7 @@
 #include "links.h"
 #include "text.h"
 #include "chime.h"
+#include "coin_sound.h"
 #include "flags.h"
 #include "crt_colours.h"
 #include "backgrounds.h"
@@ -140,7 +141,7 @@ int g_test_frames = 0;
 bool g_test_pending = false;   // the menu's Service menu: pressed once the game is past its boot (a restart first)
 
 // Testing: VF_TEST_RAM_LOG=file: the work RAM hashed every 30 game frames, and the game's mode (a display setting
-// changes no frame).
+// changes no frame). VF_TEST_CHIME_WAV=file: the match found chime's sound (the game's coin, made at the start), a .wav.
 // Testing: VF_SCRIPT=file plays a vfscript-style script of inputs (wait, press, hold, release, mash,
 // pokenv; rec and stop mark what VF_CAPTURE=dir saves: every picture shown, as the player sees it),
 // one step per game frame, so the real game loop can be checked at a point deep in a play.
@@ -1169,6 +1170,19 @@ int main(int argc, char **argv)
 	int aspect_i = cfg.aspect;
 	const bool fullscreen = cfg.fullscreen;
 	const int scale = cfg.scale;
+	// the match found chime: the game's coin sound, made by a sound board of its own before the game's exists (coin_sound.h)
+	const std::vector<int16_t> coin_pcm = coin_sound::make(game.sndcpu, game.pcm1, game.pcm2);
+	if (const char *cw = getenv("VF_TEST_CHIME_WAV")) {   // (tests: the match found chime's sound, the game's coin, to a .wav)
+		if (FILE *wf = fopen(cw, "wb")) {
+			const uint32_t rate = coin_sound::RATE, br = rate * 4, db = uint32_t(coin_pcm.size() * 2), sz = 36 + db, sixteen = 16;
+			const uint16_t fmt = 1, ch = 2, al = 4, bits = 16;
+			fwrite("RIFF", 1, 4, wf); fwrite(&sz, 4, 1, wf); fwrite("WAVEfmt ", 1, 8, wf); fwrite(&sixteen, 4, 1, wf); fwrite(&fmt, 2, 1, wf);
+			fwrite(&ch, 2, 1, wf); fwrite(&rate, 4, 1, wf); fwrite(&br, 4, 1, wf); fwrite(&al, 2, 1, wf); fwrite(&bits, 2, 1, wf);
+			fwrite("data", 1, 4, wf); fwrite(&db, 4, 1, wf); fwrite(coin_pcm.data(), 2, coin_pcm.size(), wf);
+			fclose(wf);
+		}
+		fprintf(stderr, "(test) the match found chime: the game's coin sound, %.2f s\n", double(coin_pcm.size() / 2) / coin_sound::RATE);
+	}
 	model1 m(std::move(game));
 	m.enable_sound();
 	// antialiasing draws larger and averages down: within 8x the arcade's size in all (at 32:9 that is
@@ -3550,7 +3564,7 @@ int main(int argc, char **argv)
 		while (online.next_notice(n)) {
 			if (n.kind == Online::Notice::joined || n.kind == Online::Notice::watching) {
 				const bool watching = n.kind == Online::Notice::watching;
-				if (cfg.online.chime && !watching) chime::play(chime_stream, win, audio && !hidden ? float(cfg.volume) / 100.0f : 0.0f);
+				if (cfg.online.chime && !watching) chime::play(chime_stream, win, audio && !hidden ? float(cfg.volume) / 100.0f : 0.0f, coin_pcm, coin_sound::RATE);
 				match_on = true;
 				if (!watching) match_sound_start();   // (a watcher's started with the match's start: on_begin)
 				// the players' names under the energy bars (the names the two sides were sent; a watched match's, as its
