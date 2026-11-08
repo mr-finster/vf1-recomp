@@ -2208,7 +2208,6 @@ int main(int argc, char **argv)
 	// made for every refresh of the screen, whatever its rate (it lowered them, or held 60 a second,
 	// on windows it judged short: false alarms on fast machines kept them lowered, vf1-recomp #16 #18)
 	uint64_t started_at = 0;              // (the first picture: the log's start)
-	constexpr uint64_t smooth_gap_ns = 8333333;   // (a screen's rate unknown, or hidden in tests: a picture each 1/120 s at most)
 	double test_load_ms = 0, test_load_s = 0;
 	if (const char *tl = getenv("VF_TEST_LOAD")) sscanf(tl, "%lf:%lf", &test_load_ms, &test_load_s);
 	// The render state in use, to the log: at the start and at each change (the player's or the governor's)
@@ -4115,7 +4114,7 @@ int main(int argc, char **argv)
 			// Display > Frame limit: the pictures a second at most, by the budget; the screen's (the default) or more with vsync
 			// a picture every refresh, as before; under the game's own 57.5 (30) a new frame's picture waits for the budget
 			// too. Only the pictures: the frames go by the clock (and online, the session's, each shown as it's run)
-			const double cap = cfg.frame_limit == 0 ? 1e6 : cfg.frame_limit < 0 ? (screen_hz > 0 ? screen_hz : 1e9 / double(smooth_gap_ns)) : double(cfg.frame_limit);
+			const double cap = cfg.frame_limit == 0 ? 1e6 : cfg.frame_limit < 0 ? (screen_hz > 0 ? screen_hz : 60.0) : double(cfg.frame_limit);   // (60 when the screen's rate is unknown: as its label, and as VF2's and VF3's)
 			{ const uint64_t bt = SDL_GetTicksNS();
 			  smooth_budget = std::min(2.0, smooth_budget + double(bt - budget_t) * cap / 1e9);
 			  budget_t = bt; }
