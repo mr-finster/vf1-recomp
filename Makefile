@@ -160,6 +160,16 @@ $(BIN)/netfuzz: $(NET) tools/netfuzz.cpp
 	$(CXX) -std=c++20 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $^ -o $@ $(LDLIBS)
 
 # vf1net: two boards through a simulated network
+# snapfuzz: a watcher's snapshot loading against a hostile host's (spoilt real snapshots: vf1net --watch-snap --snap-out
+# DIR), with AddressSanitizer and UBSan, its own objects (make snapfuzz: build/asan/bin/snapfuzz)
+ASAN_FLAGS = -std=c++20 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wno-unused-function
+snapfuzz:
+	CXXFLAGS="$(ASAN_FLAGS)" $(MAKE) OBJ=build/asan/obj BIN=build/asan/bin build/asan/bin/snapfuzz
+.PHONY: snapfuzz
+$(BIN)/snapfuzz: $(call objs,tools/snapfuzz.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) -lpthread
+
 $(BIN)/vf1net: $(call objs,tools/vf1net.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
