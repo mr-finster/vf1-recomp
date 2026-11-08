@@ -3166,6 +3166,9 @@ int main(int argc, char **argv)
 		vf1net::UnheardQueue unheard;
 		size_t unheard_at = 0;
 		std::atomic<bool> unheard_on{ false };
+		// (a watcher catching up, unseen: the board runs through what it's given unheard, and nothing more, not on to the
+		// real clock meanwhile; heard again at the live point, from where those frames left it: Online::watch_hushed)
+		std::atomic<bool> held{ false };
 		void put(const std::vector<uint8_t> &b)
 		{
 			std::lock_guard<std::mutex> lk(mx);
@@ -3232,6 +3235,7 @@ int main(int argc, char **argv)
 					vf1net::run_unheard(b, piece, bytes, status, owed);
 					continue;
 				}
+				if (msound.held) { SDL_DelayNS(1000000); continue; }   // (catching up: no sound to the real clock, none sped up)
 				if (SDL_GetAudioStreamQueued(audio) >= target) { SDL_DelayNS(1000000); continue; }
 				{ std::lock_guard<std::mutex> lk(msound.mx); bytes.insert(bytes.end(), msound.in.begin(), msound.in.end()); msound.in.clear(); }
 				if (const uint32_t v = g_match_volumes; v != volumes) { volumes = v; b.set_volumes(float(v & 0xff) / 100.0f, float((v >> 8) & 0xff) / 100.0f); }
@@ -3295,7 +3299,23 @@ int main(int argc, char **argv)
 #endif
 		online.adapter.native = !interp;
 	};
+	// (a watcher come in from a snapshot: the interpreter for the rest of its match, the snapshot's native stack being the
+	// host process's (Adapter::load_snap); the native code again at the next match's start, or back to playing alone)
+	bool snap_interp = false;
+	online.adapter.interpret = [&] {
+		if (interp) return;
+		rec::detach(m.cpu());
+		m.run_cpu = nullptr;
+		interp = snap_interp = true;
+		fprintf(stderr, "online: watching from a snapshot: the interpreter for the rest of this match\n");
+	};
+	auto native_again = [&] {
+		if (!snap_interp) return;
+		snap_interp = interp = false;
+		m.run_cpu = [](int n) { rec::run(n); };
+	};
 	online.adapter.on_begin = [&] {
+		native_again();
 		if (!g_match_board) {   // (this player's own, given back after the match)
 			own_backup = m.nvram();
 			memcpy(own_eeprom, m.eeprom(), sizeof own_eeprom);
@@ -3561,6 +3581,7 @@ int main(int argc, char **argv)
 		m.set_kage_unmasked(cfg.kage_unmasked);
 		apply_play_style();
 		menu.set_title(tr::TITLE_PAUSED);
+		native_again();
 		reset_game();
 		// back on the Online page: what ended the match, and the same again a press away
 		if (reopen && menu.ready()) {
@@ -3604,6 +3625,7 @@ int main(int argc, char **argv)
 	};
 	auto online_pass = [&] {
 		online.poll(double(SDL_GetTicksNS()) / 1e6);
+		msound.held = online.watch_hushed();
 		Online::Notice n;
 		while (online.next_notice(n)) {
 			if (n.kind == Online::Notice::joined || n.kind == Online::Notice::watching) {

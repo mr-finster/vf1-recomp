@@ -132,17 +132,17 @@ $(BIN)/vf1soak: $(call objs,tools/vf1soak.cpp src/rt/rec_table_none.cpp $(CORE) 
 # nettest: the session on a simulated network with a stand-in game (no ROM)
 $(BIN)/nettest: $(call objs,$(NET) tools/nettest.cpp)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 # watchsim: watching a match, simulated (no ROM): the players the same with 0, 1 or 50 watchers, each watcher's game theirs
 $(BIN)/watchsim: $(call objs,$(NET) tools/watchsim.cpp)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 # delaytest: Auto's input delay against simulated pings (full speed at any; raised and lowered as it should)
 $(BIN)/delaytest: $(call objs,$(NET) tools/delaytest.cpp)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 # roomtest: room links against a TURN server on 127.0.0.1:3478 (coturn: tools/roomtest.cpp)
 $(BIN)/roomtest: $(call objs,$(NET) tools/roomtest.cpp)
@@ -157,7 +157,7 @@ $(BIN)/wsfuzz: src/net/http.cpp tools/wsfuzz.cpp
 # netfuzz: the session against a peer who sends anything, with AddressSanitizer and UBSan (its own objects)
 $(BIN)/netfuzz: $(NET) tools/netfuzz.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -std=c++20 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $^ -o $@
+	$(CXX) -std=c++20 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $^ -o $@ $(LDLIBS)
 
 # vf1net: two boards through a simulated network
 $(BIN)/vf1net: $(call objs,tools/vf1net.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))

@@ -127,6 +127,9 @@ private:
 // sound board takes about 0.4 ms a frame), the heard sound after it; the music then from its song's start, not where
 // the players are in it
 constexpr size_t UNHEARD_TIMED = 180, MUSIC_CUE_BEFORE = 180, MUSIC_CUE_FRAMES = 60;
+// (a snapshot's sound bytes: the frames before it the host keeps, about 4 minutes, past a fight's song's cue; "VF1T")
+constexpr size_t SOUND_TAIL = 14400;
+constexpr uint32_t TAIL_MAGIC = 0x54314656;
 constexpr uint8_t MUSIC_CUE[2] = { 0xae, 0x10 };   // (AE 10 nn: the song, from the bytes a match sends: one at each scene, the stage's as its fight starts)
 class UnheardQueue
 {
@@ -192,6 +195,19 @@ public:
 	void advance(const uint16_t input[2], bool resim) override;
 	uint64_t hash(const std::vector<uint8_t> &state);   // (as the session's check: past hash_skip)
 	size_t hash_skip() const override { return STACK_ROOM + model1::STATE_HEADER; }
+	// A watched match's snapshot (src/net/watch.h): this build's states (its online version, the state's size); with it,
+	// the host's sound bytes of the frames before it (sound_log: each frame's whole messages as its last run had them,
+	// the last SOUND_TAIL), and where its bytes' messages stood, so a watcher's sound board runs them unheard as one
+	// catching up from the start would (the stage's song from its cue). The native code's stack in a state is the host
+	// process's own: a watcher takes the board's part alone and goes on with the interpreter (interpret: the host
+	// program's switch to it, for the rest of the match), which runs the same frames to the same states (vf1soak:
+	// the interpreter's board and the native code's are the same, byte for byte, at every frame); one on the native
+	// code with no interpret can't take one
+	uint32_t snap_format() const override;
+	void snap_extra(uint32_t frame, std::vector<uint8_t> &out) override;
+	bool load_snap(const std::vector<uint8_t> &state, const std::vector<uint8_t> &extra) override;
+	bool sound_log = false;   // (the host's, while its match may be watched)
+	std::function<void()> interpret;
 	// The frame's bytes for the sound board to send now, whole MIDI messages only, each with its status byte (a
 	// message the frame's bytes end in the middle of goes with the frame that finishes it): the first time a frame
 	// runs, all of them (the first frame's after the boot's); run again after a rollback, those it has that weren't
@@ -237,6 +253,8 @@ private:
 	std::map<uint32_t, sound_frame> sound_frames;
 	std::vector<uint8_t> boot_sound;   // (the match's boot's, whole messages, for the first frame's first run)
 	bool dropped = false;   // (bytes for the sound board muted with no sound_unheard: none heard since)
+	std::deque<std::pair<uint32_t, std::vector<uint8_t>>> logged;   // (sound_log's: frame, its messages)
+	std::vector<std::vector<uint8_t>> tail;   // (a snapshot's sound bytes, for the sound board as its first frame after runs)
 	void save_into(std::vector<uint8_t> &state);
 };
 
