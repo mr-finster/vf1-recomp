@@ -58,6 +58,11 @@ public:
 	bool tgp_is_lle() const { return bool(m_lle); }
 	// Renders the 3D at `scale` times the arcade's 496x384 (1 = the arcade picture, exact).
 	void set_render_scale(int scale);
+	// Display > Shadows: Arcade, the shadows as the board drew them at any render scale (the checkered mesh, an
+	// arcade pixel a square, in the arcade's order: over a fighter lying in one); off, Smooth above 1x (blended,
+	// kept off the fighters). 1x draws them the arcade's way either way. The picture only.
+	void set_arcade_shadows(bool on);
+	bool arcade_shadows() const { return m_arcade_shadows; }
 	// Widescreen: `aspect` is the picture's width/height (4/3 = the arcade's). The 3D view and the
 	// sky widen; the 2D text stays in the middle 4:3.
 	// Up to 80:9, five 16:9 screens side by side (a safety limit for odd window shapes).
@@ -572,6 +577,7 @@ private:
 	segas24_tile m_tiles;
 	bitmap_rgb32 m_bitmap;
 	int m_scale = 1;
+	bool m_arcade_shadows = false;   // (set_arcade_shadows)
 	int m_ext = 0;                   // extra arcade pixels each side in widescreen
 	bool m_wide_frame = true;        // this frame uses the extra width (the fight); else 4:3 in the middle
 	bool m_fight_cam = true;         // the last camera sent was the fight's (kept at 4:3 too)
@@ -779,6 +785,7 @@ private:
 	void draw_tiles(bitmap_rgb32 &bitmap, const rectangle &cliprect, int layer, int flags);
 public:
 	static bool s_moire_blend;
+	static int s_checker;          // the shadows' checkered mesh: a square of s_checker pixels (the render scale; 1 at 1x)
 	static int s_mark_y1, s_mark_y2;   // rows holding shading marks this frame (y1 > y2: none)
 	static bool s_hd_raster;       // crack-free polygon filling (render scale above 1)
 	// Above 1x: which polygon painted each pixel (s_owner_base + its draw order + 1; s_owner_base

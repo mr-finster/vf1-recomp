@@ -591,6 +591,7 @@ struct settings
 	bool hud = true;   // Display > HUD: the 2D over a fight (energy bars, timer, names...) drawn; off: the 3D and the sky only
 	bool vsync = true;   // Display > V-Sync: each picture presented at a refresh (off: at once, maybe torn)
 	int frame_limit = -1;   // Display > Frame limit: the pictures a second at most, 30 60 120 144; 0 none, -1 the screen's refresh (as before with vsync)
+	bool arcade_shadows = false;   // Display > Shadows: Arcade (the board's checkered mesh at any render scale), else Smooth
 	int window_scale = 0;   // Display > Window size: the window k times the arcade's 384 lines high (4:3 and Fit 512 x k
 	                        // wide, wider shapes theirs), each arcade line k of the screen's; 0 Free (as the player sizes it)
 	// The window's place and size as last left in a window (VF3's issue #21), in the window's own units (points on a
@@ -660,6 +661,7 @@ struct settings
 		}
 		flag("arcade_mode", arcade);
 		flag("background_filter", smooth_bg);
+		flag("arcade_shadows", arcade_shadows);
 		flag("show_fps", show_fps);
 		flag("hud", hud);
 		flag("vsync", vsync);
@@ -738,6 +740,7 @@ struct settings
 				"background_filter = %d\nmusic_volume = %d\neffects_volume = %d\nantialiasing = %d\nshow_fps = %d\nscreen_filter = %d\nring_size = %d\n", scale, aspect,
 				int(fullscreen), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
 		if (!log) fprintf(f, "log = 0\n");
+		if (arcade_shadows) fprintf(f, "arcade_shadows = 1\n");
 		fprintf(f, "language = %s\n", language.c_str());
 		fprintf(f, "window_scale = %d\n", window_scale);
 		fprintf(f, "hud = %d\nvsync = %d\nframe_limit = %d\n", int(hud), int(vsync), frame_limit);
@@ -1203,6 +1206,7 @@ int main(int argc, char **argv)
 	m.set_edge_aa(cfg.aa == 0);                           // or Low: the edges smoothed
 	m.set_smooth(true);   // always: a picture for each refresh of the screen, between the arcade's 57.5 frames a second
 	m.set_sky_filter(cfg.smooth_bg);
+	m.set_arcade_shadows(cfg.arcade_shadows);
 	m.set_aspect(ASPECTS[aspect_i] > 0 ? ASPECTS[aspect_i] : 16.0f / 9.0f);
 	// the real I/O board's 93C46 and the stand-in's image are laid out differently
 	const std::string nv_path = dir + "/nvram.sav",
@@ -2461,6 +2465,9 @@ int main(int argc, char **argv)
 		p.items.push_back({ tr::D_BG_FILTER, tr::D_BG_FILTER_HELP,
 			[&] { return std::string(cfg.smooth_bg ? tr::D_SMOOTH : tr::OFF); },
 			[&](int) { cfg.smooth_bg = !cfg.smooth_bg; cfg_dirty = true; m.set_sky_filter(cfg.smooth_bg); redraw_if_stopped(); } });
+		p.items.push_back({ tr::D_SHADOWS, tr::D_SHADOWS_HELP,
+			[&] { return std::string(cfg.arcade_shadows ? tr::D_SHADOWS_ARCADE : tr::D_SMOOTH); },
+			[&](int) { cfg.arcade_shadows = !cfg.arcade_shadows; cfg_dirty = true; m.set_arcade_shadows(cfg.arcade_shadows); redraw_if_stopped(); } });
 		p.items.push_back({ tr::D_SCREEN_FILTER, tr::D_SCREEN_FILTER_HELP,
 			[&] { const tr::text names[] = { tr::OFF, tr::D_SCANLINES, tr::D_CRT }; return std::string(names[cfg.filter]); },
 			[&](int d) { cfg.filter = wrap(cfg.filter + d, 3); cfg_dirty = true; } });

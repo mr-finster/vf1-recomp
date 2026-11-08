@@ -23,6 +23,7 @@ enum { FRAC_SHIFT = 16 };
 enum { MOIRE = 0x01000000 };
 constexpr uint32_t MOIRE_MARK = 0x01000000;   // in a drawn pixel's unused top byte: already shaded
 bool model1::s_moire_blend = false;
+int model1::s_checker = 1;
 int model1::s_mark_y1 = 1 << 30, model1::s_mark_y2 = -1;
 bool model1::s_hd_raster = false;
 std::vector<int32_t> model1::s_owner;
@@ -199,9 +200,26 @@ void model1::draw_hline(bitmap_rgb32 &bitmap, int x1, int x2, int y, int color)
 	}
 }
 
+// Shadows: Arcade above 1x: the pixels x1..x2 of row y on the board's checkered mesh, scaled (squares of s_checker
+// pixels, solid where the arcade pixel's (x ^ y) is even), each run handed to f(a, b)
+template <class F>
+static void checker_runs(int x1, int x2, int y, F f)
+{
+	const int n = model1::s_checker, odd = (y / n) & 1;
+	for (int x = x1; x <= x2;) {
+		const int cell = x / n, end = std::min(x2, cell * n + n - 1);
+		if (((cell & 1) ^ odd) == 0) f(x, end);
+		x = end + 1;
+	}
+}
+
 void model1::draw_hline_moired(bitmap_rgb32 &bitmap, int x1, int x2, int y, int color)
 {
-	if (t_sink) { t_sink->push_back({ t_sink_poly, y, x1, x2 }); return; }
+	if (t_sink) {
+		if (s_checker > 1) checker_runs(x1, x2, y, [&](int a, int b) { t_sink->push_back({ t_sink_poly, y, a, b }); });   // (the mesh's pixels: solid, G3_LINE)
+		else t_sink->push_back({ t_sink_poly, y, x1, x2 });
+		return;
+	}
 	uint32_t *const base = &bitmap.pix(y);
 	if (s_moire_blend) {
 		// The arcade's checkerboard shades a pixel once however many shadows overlap (they
@@ -216,6 +234,10 @@ void model1::draw_hline_moired(bitmap_rgb32 &bitmap, int x1, int x2, int y, int 
 		return;
 	}
 	const uint32_t c = uint32_t(color) & 0xffffff;   // (not the MOIRE flag: the top byte says "drawn" to the GPU)
+	if (s_checker > 1) {   // (Shadows: Arcade above 1x: the board's mesh, an arcade pixel a square)
+		checker_runs(x1, x2, y, [&](int a, int b) { std::fill(base + a, base + b + 1, c); });
+		return;
+	}
 	while(x1 <= x2)
 	{
 		if(!((x1^y) & 1))
@@ -383,7 +405,7 @@ static void line_pixels(const rectangle &clip, int bw, int bh, int x1, int y1, i
 	for (;;)
 	{
 		if (x1 >= 0 && x1 < bw && y1 >= 0 && y1 < bh && y1 >= t_band_y1 && y1 <= t_band_y2)
-			if (!moire || !((x1 ^ y1) & 1))
+			if (!moire || !(((x1 / model1::s_checker) ^ (y1 / model1::s_checker)) & 1))
 				plot(x1, y1);
 		if (x1 == x2 && y1 == y2)
 			break;
@@ -2597,7 +2619,7 @@ void model1::record_quads(view_t *view, int count)
 			}
 			if (ndist == 2) {
 				gpu3d_poly g;
-				g.flags = G3_LINE | ((color & MOIRE) ? G3_CHECKER : 0);
+				g.flags = G3_LINE | ((color & MOIRE) && s_checker == 1 ? G3_CHECKER : 0);   // (Arcade above 1x: line_pixels kept the mesh's alone)
 				g.colour = uint32_t(color & ~MOIRE);
 				g.batch = batch;
 				const uint32_t idx = uint32_t(m_rec_polys.size());
@@ -2615,12 +2637,13 @@ void model1::record_quads(view_t *view, int count)
 		g.batch = batch;
 		const bool fighter = depth && fighter_shadow(q);
 		if (fighter) g.flags |= G3_FIGHTER | G3_SHADOW;
-		else if (color & MOIRE) g.flags |= s_moire_blend ? G3_SHADOW : G3_CHECKER;
+		else if (color & MOIRE) g.flags |= s_moire_blend ? G3_SHADOW : s_checker > 1 ? G3_LINE : G3_CHECKER;   // (Arcade above 1x: the mesh's own pixels, solid)
 		if (stage_model(q.obj)) g.flags |= G3_STAGE;
-		g.colour = (g.flags & G3_CHECKER) ? uint32_t(color) & 0xffffff : uint32_t(color);
+		const bool mesh = (g.flags & G3_LINE) != 0;   // (Shadows: Arcade above 1x: its spans worked out here, as the CPU draws it)
+		g.colour = (g.flags & (G3_CHECKER | G3_LINE)) ? uint32_t(color) & 0xffffff : uint32_t(color);
 		const uint32_t idx = uint32_t(m_rec_polys.size());
 		int ya, yb;
-		if (s_hd_raster) {
+		if (s_hd_raster && !mesh) {
 			bool ok = true;
 			for (int k = 0; k < 4; k++) {
 				g.x[k] = q.p[k]->fx; g.y[k] = q.p[k]->fy;

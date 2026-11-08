@@ -507,9 +507,17 @@ void model1::io_write16(uint32_t a, uint16_t v) { bus_write16(a, v, 0xffff); }
 void model1::set_render_scale(int scale)
 {
 	m_scale = std::clamp(scale, 1, 12);       // up to 6x, or less with antialiasing on top
-	s_moire_blend = m_scale > 1;
+	s_moire_blend = m_scale > 1 && !m_arcade_shadows;
+	s_checker = m_arcade_shadows ? m_scale : 1;
 	s_hd_raster = m_scale > 1 && !getenv("VF_MAME_RASTER");
 	resize_frame();
+}
+
+void model1::set_arcade_shadows(bool on)
+{
+	if (on == m_arcade_shadows) return;
+	m_arcade_shadows = on;
+	set_render_scale(m_scale);
 }
 
 void model1::set_aspect(float aspect)

@@ -53,6 +53,7 @@ your screen's refresh rate.
 | Render scale up to 6x, widescreen and ultrawide, smooth motion | Working |
 | The 3D drawn on the GPU (Display > 3D renderer: Auto, GPU or CPU) | Working on macOS (Metal), Windows (Direct3D 12 or Vulkan) and Steam Deck / Linux (Vulkan): the same picture as the CPU's, checked when the game starts; Auto uses the GPU whenever that check passes (not a software GPU such as llvmpipe), and any difference or error falls back to the CPU |
 | Sarah's stage lighting (the light from below pulsing with the floor) | Working, as on the cabinet |
+| The arcade's shadows at any render scale (Display > Shadows: Arcade): the checkered mesh, over a fighter lying in it | Working (new); Smooth (blended, kept off the fighters) the default above 1x |
 | Portable mode, your own ROM folder | Working |
 | Menu, keyboard and gamepads, two players | Working |
 | macOS, Windows, Steam Deck / x86-64 Linux | Working |
