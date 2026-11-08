@@ -192,9 +192,13 @@ public:
 	void advance(const uint16_t input[2], bool resim) override;
 	uint64_t hash(const std::vector<uint8_t> &state);   // (as the session's check: past hash_skip)
 	size_t hash_skip() const override { return STACK_ROOM + model1::STATE_HEADER; }
-	// The frame's bytes for the sound board to send now: all of them the first time a frame runs; run again after a
-	// rollback, none if its bytes went already (the sound board can't take back what it played), and if it sent
-	// none and has some now, those (late)
+	// The frame's bytes for the sound board to send now, whole MIDI messages only, each with its status byte (a
+	// message the frame's bytes end in the middle of goes with the frame that finishes it): the first time a frame
+	// runs, all of them (the first frame's after the boot's); run again after a rollback, those it has that weren't
+	// sent for it (late). A frame run again had sent nothing if its first run had sent anything (the right timeline's
+	// sounds and music cues lost), and a message cut at a frame's end could meet another timeline's bytes (a status
+	// byte with another's data, data bytes under another message's running status), as VF2's (issue #35); now only a
+	// wrong guess's own sounds extra (the sound board can't take back what it played)
 	void take_sound(std::vector<uint8_t> &out);
 	bool failed_stack = false;   // (a stack too deep for STACK_ROOM: the save is refused, the match ends)
 	bool native;   // (the recompiled code runs the board: its stack in the states; the host's to set, the game falling back to the interpreter)
@@ -227,7 +231,11 @@ private:
 	uint32_t frame = 0;   // the session's frame the board is at
 	std::vector<uint8_t> pending, stack_buf, check_buf;
 	bool collecting = false, sound_taken = false;
-	std::map<uint32_t, std::vector<uint8_t>> sound_sent;
+	// per frame (the last 64): where its bytes' messages stood as it started (the running status, an unfinished
+	// message's bytes), from the frame before's last run, and the messages the sound board was sent for it
+	struct sound_frame { uint8_t status = 0; std::vector<uint8_t> part; std::vector<std::vector<uint8_t>> sent; };
+	std::map<uint32_t, sound_frame> sound_frames;
+	std::vector<uint8_t> boot_sound;   // (the match's boot's, whole messages, for the first frame's first run)
 	bool dropped = false;   // (bytes for the sound board muted with no sound_unheard: none heard since)
 	void save_into(std::vector<uint8_t> &state);
 };
