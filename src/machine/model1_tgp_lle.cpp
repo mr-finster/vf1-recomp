@@ -26,6 +26,7 @@ struct model1::tgp_lle : mb86233_bus
 
 	void reset()
 	{
+		runaway = false;
 		cpu.reset();
 		fifo_in.clear();
 		fifo_out.clear();
@@ -36,14 +37,20 @@ struct model1::tgp_lle : mb86233_bus
 	}
 
 	// Runs the TGP until it waits on an empty input FIFO.
+	// (a TGP that ran 6.4M instructions without waiting on its FIFO: left stopped till a reset or a load. The game's
+	// program always waits; one started from a state from elsewhere (a watcher's snapshot: its registers and RAMs) may
+	// never, and ran 6.4M instructions at every one of the V60's touches, frames of seconds)
+	bool runaway = false;
 	void sync()
 	{
+		if (runaway) return;
 		for (int guard = 0; guard < 64; guard++) {
 			cpu.run(100000);
 			if (cpu.stalled())
 				return;
 		}
-		fprintf(stderr, "tgp: still running after 6.4M instructions (pc %03x)\n", cpu.pc());
+		fprintf(stderr, "tgp: still running after 6.4M instructions (pc %03x): stopped\n", cpu.pc());
+		runaway = true;
 	}
 
 	u32 prog_r(u32 a) override { return prog[a & 0x7ff]; }
@@ -249,6 +256,7 @@ template <class IO> void model1::lle_state(IO &io)
 	io.deq(t.fifo_in);
 	io.deq(t.fifo_out);
 	t.cpu.state(io);
+	if constexpr (IO::loading) t.runaway = false;   // (a state loaded: running, as it was saved)
 }
 template void model1::lle_state(m1::StateWriter &);
 template void model1::lle_state(m1::StateReader &);

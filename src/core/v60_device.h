@@ -13,6 +13,7 @@ public:
 	void reset();
 	// Runs until at least `cycles` cycles have been spent (8 per instruction, as MAME).
 	int run(int cycles);
+	bool stopped() const { return m_stopped; }   // (an instruction it couldn't run: run() does nothing till a reset or a load)
 	// One instruction; returns its address.
 	uint32_t step();
 	void set_irq_line(int state);     // CLEAR_LINE / ASSERT_LINE / HOLD_LINE
@@ -62,6 +63,10 @@ public:
 		io.pod(m_nmi_line);
 		io.pod(m_stall_io);
 		io.pod(*m_cycles);
+		if constexpr (IO::loading) m_stopped = false;   // (a state loaded: running, as it was saved)
+		if constexpr (IO::loading)   // (flags and lines 0 or 1; the cycles owed a frame's at most, never a run that doesn't end)
+			io.check(m_flags.CY <= 1 && m_flags.OV <= 1 && m_flags.S <= 1 && m_flags.Z <= 1 && m_irq_line <= 1 && m_nmi_line <= 1 &&
+			         (m_stall_io == 0 || m_stall_io == 1) && *m_cycles >= -(1 << 24) && *m_cycles <= (1 << 24));
 	}
 
 protected:
@@ -124,6 +129,8 @@ protected:
 
 	uint32_t              m_PPC;
 	int                 m_icount;
+	bool                m_stopped = false;
+	void run_trapped(int cycles);
 	int                 m_stall_io;
 
 	uint32_t              m_op1, m_op2;

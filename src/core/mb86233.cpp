@@ -259,7 +259,7 @@ void mb86233_device::alu_pre(u32 alu)
 	case 0x16: {
 		// lsrd
 		m_alu_stmask = F_ZRD|F_SGD|F_CPD|F_OVD|F_DVZD;
-		m_alu_r1 = m_d >> m_sft;
+		m_alu_r1 = m_d >> (m_sft & 31);   // (vf1-recomp: a count of 32 or more, from a state from elsewhere, as x86 and Arm shift: undefined in C++)
 		stset_set_sz_int(m_alu_r1);
 		break;
 	}
@@ -267,7 +267,7 @@ void mb86233_device::alu_pre(u32 alu)
 	case 0x17: {
 		// lsld
 		m_alu_stmask = F_ZRD|F_SGD|F_CPD|F_OVD|F_DVZD;
-		m_alu_r1 = m_d << m_sft;
+		m_alu_r1 = m_d << (m_sft & 31);
 		stset_set_sz_int(m_alu_r1);
 		break;
 	}
@@ -275,7 +275,7 @@ void mb86233_device::alu_pre(u32 alu)
 	case 0x18: {
 		// asrd
 		m_alu_stmask = F_ZRD|F_SGD|F_CPD|F_OVD|F_DVZD;
-		m_alu_r1 = s32(m_d) >> m_sft;
+		m_alu_r1 = s32(m_d) >> (m_sft & 31);
 		stset_set_sz_int(m_alu_r1);
 		break;
 	}
@@ -283,7 +283,7 @@ void mb86233_device::alu_pre(u32 alu)
 	case 0x19: {
 		// asld
 		m_alu_stmask = F_ZRD|F_SGD|F_CPD|F_OVD|F_DVZD;
-		m_alu_r1 = s32(m_d) << m_sft;
+		m_alu_r1 = u32(s32(m_d)) << (m_sft & 31);
 		stset_set_sz_int(m_alu_r1);
 		break;
 	}

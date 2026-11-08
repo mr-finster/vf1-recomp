@@ -205,7 +205,11 @@ public:
 	// code with no interpret can't take one
 	uint32_t snap_format() const override;
 	void snap_extra(uint32_t frame, std::vector<uint8_t> &out) override;
-	bool load_snap(const std::vector<uint8_t> &state, const std::vector<uint8_t> &extra) override;
+	// (a snapshot's state, any host's: refused unless the board would make it (model1::state_sane, the reader's checks:
+	// every memory its own size), its frame the snapshot's, and not a random fighters' match; refused, the board and
+	// this as they were, on the interpreter)
+	bool load_snap(const std::vector<uint8_t> &state, const std::vector<uint8_t> &extra, uint32_t frame) override;
+	std::pair<size_t, size_t> snap_state_bytes() const override { return { STACK_ROOM + model1::STATE_HEADER + 4, STACK_ROOM + (4u << 20) }; }
 	bool sound_log = false;   // (the host's, while its match may be watched)
 	std::function<void()> interpret;
 	// The frame's bytes for the sound board to send now, whole MIDI messages only, each with its status byte (a

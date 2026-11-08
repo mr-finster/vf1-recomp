@@ -2,12 +2,19 @@
 // MAME's v60.cpp (BSD-3-Clause, copyright-holders: Farfetch'd, R. Belmont); reset, run and the
 // IRQ entry are MAME's too, without the device framework.
 #include "v60_device.h"
+#include <csetjmp>
 #include <cstdarg>
+
+// (the interpreter's run: where an instruction it can't run goes, the CPU stopped (as the PowerPC of VF3 stops), not the
+// process. Only code the game's ROM doesn't have gets there: a state from elsewhere's, a watcher's snapshot from a
+// hostile host. Outside the interpreter's run (the native code's) it stops the process, as it always has)
+static thread_local jmp_buf *g_trap = nullptr;
 
 void v60_fatal(const char *fmt, ...)
 {
 	va_list ap; va_start(ap, fmt); vfprintf(stderr, fmt, ap); va_end(ap);
 	fputc('\n', stderr);
+	if (g_trap) longjmp(*g_trap, 1);
 	abort();
 }
 
@@ -118,6 +125,7 @@ uint32_t v60_device::opUNHANDLED()
 
 void v60_device::reset()
 {
+	m_stopped = false;
 	m_stall_io = 0;
 	m_irq_line = CLEAR_LINE;
 	m_nmi_line = CLEAR_LINE;
@@ -195,6 +203,23 @@ uint32_t v60_device::step()
 
 int v60_device::run(int cycles)
 {
+	if (m_stopped) { m_icount = 0; return cycles; }
+	jmp_buf trap;
+	jmp_buf *const was = g_trap;
+	g_trap = &trap;
+	if (setjmp(trap)) {   // (an instruction it can't run: stopped till a reset or a load)
+		g_trap = was;
+		m_stopped = true;
+		m_icount = 0;
+		return cycles;
+	}
+	run_trapped(cycles);
+	g_trap = was;
+	return cycles;
+}
+
+void v60_device::run_trapped(int cycles)
+{
 	// what the last slice overran is owed by this one, as on MAME's scheduler
 	m_icount += cycles;
 	if (m_irq_line != CLEAR_LINE)
@@ -208,5 +233,4 @@ int v60_device::run(int cycles)
 		if (m_irq_line != CLEAR_LINE)
 			v60_try_irq();
 	}
-	return cycles;
 }

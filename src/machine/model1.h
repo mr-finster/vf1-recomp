@@ -474,6 +474,7 @@ public:
 	bool load_state(const uint8_t *p, size_t n);
 	template <class IO> void state(IO &io);
 	template <class IO> void lle_state(IO &io);   // (model1_tgp_lle.cpp)
+	bool state_sane() const;   // (a loaded state's values used as an index, an offset, a shift or a count: as the board makes them)
 	// A cold start (netplay's match: work RAM and more survive reset(), so a side that had played would start out of
 	// step): every RAM as the board powers up, the timers stopped, the TGP made afresh, then reset()
 	void power_on();

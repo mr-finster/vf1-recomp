@@ -2,6 +2,7 @@
 #include "../rt/rec_rt.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <chrono>
 
@@ -411,17 +412,31 @@ void Adapter::snap_extra(uint32_t at, std::vector<uint8_t> &out)
 	out.insert(out.end(), part.begin(), part.begin() + ptrdiff_t(std::min<size_t>(part.size(), 255)));
 }
 
-bool Adapter::load_snap(const std::vector<uint8_t> &state, const std::vector<uint8_t> &extra)
+bool Adapter::load_snap(const std::vector<uint8_t> &state, const std::vector<uint8_t> &extra, uint32_t snap_frame)
 {
-	if (state.size() < STACK_ROOM + 4 || (native && !interpret)) return false;
+	const auto [least, most] = snap_state_bytes();
+	if (state.size() < least || state.size() > most || (native && !interpret)) return false;
+	// (a match with Cheats' random fighters: none taken. Their part of the state is the ROM's last 512 KB as they write
+	// it and the records, lists and tables of addresses into it that their code follows as its own; from another
+	// process that code would follow anything. The watcher catches up from the match's start, as without snapshots)
+	if (board.m_random_fighter) return false;
 	if (settle) settle();
 	if (native) {   // (the board's part alone: the interpreter from here, the host's stack being its process's)
 		interpret();
 		native = false;
 	}
-	memcpy(&frame, state.data() + state.size() - 4, 4);
-	pending.clear();
-	if (!board.load_state(state.data() + STACK_ROOM, state.size() - STACK_ROOM - 4)) return false;
+	{   // (refused, the game as it was: its own state back (the board's part), not half another's)
+		std::vector<uint8_t> was;
+		save_into(was);
+		const uint32_t frame_was = frame;
+		memcpy(&frame, state.data() + state.size() - 4, 4);
+		pending.clear();
+		if (frame != snap_frame || !board.load_state(state.data() + STACK_ROOM, state.size() - STACK_ROOM - 4)) {
+			if (!board.load_state(was.data() + STACK_ROOM, was.size() - STACK_ROOM - 4)) fprintf(stderr, "vf1: a refused snapshot: the board's own state didn't load back\n");
+			frame = frame_was;
+			return false;
+		}
+	}
 	sound_frames.clear();
 	tail.clear();
 	if (!boot_sound.empty()) tail.push_back(std::move(boot_sound));   // (the boot's set-up of the sound board first, as frame 0's run would send it)

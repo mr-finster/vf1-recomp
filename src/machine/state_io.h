@@ -59,6 +59,8 @@ public:
 		pod(n);
 		for (T &v : d) bytes(&v, sizeof(T));
 	}
+	// (a loaded value's check: saving, always true)
+	bool check(bool) { return true; }
 
 private:
 	std::vector<uint8_t> &out;
@@ -78,27 +80,33 @@ public:
 		if (n) memcpy(q, p, n);
 		p += n;
 	}
+	// (a bool, or bools, read as 0 or 1 only: anything else isn't a bool (undefined behaviour to use), the state refused)
 	template <class T> void pod(T &v)
 	{
 		static_assert(std::has_unique_object_representations_v<T>);
 		bytes(&v, sizeof(T));
+		bools(v);
 	}
 	// (floats and arrays of them: no padding, but two equal values can have two patterns, as the board's own do)
 	template <class T> void raw(T &v)
 	{
 		static_assert(std::is_trivially_copyable_v<T>);
 		bytes(&v, sizeof(T));
+		bools(v);
 	}
-	// (a vector of the same size as now, as the board's memories always are, is read in place: no allocation)
+	// (the board's memories, which are all its vectors: the same size as now, read in place; a state with another
+	// size of one is refused, never a memory made smaller or larger than the code that indexes it expects)
 	template <class T> void vec(std::vector<T> &v)
 	{
 		static_assert(std::has_unique_object_representations_v<T>);
 		uint64_t n = 0;
 		pod(n);
-		if (!ok || n > size_t(end - p) / sizeof(T)) { ok = false; return; }
-		v.resize(size_t(n));
+		if (!ok || n != v.size() || n > size_t(end - p) / sizeof(T)) { ok = false; return; }
 		bytes(v.data(), size_t(n) * sizeof(T));
 	}
+	// A loaded value's check (a state from another process, a watcher's snapshot, may hold anything): false refuses
+	// the state (its load fails)
+	bool check(bool good) { if (!good) ok = false; return good; }
 	template <class T> void deq(std::deque<T> &d)
 	{
 		static_assert(std::has_unique_object_representations_v<T>);
@@ -119,6 +127,14 @@ public:
 	bool done() const { return ok && p == end; }
 
 private:
+	template <class T> void bools(T &v)
+	{
+		if constexpr (std::is_same_v<std::remove_all_extents_t<T>, bool>) {
+			const uint8_t *b = reinterpret_cast<const uint8_t *>(&v);
+			for (size_t i = 0; i < sizeof(T); i++)
+				if (b[i] > 1) { ok = false; memset(static_cast<void *>(&v), 0, sizeof(T)); break; }
+		}
+	}
 	const uint8_t *p, *end;
 };
 

@@ -176,6 +176,23 @@ template <class IO> void model1::state(IO &io)
 	io.pod(m_rank_prev);
 	io.pod(m_rank_seen);
 	io.pod(m_clock_held);
+	if constexpr (IO::loading) io.check(state_sane());
+}
+
+// A state from another process (a watcher's snapshot, from any match's host) may hold anything: what's used as an
+// index, an offset into the ROM, a shift or a count to run down is as the board makes it, else the state's refused.
+// The board's own states always are (a few comparisons a load)
+bool model1::state_sane() const
+{
+	if (m_bank_base < 0x1000000 || m_bank_base > 0x1700000 || (m_bank_base & 0xfffff) || m_bank_base + 0x100000 > m_regions.maincpu.size()) return false;
+	if (m_last_irq < 0 || m_last_irq > 7) return false;
+	for (const int b : { m_uart_txbuf, m_uart_shift, m_uart_rx }) if (b < -1 || b > 255) return false;
+	for (const int c : { m_uart_shift_left, m_uart_rx_left }) if (c < -(1 << 24) || c > (1 << 24)) return false;
+	constexpr int64_t most = int64_t(1) << 32;   // (the timers' 0x800 x 65535 cycles; the I/O board's acknowledgement 1.6M)
+	for (const int64_t r : m_timer_remain) if (r < -most || r > most) return false;
+	if (m_io_ack < -most || m_io_ack > most) return false;
+	if (m_mat_stack_pos < 0 || m_mat_stack_pos > MAT_STACK_SIZE) return false;
+	return true;
 }
 
 void model1::save_state(std::vector<uint8_t> &out, std::vector<m1::StateSection> *sections, bool append)

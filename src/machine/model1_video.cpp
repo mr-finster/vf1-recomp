@@ -20,6 +20,14 @@
 
 // Model 1 geometrizer TGP and rasterizer simulation
 enum { FRAC_SHIFT = 16 };
+
+// The scan conversion's fixed-point sums, as the machines this runs on always made them (two's complement, wrapping):
+// a polygon's corners at the int's ends (a display list from a state from elsewhere, a watcher's snapshot) overflowed,
+// undefined in C++, and a slope of INT_MIN / -1 stopped the process. The same values for every polygon that didn't
+static inline int32_t wadd(int32_t a, int32_t b) { return int32_t(uint32_t(a) + uint32_t(b)); }
+static inline int32_t wsub(int32_t a, int32_t b) { return int32_t(uint32_t(a) - uint32_t(b)); }
+static inline int32_t wmul(int32_t a, int32_t b) { return int32_t(uint32_t(a) * uint32_t(b)); }
+static inline int32_t wdiv(int32_t a, int32_t b) { return b == 0 ? 0 : int32_t(int64_t(a) / int64_t(b)); }
 enum { MOIRE = 0x01000000 };
 constexpr uint32_t MOIRE_MARK = 0x01000000;   // in a drawn pixel's unused top byte: already shaded
 bool model1::s_moire_blend = false;
@@ -257,9 +265,9 @@ void model1::fill_slope(bitmap_rgb32 &bitmap, view_t *view, int color, int32_t x
 
 	if (y2 <= view->y1)
 	{
-		int delta = y2 - y1;
-		*nx1 = x1 + delta * sl1;
-		*nx2 = x2 + delta * sl2;
+		int delta = wsub(y2, y1);
+		*nx1 = wadd(x1, wmul(delta, sl1));
+		*nx2 = wadd(x2, wmul(delta, sl2));
 		return;
 	}
 
@@ -270,9 +278,9 @@ void model1::fill_slope(bitmap_rgb32 &bitmap, view_t *view, int color, int32_t x
 
 	if (y1 < view->y1)
 	{
-		int delta = view->y1 - y1;
-		x1 += delta * sl1;
-		x2 += delta * sl2;
+		int delta = wsub(view->y1, y1);
+		x1 = wadd(x1, wmul(delta, sl1));
+		x2 = wadd(x2, wmul(delta, sl2));
 		y1 = view->y1;
 	}
 
@@ -319,8 +327,8 @@ void model1::fill_slope(bitmap_rgb32 &bitmap, view_t *view, int color, int32_t x
 			}
 		}
 
-		x1 += sl1;
-		x2 += sl2;
+		x1 = wadd(x1, sl1);
+		x2 = wadd(x2, sl2);
 		y1++;
 	}
 	*nx1 = x1;
@@ -572,8 +580,8 @@ void model1::fill_quad(bitmap_rgb32 &bitmap, view_t *view, const quad_t& q) cons
 			}
 			x1 = p[ps1].x;
 			x2 = p[ps2].x;
-			sl1 = (x1 - p[ps1 - 1].x) / (cury - p[ps1 - 1].y);
-			sl2 = (x2 - p[ps2 + 1].x) / (cury - p[ps2 + 1].y);
+			sl1 = wdiv(wsub(x1, p[ps1 - 1].x), wsub(cury, p[ps1 - 1].y));
+			sl2 = wdiv(wsub(x2, p[ps2 + 1].x), wsub(cury, p[ps2 + 1].y));
 		}
 		else if (p[ps1 - 1].y < p[ps2 + 1].y)
 		{
@@ -589,7 +597,7 @@ void model1::fill_quad(bitmap_rgb32 &bitmap, view_t *view, const quad_t& q) cons
 				ps1--;
 			}
 			x1 = p[ps1].x;
-			sl1 = (x1 - p[ps1 - 1].x) / (cury - p[ps1 - 1].y);
+			sl1 = wdiv(wsub(x1, p[ps1 - 1].x), wsub(cury, p[ps1 - 1].y));
 		}
 		else
 		{
@@ -605,7 +613,7 @@ void model1::fill_quad(bitmap_rgb32 &bitmap, view_t *view, const quad_t& q) cons
 				ps2++;
 			}
 			x2 = p[ps2].x;
-			sl2 = (x2 - p[ps2 + 1].x) / (cury - p[ps2 + 1].y);
+			sl2 = wdiv(wsub(x2, p[ps2 + 1].x), wsub(cury, p[ps2 + 1].y));
 		}
 	}
 	if(cury == limy)
