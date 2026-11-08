@@ -4124,7 +4124,7 @@ int main(int argc, char **argv)
 			// the change as a ghost, and with a rollback every few frames the motion jittered; as VF2's and VF3's, 57.5 a
 			// second online)
 			const bool match_frames = online.playing();
-			const bool picture_now = match_frames ? due > 0 : ((due && !capped_low) || every_refresh || smooth_budget >= 1);
+			const bool picture_now = match_frames ? due > 0 && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
 			// (a frame run, here or ahead during the last present, but the limit says no picture this pass: the last one
 			// stays, not shown again)
 			if (m.smooth() && !sync.holding() && !unseen && !picture_now && !curtain && !game_stopped()) show_frame = false;
