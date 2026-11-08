@@ -398,14 +398,23 @@ dialog .x:hover{background:rgba(255,255,255,.2)}
       </div></span>
     <span class="info"><button class="lnk" aria-expanded="false">Changelog</button>
       <div class="pop" role="dialog" aria-label="Changelog">
-        <p><b>v1.6.0</b> &middot; %DATE%</p>
+        <p><b>v1.6.1</b> &middot; %DATE%</p>
         <ul>
+          <li><b>Display &rarr; HUD: Off</b> hides a fight&rsquo;s energy bars, timer, names and round calls, for a clean picture of the 3D (the select, the VS screen and the menus keep theirs). Only the picture: the game plays exactly the same.</li>
+          <li><b>The match found chime is the cabinet&rsquo;s own coin sound</b> (vf1-recomp #44), made from your ROMs when the game starts. Online &rarr; Settings &rarr; Match found chime still turns it on and off.</li>
+          <li><b>A second key and a second pad button for every control</b>: Controls &rarr; Player &rarr; Second keys and Second pad buttons. Either one works (Guard on a face button and a trigger, for example).</li>
+          <li><b>Display &rarr; V-Sync</b> (On / Off) and <b>Frame limit</b> (Off, 30, 60, 120, 144 or the screen&rsquo;s refresh, the default). Only the pictures: the game&rsquo;s speed, its sound and online timing are as before.</li>
+          <li><b>Display &rarr; Shadows: Arcade</b> (vf1-recomp #32) draws the shadows as the original board did at any render scale: the checkered mesh, over a fighter lying in one. Smooth, the default, blends them as before.</li>
+          <li><b>Online, the sound after a rollback</b> (as Virtua Fighter 2 Recomp&rsquo;s): the sounds and music of the moves that really happened no longer go missing when the game corrects a guess about the other side&rsquo;s input, and a sound cut across the correction no longer comes out wrong. Only the sound: matches play exactly the same.</li>
+          <li>No update is forced: plays v1.6.0, v1.5.1 and v1.5.0 online as before.</li>
+        </ul>
+        <details><summary>v1.6.0</summary><ul>
           <li><b>Online is a room browser.</b> Menu &rarr; Online lists the open rooms and the matches being played, with the players, the score and how many are watching. CREATE ROOM (unlisted, code only, unless you list it; a name if you like), ENTER CODE and QUICK MATCH.</li>
           <li><b>Watch any match.</b> WATCH on a match in the list, or its code: a watcher never slows the players down, however many watch (up to 400) and whatever their ping. The players see how many are watching. Join late and it catches up from the start, unseen.</li>
           <li><b>13 languages</b> in every menu: Game &rarr; Language (or <code>language =</code> in settings.ini).</li>
           <li><b>The Online page</b> (vf-online.pages.dev/online): every game&rsquo;s rooms and matches; JOIN and WATCH open the game.</li>
           <li>No update is forced: builds from v1.5.0 and v1.5.1 still play this one (they just don&rsquo;t see rooms).</li>
-        </ul>
+        </ul></details>
         <details><summary>v1.5.1</summary><ul>
           <li><b>Window size</b> (updated 5 Nov) (as in Virtua Fighter 3 Recomp): Menu &gt; Display &gt; Window size makes the window a whole multiple of the arcade&rsquo;s 384 lines (1x is 512 &times; 384 for the 4:3 picture, up to 4x, as many as your screen holds). Render scale 1x with Window size 1x shows the arcade&rsquo;s 384 lines one to one; Window size 2x doubles each of them. Resizing the window by hand sets it back to Free.</li>
           <li><b>The window is remembered</b> (updated 5 Nov): its size, place, maximised and fullscreen stay as you left them from one start to the next, so an OBS capture keeps working. A place on a screen that&rsquo;s gone opens it in the middle of one that&rsquo;s there.</li>
