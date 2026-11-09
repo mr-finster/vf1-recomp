@@ -3163,7 +3163,7 @@ int main(int argc, char **argv)
 		// (a watcher's frames caught up unseen, for the board to run through unheard as fast as it can, in time while it
 		// keeps up (vf1net::UnheardQueue, bounded): after in's first unheard_at bytes; while there are some, put's go
 		// after them (heard), so the bytes keep their order)
-		vf1net::UnheardQueue unheard;
+		vf1net::UnheardQueue unheard = [] { vf1net::UnheardQueue q; q.most_timed = vf1net::UNHEARD_CATCH_UP; return q; }();   // (none let go catching up: vf1_netplay.h)
 		size_t unheard_at = 0;
 		std::atomic<bool> unheard_on{ false };
 		// (a watcher catching up, unseen: the board runs through what it's given unheard, and nothing more, not on to the
@@ -3184,12 +3184,18 @@ int main(int argc, char **argv)
 			unheard.frame(b);
 			unheard_on = true;
 		}
+		size_t unheard_waiting()   // (frames caught up the board has still to run through: the catch-up waits past UNHEARD_AHEAD)
+		{
+			if (!th.joinable()) return 0;
+			std::lock_guard<std::mutex> lk(mx);
+			return unheard.frames();
+		}
 		void stop()
 		{
 			if (th.joinable()) {
 				quit = true;
 				th.join();
-				fprintf(stderr, "online: the match's sound board played %llu frames, %llu bytes from the game\n", (unsigned long long)frames.load(), (unsigned long long)bytes_in.load());
+				fprintf(stderr, "online: the match's sound board played %llu frames, %llu bytes from the game; %llu frames caught up let go\n", (unsigned long long)frames.load(), (unsigned long long)bytes_in.load(), (unsigned long long)unheard.dropped);
 			}
 			quit = false;
 			frames = bytes_in = 0;
@@ -3335,6 +3341,7 @@ int main(int argc, char **argv)
 	};
 	online.adapter.sound_out = [&](const std::vector<uint8_t> &b) { msound.put(b); };
 	online.adapter.sound_unheard = [&](const std::vector<uint8_t> &b) { msound.put_unheard(b); };
+	online.adapter.sound_unheard_waiting = [&] { return msound.unheard_waiting(); };
 	bool online_ready = false;
 	auto online_page = [&] {
 		if (!online_ready) {   // (the ROMs' hash for the handshake, once)

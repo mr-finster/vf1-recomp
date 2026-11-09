@@ -127,6 +127,15 @@ private:
 // sound board takes about 0.4 ms a frame), the heard sound after it; the music then from its song's start, not where
 // the players are in it
 constexpr size_t UNHEARD_TIMED = 180, MUSIC_CUE_BEFORE = 180, MUSIC_CUE_FRAMES = 60;
+// A watcher catching up from the match's start lets none go: the catch-up waits while the sound board has more than
+// UNHEARD_AHEAD frames to run (Adapter::sound_unheard_waiting; near the live point, while it has any), and the queue
+// holds UNHEARD_CATCH_UP (more than that and a pass's frames, Spectator::Config::catch_up_frames). Letting frames go
+// there (their notes dropped, the rest folded into the next) left the board in a state the game never made, out of step
+// with the players' sound at every join point tried (tools/vf1watchsound): VF2 v0.1.20's watcher come 7 minutes late
+// heard the music stuck on one note and no effects till the next round's song, and VF1's queue is the same. The board
+// now runs every frame a from-the-start watcher's does, in order; only a snapshot's tail (the frames before it, given
+// at once) is still cut down to the queue's bound, as it always was
+constexpr size_t UNHEARD_AHEAD = 120, UNHEARD_CATCH_UP = 1200;
 // (a snapshot's sound bytes: the frames before it the host keeps, about 4 minutes, past a fight's song's cue; "VF1T")
 constexpr size_t SOUND_TAIL = 14400;
 constexpr uint32_t TAIL_MAGIC = 0x54314656;
@@ -238,6 +247,10 @@ public:
 	// the sound board, still go to sound_out. Only what's heard, never the game)
 	bool mute = false;
 	std::function<void(const std::vector<uint8_t> &)> sound_unheard;   // (none: they're dropped)
+	// (and how many of them the sound board has still to run: a watcher catching up waits for it past
+	// UNHEARD_AHEAD (Online::step), so none is let go (UnheardQueue's bound) and its board is a from-the-start
+	// watcher's when the picture's up; 0 none waiting. None set: it doesn't wait)
+	std::function<size_t()> sound_unheard_waiting;
 
 	// tests: the state's hash after each frame a multiple of this, the last time it ran (0: none kept)
 	uint32_t checkpoint_every = 0;
