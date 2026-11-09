@@ -259,3 +259,8 @@ clean:
 
 -include $(shell find $(OBJ) -name '*.d' 2>/dev/null)
 .PHONY: all clean regions
+
+# vf1watchsound: a late watcher's match sound after its catch-up against a from-the-start watcher's (join points swept)
+$(BIN)/vf1watchsound: $(call objs,tools/vf1watchsound.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
