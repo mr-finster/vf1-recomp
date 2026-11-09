@@ -483,7 +483,7 @@ void model1::draw_sky(bitmap_rgb32 &bitmap, float sdx, float sdy)
 	parallel_rows(SCREEN_H * s, [&](int Y0, int Y1) {
 		for (int Yo = Y0; Yo < Y1; Yo++) {
 			const int ly = std::clamp(int(std::floor(double(Yo + oy) / s)), 0, SCREEN_H - 1);
-			if (m_tile_coord[size_t(ly) * tw + m_ext + SCREEN_W / 2] == ~0u) continue;   // not this layer
+			if (m_tile_coord[size_t(ly) * tw + m_ext + SCREEN_W / 2] == ~0u && !m_fc_live) continue;   // not this layer (the free camera's: every row)
 			uint32_t *d = &bitmap.pix(Yo);
 			const int Y = y_base + Yo;
 			if (Y < 0 || Y >= H) {

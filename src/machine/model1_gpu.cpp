@@ -355,7 +355,7 @@ void model1::parts_sky(const sky_art &a, int x_off, int y_base, int oy)
 	for (int Yo = 0; Yo < SCREEN_H * s; Yo++) {
 		const int ly = std::clamp(int(std::floor(double(Yo + oy) / s)), 0, SCREEN_H - 1);
 		int k = 0;
-		if (m_tile_coord[size_t(ly) * tw + m_ext + SCREEN_W / 2] != ~0u) {
+		if (m_tile_coord[size_t(ly) * tw + m_ext + SCREEN_W / 2] != ~0u || m_fc_live) {   // (the free camera's: every row)
 			const int Y = y_base + Yo;
 			k = Y < 0 ? 2 : Y >= H ? 3 : 1;
 		}

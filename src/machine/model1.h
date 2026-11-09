@@ -445,7 +445,20 @@ public:
 	// (1 and 3: the energy bars, the timer, the names, the rounds won, the round calls' text) aren't drawn; the sky, the
 	// layers under the 3D and the 3D are. The picture only: what's drawn never reaches the board's state
 	void set_hud_hidden(bool hidden) { m_hud_hidden = hidden; }
-	bool hud_hidden_now() const { return m_hud_hidden && m_ram_b.size() > 0x1138 && m_ram_b[0x1138] == 9; }
+	bool hud_hidden_now() const { return (m_hud_hidden && m_ram_b.size() > 0x1138 && m_ram_b[0x1138] == 9) || free_cam_shown(); }
+	// Free camera (the host's: Display > Free camera, F4, View + R3): the fight seen from a camera the player flies. The
+	// picture only: the game's matrices are left as they are and the view F is applied to the points as they're drawn
+	// (push_object, after the game's transform: every renderer gets it), so nothing reaches the board's state. Anchored
+	// in the world by the stage's first model in the fight's full-screen view (its matrix is the game's camera times
+	// the stage's own place, which doesn't move: free_cam_frame), so the free camera stays put as the game's moves. Its
+	// pose in that world (the stage model's axes, y up, the game's units): the eye, its heading and pitch in radians.
+	struct free_cam_pose { double pos[3] = { 0, 0, 0 }; double yaw = 0, pitch = 0; };
+	void set_free_cam(bool on) { m_fc_on = on; m_fc_reset = true; m_fc_have_game = false; }
+	bool free_cam() const { return m_fc_on; }
+	void free_cam_reset() { if (m_fc_have_game) { m_fc = m_fc_game; m_fc_zoom[0] = m_fc_game_zoom[0]; m_fc_zoom[1] = m_fc_game_zoom[1]; } else m_fc_reset = true; }   // (back to the game's camera)
+	// moved: along its look (forward with its pitch), across, and up the world's up (units); turned (radians)
+	void free_cam_move(double fwd, double right, double up, double dyaw, double dpitch);
+	bool free_cam_shown() const { return m_fc_on && m_fc_live; }   // (the last picture's 3D was the free camera's)
 	uint8_t *eeprom() { return m_ioboard ? reinterpret_cast<uint8_t *>(m_ioboard->eeprom) : &m_dpram[0x100]; }
 	static constexpr size_t EEPROM_SIZE = 0x80;
 	bool real_ioboard() const { return bool(m_ioboard); }
@@ -838,6 +851,25 @@ private:
 	std::vector<uint8_t> m_ram_a;      // 400000-40ffff (battery-backed)
 	std::vector<uint8_t> m_ram_b;      // 500000-53ffff
 	bool m_hud_hidden = false;         // (set_hud_hidden: the host's, read when a picture's 2D is drawn)
+	// the free camera (set_free_cam): on, to start at the game's camera, and this picture's: anchored (live), the
+	// object being drawn its (obj: the fight's full-screen view, under the HUD), the view full-screen
+	bool m_fc_on = false, m_fc_reset = true, m_fc_live = false, m_fc_obj = false, m_fc_vp_full = false;
+	bool m_fc_mirror = false;          // (the anchor's axes left-handed: the camera's right the other way)
+	free_cam_pose m_fc, m_fc_game;     // (m_fc_game: the game's camera, the last picture's)
+	bool m_fc_have_game = false;
+	float m_fc_zoom[2] = {}, m_fc_game_zoom[2] = {};   // (the free camera's zoom, its start's; the game's, as the list sets it)
+	uint32_t m_fc_anchor = 0;          // the stage model it's anchored by (kept while it's drawn)
+	int m_fc_anchor_lost = 0;          // (pictures without it: another taken after a few)
+	float m_fc_view[12] = {};          // F: the game's view space to the free camera's (3x3 by rows, then the move)
+	float m_fc_sky_dx = 0, m_fc_sky_dy = 0;   // the sky moved by the turn from the game's camera (arcade pixels)
+	void free_cam_frame();             // the anchor in the list to be drawn, F from it
+	void free_cam_point(point_t *p) const
+	{
+		const float *F = m_fc_view, x = p->x, y = p->y, z = p->z;
+		p->x = F[0] * x + F[1] * y + F[2] * z + F[9];
+		p->y = F[3] * x + F[4] * y + F[5] * z + F[10];
+		p->z = F[6] * x + F[7] * y + F[8] * z + F[11];
+	}
 	std::vector<uint16_t> m_display_list0_ram, m_display_list1_ram;
 	uint64_t m_list_written[2] = { ~0ull, ~0ull };   // the game frame each display list was last written in
 	const uint16_t *picture_list();                  // the display list to show (see model1_video.cpp)
@@ -1182,6 +1214,9 @@ private:
 	static void fclip_clip_top(view_t*, point_t*, point_t*, point_t*);
 	static void fclip_clip_left(view_t*, point_t*, point_t*, point_t*);
 	static void fclip_clip_right(view_t*, point_t*, point_t*, point_t*);
+	static constexpr float FC_NEAR = 0.05f;   // the free camera's near plane (the game's own has none)
+	static bool fclip_isc_near(view_t *, point_t *p) { return p->z < FC_NEAR; }
+	static void fclip_clip_near(view_t *view, point_t *pt, point_t *p1, point_t *p2);
 
 	enum render_pass { RENDER_BELOW_HUD, RENDER_ABOVE_HUD };
 	void    tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_pass pass);
@@ -1262,7 +1297,7 @@ private:
 		int sky_base = 0, sky_last_tx0 = 0;
 	} m_still;
 
-	clipper_t m_clipfn[4];
+	clipper_t m_clipfn[5];   // the near plane (the free camera's only), then the game's four
 	uint16_t* m_display_list_current = nullptr;
 
 	int m_overlay_stride = 0;

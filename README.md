@@ -208,6 +208,7 @@ Change them in the menu (<kbd>Esc</kbd>, or View / Select on a pad).
 | <kbd>Esc</kbd> | Menu: display (render scale, picture shape, antialiasing, 3D renderer...), sound, game, controls, cheats (the unused characters), quit |
 | <kbd>P</kbd> | Pause |
 | <kbd>F3</kbd> | Reset |
+| <kbd>F4</kbd> | Free camera (below) |
 | <kbd>F5</kbd> / <kbd>F6</kbd> | Render scale / picture shape |
 | <kbd>F9</kbd> | Frame timings |
 | <kbd>F11</kbd> | Fullscreen |
@@ -221,6 +222,27 @@ works) for a coin button.
 Arcade sticks the game doesn't know (DirectInput sticks such as HORI's Virtua Stick High Grade or the Astro City
 Mini) get a fighting stick's layout; Controls > Player 1 (or 2) > Set up buttons sets theirs by pressing each in turn. A
 `gamecontrollerdb.txt` (SDL's mappings) in the data folder or beside the program is read too.
+
+### Free camera
+
+<kbd>F4</kbd>, View + R3 on a pad, or Display > **Free camera** (taken as the menu closes): a camera you fly round the
+fight. It starts where the game's camera is and stays where you leave it while the game's moves on; the HUD is hidden,
+and your controls don't reach the game while it's on. <kbd>P</kbd> pauses the fight and the camera still flies. It
+only changes the picture: the game plays exactly the same. Offline and while watching an online match, never while
+playing one; always off at the start.
+
+| | Keyboard + mouse | Pad |
+| --- | --- | --- |
+| Look | Mouse (or the arrow keys) | Right stick |
+| Move | <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> | Left stick |
+| Up / down | <kbd>E</kbd> or <kbd>Space</kbd> / <kbd>Q</kbd> or <kbd>Ctrl</kbd> | RT / LT |
+| Faster (x4) / slower (x0.25) | <kbd>Shift</kbd> / <kbd>Alt</kbd> | L3 held |
+| Speed | Mouse wheel | LB / RB |
+| Back to the game's camera | <kbd>R</kbd> | Y |
+| Leave | <kbd>F4</kbd> | View + R3 |
+
+The arcade board sorts its polygons by depth instead of using a depth buffer, and the game only sends what its own
+camera sees: from odd angles some polygons overlap wrongly, and parts the game's camera doesn't show can be missing.
 
 ### Window size
 

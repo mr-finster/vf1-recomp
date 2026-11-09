@@ -3366,7 +3366,7 @@ void model1::draw_tiles(bitmap_rgb32 &bitmap, const rectangle &cliprect, int lay
 {
 	static const int skip = getenv("VF_TILE_SKIP") ? strtol(getenv("VF_TILE_SKIP"), nullptr, 16) : 0;
 	if (skip & (1 << layer)) return;
-	if (m_scale == 1 && m_ext == 0) {
+	if (m_scale == 1 && m_ext == 0 && !(layer == 4 && m_fc_live)) {   // (the free camera's sky: the panorama, below)
 		m_tiles.m_ox = 0;
 		m_tiles.draw(bitmap, cliprect, layer, 0, flags);
 		return;
@@ -3404,7 +3404,10 @@ void model1::draw_tiles(bitmap_rgb32 &bitmap, const rectangle &cliprect, int lay
 	const int out_w = bitmap.width();
 	// smooth motion: the sky between two game frames, moved by the blended scroll at full resolution
 	float sdx = 0, sdy = 0;
-	if (layer == 4 && (flags & segas24_tile::DRAW_OPAQUE)) smooth_sky_shift(sdx, sdy);
+	if (layer == 4 && (flags & segas24_tile::DRAW_OPAQUE)) {
+		smooth_sky_shift(sdx, sdy);
+		if (m_fc_live) { sdx += m_fc_sky_dx; sdy += m_fc_sky_dy; }   // (the free camera's turn from the game's)
+	}
 	// a hi-res sky draws over every row of this layer: nothing to draw beneath it
 	if (sky && m_sky_now) { draw_sky(bitmap, sdx, sdy); return; }
 	// the tile layer itself moves no more than 24 pixels (its padding is 32: more showed its clamped
@@ -3549,6 +3552,7 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 		last = h;
 	}
 	m_screen_now = m_wide_frame ? nullptr : known;
+	free_cam_frame();   // (the free camera's view for this picture, before the sky it turns)
 	draw_tiles(bitmap, cliprect, 6, segas24_tile::DRAW_OPAQUE);
 	draw_tiles(bitmap, cliprect, 4, segas24_tile::DRAW_OPAQUE);
 	if (m_screen_now && m_parts) {

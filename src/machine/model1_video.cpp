@@ -943,6 +943,17 @@ void model1::fclip_clip_right(view_t *view, point_t *pt, point_t *p1, point_t *p
 	view->project_point(pt);
 }
 
+// The free camera's near plane: z = FC_NEAR (a point behind the eye can't be projected, and the game's camera never
+// had one there: its four planes alone)
+void model1::fclip_clip_near(view_t *view, point_t *pt, point_t *p1, point_t *p2)
+{
+	const float t = (p2->z - FC_NEAR) / (p2->z - p1->z);
+	pt->x = p1->x * t + p2->x * (1 - t);
+	pt->y = p1->y * t + p2->y * (1 - t);
+	pt->z = FC_NEAR;
+	view->project_point(pt);
+}
+
 void model1::fclip_push_quad_next(int level, quad_t& q, point_t *p1, point_t *p2, point_t *p3, point_t *p4)
 {
 	quad_t cquad(q.col, q.z, p1, p2, p3, p4);
@@ -953,7 +964,7 @@ void model1::fclip_push_quad(int level, quad_t& q)
 {
 	view_t *view = m_view.get();
 
-	if (level == 4)
+	if (level == 5)
 	{
 		M1_LOG(LOG_TGP, "VIDEOCQ %d", level);
 		for (int i = 0; i < 4; i++)
@@ -1464,6 +1475,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 	lower(old_p1);
 	m_view->transform_point(old_p0);
 	m_view->transform_point(old_p1);
+	if (m_fc_obj) { free_cam_point(old_p0); free_cam_point(old_p1); }   // (the free camera's view: the picture only)
 
 	if (old_p0->z > 0)
 	{
@@ -1539,6 +1551,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 
 		m_view->transform_point(p0);
 		m_view->transform_point(p1);
+		if (m_fc_obj) { free_cam_point(p0); free_cam_point(p1); }   // (its normal stays the game's view's: lit as the game lights it)
 		if (p0->z > 0)
 		{
 			m_view->project_point(p0);
@@ -1723,7 +1736,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 						// (the split once a frame from what's been seen (512 counts summed twice a polygon was
 						// most of a two-tone fighter's cost); its first frame's polygons, nothing seen, as they come)
 						if (tones->at != m_frame) { split(tones->total, tones->below, tones->med); tones->at = m_frame; }
-						tones->n[key]++;
+						if (!m_fc_obj) tones->n[key]++;   // (what the game's camera shows: not the free camera's)
 						uint64_t total = tones->total, below = tones->below; int med = tones->med;
 						if (!total) split(total, below, med);
 						light = key > med || (key == med && below * 2 >= total / 2);
@@ -1762,10 +1775,10 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 				if (hh > 0.015f && hh < 0.13f && ss > 0.15f && ss < 0.8f && vv > 0.28f && !lips) {
 					if (head_hue >= 0) {
 						skin_sum &ref = skin_prev ? scratch_skin : m_skin_ref[skin_rec];
-						if (ref.n < 100000) { ref.h += hh; ref.s += ss; ref.v += vv; ref.n++; }
+						if (ref.n < 100000 && !m_fc_obj) { ref.h += hh; ref.s += ss; ref.v += vv; ref.n++; }
 					} else if (skin_ref && skin_ref->n) {
 						skin_sum &part = m_skin_part[poly_adr];
-						if (part.n < 100000) { part.h += hh; part.s += ss; part.v += vv; part.n++; }
+						if (part.n < 100000 && !m_fc_obj) { part.h += hh; part.s += ss; part.v += vv; part.n++; }
 						const skin_sum &ref = *skin_ref;
 						hh = float(ref.h / ref.n); ss = float(ref.s / ref.n);
 						vv = std::clamp(vv + float(ref.v / ref.n - part.v / part.n), 0.05f, 1.0f);
@@ -1818,7 +1831,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 			cquad.col |= MOIRE;
 		if (fighters_only && (cquad.col & MOIRE)) goto next;   // (and no shadows; the strip's points still move on)
 
-		fclip_push_quad(0, cquad);
+		fclip_push_quad(m_fc_obj ? 0 : 1, cquad);   // (the near plane: the free camera's only)
 
 	next:
 		poly_adr += 10;
@@ -2230,6 +2243,123 @@ void model1::view_t::set_view_translation(float x, float y)
 
 
 
+// The fight's full-screen view (the free camera's): the game's viewport over the whole 4:3 screen
+static bool fc_full_view(float xl, float xr, float yb, float yt)
+{
+	return xl <= 1 && xr >= model1::SCREEN_W - 2 && std::min(yb, yt) <= 1 && std::max(yb, yt) >= model1::SCREEN_H - 2;
+}
+
+// The free camera for the picture about to be drawn: the game's camera found from the list (the anchor: a stage
+// model's matrix, in the fight's full-screen view, as it will be drawn, smooth motion's blend too), and F, the turn
+// and move from the game's view space to the free camera's. The anchor's matrix is the game's camera C times the
+// model's own place W (VF's world is scaled 1.75 across x and z, W's columns: the view space itself is the game's
+// camera's, rigid), so its columns, normalised, are C's turn in a world fixed to the stage, and its last column C's
+// move: the world point of a view point is R^T (p - t). The free camera, a turn Rf (heading, pitch) and an eye e:
+// p' = Rf (R^T (p - t) - e). Not anchored (no fight's view, a title, the select): the game's camera, as ever.
+void model1::free_cam_frame()
+{
+	m_fc_live = false;
+	m_fc_sky_dx = m_fc_sky_dy = 0;
+	if (!m_fc_on || !m_fight_cam) return;
+	uint16_t *const list_was = m_display_list_current;
+	struct put_back { model1 &m; uint16_t *l; int slot; ~put_back() { m.m_display_list_current = l; m.m_replay_slot = slot; m.m_shade_from = m.m_shade_to = m.m_shade_light = nullptr; } } pb{ *this, list_was, m_replay_slot };
+	if (m_replaying) { if (m_logic[m_replay_older ? 0 : 1].list.empty()) return; m_display_list_current = m_logic[m_replay_older ? 0 : 1].list.data(); }
+	else if ((m_listctl[1] & 0x1f) == 0x1f) set_current_render_list();
+	else return;
+	float mat[12] = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 }, found[12];
+	bool full = false;
+	int slot = 0, off = 0;
+	uint32_t first = 0, kept = 0;
+	float first_m[12];
+	for (int n = 0; n < 0x8000; n++) {
+		const int type = readi(off);
+		if (type == 0) off += 2;
+		else if (type == 1 || type == 0x41) {
+			const uint32_t poly = readi(off + 4) & 0x7fffff;
+			if (type == 1 && full && stage_model(poly) && (!first || poly == m_fc_anchor)) {
+				float blended[12];
+				m_replay_slot = slot;
+				const float *use = m_replaying && smooth_matrix(poly, blended) ? blended : mat;
+				if (!first) { first = poly; memcpy(first_m, use, sizeof first_m); }
+				if (poly == m_fc_anchor) { kept = poly; memcpy(found, use, sizeof found); break; }
+			}
+			off += 8;
+		}
+		else if (type == 2) off = skip_direct(off);
+		else if (type == 3) { full = fc_full_view(readi16(off + 8), readi16(off + 12), 383 - (readi16(off + 14) - 39), 383 - (readi16(off + 10) - 39)); off += 16; }
+		else if (type == 4) off += 6 + (readi(off + 4) + 1) * 2;
+		else if (type == 5 || type == 6) off += 6 + readi(off + 4) * 2;
+		else if (type == 7 || type == 8) off += 4;
+		else if (type == 9 || type == 0xc) off += 6;
+		else if (type == 0xa) off += 8;
+		else if (type == 0xb) { for (int i = 0; i < 12; i++) mat[i] = readf(off + 2 + 2 * i); slot++; off += 26; }
+		else break;   // (0xf: the end)
+	}
+	// the anchor kept while it's drawn; gone for a few pictures (or none yet), the stage's first model instead
+	if (!kept) {
+		if (!first || (m_fc_anchor && ++m_fc_anchor_lost < 8)) return;
+		m_fc_anchor = first;
+		memcpy(found, first_m, sizeof found);
+		m_fc_reset = true;   // (another model's place: the free camera's pose in its world starts again)
+	}
+	m_fc_anchor_lost = 0;
+	double R[3][3], t[3];
+	for (int j = 0; j < 3; j++) {
+		const double len = std::sqrt(double(found[3 * j]) * found[3 * j] + double(found[3 * j + 1]) * found[3 * j + 1] + double(found[3 * j + 2]) * found[3 * j + 2]);
+		if (len < 1e-6) return;
+		for (int i = 0; i < 3; i++) R[i][j] = found[3 * j + i] / len;
+		t[j] = found[9 + j];
+	}
+	// the game's eye in the world (-R^T t), its heading and pitch (its forward: R's last row)
+	double eye[3];
+	for (int j = 0; j < 3; j++) eye[j] = -(R[0][j] * t[0] + R[1][j] * t[1] + R[2][j] * t[2]);
+	const double game_yaw = std::atan2(R[2][0], R[2][2]), game_pitch = std::asin(std::clamp(R[2][1], -1.0, 1.0));
+	for (int k = 0; k < 3; k++) m_fc_game.pos[k] = eye[k];
+	m_fc_game.yaw = game_yaw;
+	m_fc_game.pitch = std::clamp(game_pitch, -89 * M_PI / 180, 89 * M_PI / 180);
+	m_fc_mirror = R[0][0] * std::cos(game_yaw) - R[0][2] * std::sin(game_yaw) < 0;   // (the game's right: the world's other way)
+	m_fc_have_game = true;
+	if (m_fc_reset) { m_fc_reset = false; m_fc = m_fc_game; m_fc_zoom[0] = m_fc_game_zoom[0]; m_fc_zoom[1] = m_fc_game_zoom[1]; }
+	static const bool log = getenv("VF_LOG_FREECAM") != nullptr;   // (tests: the anchor and both cameras, each picture)
+	if (log)
+		fprintf(stderr, "freecam: frame %llu anchor %06x game eye %.3f %.3f %.3f yaw %.2f pitch %.2f, free eye %.3f %.3f %.3f yaw %.2f pitch %.2f, zoom %.0f, free %.0f\n",
+				(unsigned long long)m_frame, m_fc_anchor, eye[0], eye[1], eye[2], game_yaw * 180 / M_PI, game_pitch * 180 / M_PI,
+				m_fc.pos[0], m_fc.pos[1], m_fc.pos[2], m_fc.yaw * 180 / M_PI, m_fc.pitch * 180 / M_PI, m_fc_game_zoom[0], m_fc_zoom[0]);
+	// Rf by rows: right, up, forward (y up)
+	const double cy = std::cos(m_fc.yaw), sy = std::sin(m_fc.yaw), cp = std::cos(m_fc.pitch), sp = std::sin(m_fc.pitch);
+	const double side = m_fc_mirror ? -1 : 1;
+	const double Rf[3][3] = { { side * cy, 0, -side * sy }, { -sp * sy, cp, -sp * cy }, { cp * sy, sp, cp * cy } };
+	double G[3][3], d[3];
+	for (int a = 0; a < 3; a++)
+		for (int i = 0; i < 3; i++) G[a][i] = Rf[a][0] * R[i][0] + Rf[a][1] * R[i][1] + Rf[a][2] * R[i][2];
+	for (int k = 0; k < 3; k++) d[k] = m_fc.pos[k] - eye[k];
+	for (int a = 0; a < 3; a++) {
+		for (int i = 0; i < 3; i++) m_fc_view[3 * a + i] = float(G[a][i]);
+		m_fc_view[9 + a] = float(-(Rf[a][0] * d[0] + Rf[a][1] * d[1] + Rf[a][2] * d[2]));
+	}
+	// the sky (a panorama 2048 arcade pixels round, as the game scrolls it by its heading): moved by the turn from the
+	// game's camera; up and down at the same rate, its plain top and bottom colours beyond it (draw_sky)
+	constexpr double PX = 2048 / (2 * M_PI);
+	const double dyaw = std::remainder(m_fc.yaw - game_yaw, 2 * M_PI);
+	m_fc_sky_dx = float(side * dyaw * PX);
+	// (up and down: as the 3D's horizon moves, from the game's camera's (its pitch, its zoom) to the free camera's)
+	auto horizon = [](double pitch, float zoom) { return std::tan(std::clamp(pitch, -80 * M_PI / 180, 80 * M_PI / 180)) * zoom; };
+	if (m_fc_zoom[1] > 0 && m_fc_game_zoom[1] > 0) m_fc_sky_dy = float(horizon(game_pitch, m_fc_game_zoom[1]) - horizon(m_fc.pitch, m_fc_zoom[1]));
+	m_fc_live = true;
+}
+
+void model1::free_cam_move(double fwd, double right, double up, double dyaw, double dpitch)
+{
+	// (moved along the look it has, then turned)
+	const double side = m_fc_mirror ? -1 : 1;
+	const double cy = std::cos(m_fc.yaw), sy = std::sin(m_fc.yaw), cp = std::cos(m_fc.pitch), sp = std::sin(m_fc.pitch);
+	const double f[3] = { cp * sy, sp, cp * cy }, r[3] = { side * cy, 0, -side * sy };
+	for (int k = 0; k < 3; k++) m_fc.pos[k] += f[k] * fwd + r[k] * right;
+	m_fc.pos[1] += up;
+	m_fc.yaw = std::remainder(m_fc.yaw + side * dyaw, 2 * M_PI);
+	m_fc.pitch = std::clamp(m_fc.pitch + dpitch, -89 * M_PI / 180, 89 * M_PI / 180);
+}
+
 void model1::tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_pass pass)
 {
 	m_render_done = 1;
@@ -2241,6 +2371,7 @@ void model1::tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_
 		M1_LOG(LOG_TGP, "VIDEO: render list %d\n", get_list_number());
 
 		m_view->init_translation_matrix();
+		m_fc_vp_full = false;
 		float old_z = 0;
 		m_head_seen.clear();
 		neck_settle();
@@ -2257,6 +2388,8 @@ void model1::tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_
 			case 1:
 				// command 0x01 = object drawn below the cat1 HUD tilemaps
 				if (pass == RENDER_BELOW_HUD) {
+					m_fc_obj = m_fc_live && m_fc_vp_full;   // (the free camera: the fight's full-screen view only)
+					struct fc_off { bool &b; ~fc_off() { b = false; } } fc_off_{ m_fc_obj };
 					quad_t *const first_quad = m_quadpt;
 					struct stamp_t { model1 *m; quad_t *from; uint32_t adr; ~stamp_t() { for (quad_t *q = from; q < m->m_quadpt; q++) q->obj = adr; } }
 						stamp{ this, first_quad, readi(list_offset + 4) };
@@ -2306,6 +2439,7 @@ void model1::tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_
 				float y1 = 383 - (readi16(list_offset + 14) - 39);
 
 				m_view->set_viewport(xc, yc, x1, x2, y1, y2);
+				m_fc_vp_full = fc_full_view(x1, x2, y1, y2);
 
 				list_offset += 16;
 				break;
@@ -2365,7 +2499,11 @@ void model1::tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_
 				break;
 			case 9:
 				M1_LOG(LOG_TGP, "VIDEO:   zoom (%f, %f)\n", readf(list_offset + 2), readf(list_offset + 4));
-				m_view->set_zoom(readf(list_offset + 2) * 4, readf(list_offset + 4) * 4);
+				m_fc_game_zoom[0] = readf(list_offset + 2) * 4;
+				m_fc_game_zoom[1] = readf(list_offset + 4) * 4;
+				// (the free camera keeps the zoom it started with: the game's zooms in and out with its cuts)
+				if (m_fc_live && m_fc_zoom[0] > 0) m_view->set_zoom(m_fc_zoom[0], m_fc_zoom[1]);
+				else m_view->set_zoom(m_fc_game_zoom[0], m_fc_game_zoom[1]);
 				list_offset += 6;
 				break;
 			case 0xa:
@@ -2534,14 +2672,16 @@ void model1::video_start()
 	m_quadpt = &m_quaddb[0];
 	m_listctl[0] = m_listctl[1] = 0;
 
-	m_clipfn[0].m_isclipped = &model1::fclip_isc_bottom;
-	m_clipfn[0].m_clip = &model1::fclip_clip_bottom;
-	m_clipfn[1].m_isclipped = &model1::fclip_isc_top;
-	m_clipfn[1].m_clip = &model1::fclip_clip_top;
-	m_clipfn[2].m_isclipped = &model1::fclip_isc_left;
-	m_clipfn[2].m_clip = &model1::fclip_clip_left;
-	m_clipfn[3].m_isclipped = &model1::fclip_isc_right;
-	m_clipfn[3].m_clip = &model1::fclip_clip_right;
+	m_clipfn[0].m_isclipped = &model1::fclip_isc_near;   // (the free camera's alone: fclip_push_quad from 1 otherwise)
+	m_clipfn[0].m_clip = &model1::fclip_clip_near;
+	m_clipfn[1].m_isclipped = &model1::fclip_isc_bottom;
+	m_clipfn[1].m_clip = &model1::fclip_clip_bottom;
+	m_clipfn[2].m_isclipped = &model1::fclip_isc_top;
+	m_clipfn[2].m_clip = &model1::fclip_clip_top;
+	m_clipfn[3].m_isclipped = &model1::fclip_isc_left;
+	m_clipfn[3].m_clip = &model1::fclip_clip_left;
+	m_clipfn[4].m_isclipped = &model1::fclip_isc_right;
+	m_clipfn[4].m_clip = &model1::fclip_clip_right;
 
 }
 
