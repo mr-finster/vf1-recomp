@@ -2,8 +2,8 @@
    Gradients are the vertex-colour kind (horizontal-gradient): the SDL renderer has no shaders.
 
    One column with a fixed space for each part, so nothing overlaps whatever the page:
-     top 26 + title 56 + crumb 30 + rows 14 x 32 = 448 + note 8 + 84 (4 lines) + hint 6 + 22
-     + version 2 + 18 = 700dp of 720. Every page fits whole, so none scrolls (a scroll can't be seen: the
+     top 26 + title 56 + crumb 30 + rows 14 x 32 = 448 + note 8 + 84 (4 lines) + hint 10 + 22
+     + version 2 + 18 = 704dp of 720. Every page fits whole, so none scrolls (a scroll can't be seen: the
      rows below looked missing): a page is 14 rows at most, and one that would be longer is split into pages
      of its own (Display's Picture, Quality and Screen filter and colours; a player's keys' Button
      combinations; Cheats' Fight switches). menutest fails a page that doesn't fit. A long value is cut,
@@ -160,7 +160,7 @@ div { display: block; }
 }
 
 #hint {
-	margin-top: 6dp;
+	margin-top: 10dp;         /* (a help of four full lines clear of it: 6dp sat its last line on the hint) */
 	height: 22dp;
 	line-height: 22dp;
 	font-size: 17dp;

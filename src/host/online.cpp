@@ -2675,7 +2675,8 @@ void fighter_rows(Online &o, OnlineSettings &s, game_menu &menu, std::function<v
 	};
 	items.push_back({ tr::OS_FIGHTER, tr::OS_FIGHTER_HELP,
 		[kind, label] { return label(kind()); },
-		[&s, changed, kinds, kind, rebuild](int d) {
+		[&o, &s, changed, kinds, kind, rebuild](int d) {
+			if (o.phase() != Online::Phase::off) return;   // (the match's terms: not while one is on its way, as VF2's)
 			const std::vector<std::string> c = kinds();
 			int i = 0;
 			for (int k = 0; k < int(c.size()); k++) if (c[k] == kind()) i = k;
@@ -2734,7 +2735,8 @@ void fighter_rows(Online &o, OnlineSettings &s, game_menu &menu, std::function<v
 	menu_item it{ tr::C_SEED, tr::C_SEED_HELP,
 		[&s] { const SeedTyping &t = seed_typing(); return t.typing ? t.typed + "_" : t.pending ? std::string(tr::C_SEED_PENDING) : s.fighter; },
 		{},
-		[&menu, entry, rebuild] {
+		[&o, &menu, entry, rebuild] {
+			if (o.phase() != Online::Phase::off) return;
 			SeedTyping &t = seed_typing();
 			t.typing = true;
 			t.typed.clear();
@@ -2764,11 +2766,11 @@ menu_page settings_page(Online &o, OnlineSettings &s, game_menu &menu, std::func
 			s.max_ping = steps[(i + (d < 0 ? 5 : 1)) % 6];
 			changed();
 		} });
+	fighter_rows(o, s, menu, changed, p.items);   // (the match's terms, after the connection's rows)
 	p.items.push_back({ tr::OS_CHIME, tr::OS_CHIME_HELP,
 		[&s] { return std::string(s.chime ? tr::ON : tr::OFF); }, [&s, changed](int) { s.chime = !s.chime; changed(); } });
 	p.items.push_back({ tr::QUICK_LISTED, tr::QUICK_LISTED_HELP,
 		[&s] { return std::string(s.quick_listed ? tr::ON : tr::OFF); }, [&s, changed](int) { s.quick_listed = !s.quick_listed; changed(); } });
-	fighter_rows(o, s, menu, changed, p.items);
 	p.items.push_back({ tr::BACK, "", {}, {}, [&menu] { menu.pop(); } });
 	return p;
 }

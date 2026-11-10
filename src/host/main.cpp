@@ -2566,15 +2566,20 @@ int main(int argc, char **argv)
 				const tr::text names[] = { tr::OFF, tr::CRT_SEGA, tr::CRT_SONY, tr::CRT_NTSC_JP, tr::CRT_NTSC_US, tr::CRT_PAL };
 				static_assert(sizeof names / sizeof names[0] == crt::N_PRESETS, "a name for each of crt::PRESETS");
 				const std::string n = names[cfg.crt_colours];
-				return crt_on && crt_paint.failed() ? tr::fill(tr::NOT_WITH_RENDERER, { { "what", n } }) : n;
+				return n;
 			},
 			[&](int d) { cfg.crt_colours = wrap(cfg.crt_colours + d, crt::N_PRESETS); cfg_dirty = true; } });
 		p.items.push_back({ tr::D_BRIGHTNESS, tr::D_BRIGHTNESS_HELP,
-			[&] { const std::string n = tr::fill(tr::N_PERCENT, { { "n", std::to_string(cfg.brightness) } }); return crt_on && crt_paint.failed() ? tr::fill(tr::NOT_WITH_RENDERER, { { "what", n } }) : n; },
+			[&] { const std::string n = tr::fill(tr::N_PERCENT, { { "n", std::to_string(cfg.brightness) } }); return n; },
 			[&](int d) { cfg.brightness = std::clamp(cfg.brightness + 5 * d, crt::BRIGHT_MIN, crt::BRIGHT_MAX); cfg_dirty = true; } });
 		p.items.push_back({ tr::D_GAMMA, tr::D_GAMMA_HELP,
-			[&] { const std::string n = tr::fill(tr::N_PERCENT, { { "n", std::to_string(cfg.gamma) } }); return crt_on && crt_paint.failed() ? tr::fill(tr::NOT_WITH_RENDERER, { { "what", n } }) : n; },
+			[&] { const std::string n = tr::fill(tr::N_PERCENT, { { "n", std::to_string(cfg.gamma) } }); return n; },
 			[&](int d) { cfg.gamma = std::clamp(cfg.gamma + 5 * d, crt::GAMMA_MIN, crt::GAMMA_MAX); cfg_dirty = true; } });
+		// (the renderer in use can't do them: said under each of the three rows, its value as set)
+		for (size_t i = 1; i < p.items.size(); i++) {
+			p.items[i].below = [&] { return crt_on && crt_paint.failed() ? std::string(tr::D_NOT_WITH_RENDERER) : std::string(); };
+			p.items[i].good = [] { return false; };
+		}
 		p.items.push_back(back_item());
 		return p;
 	};
@@ -2619,7 +2624,7 @@ int main(int argc, char **argv)
 				return listed({ std::string(names[cfg.filter]), cfg.crt_colours ? std::string(tr::D_CRT_COLOURS) : std::string() });
 			}, {}, [&] { menu.push(screen_page()); } });
 		p.items.push_back({ tr::D_FREECAM, tr::D_FREECAM_HELP,   // (not saved: taken as the menu closes)
-			[&] { return fc_online_play ? std::string(tr::D_FREECAM_NOT_NOW) : on_off(fc_menu); },
+			[&] { return fc_online_play ? std::string(tr::D_FREECAM_NOT_ONLINE) : on_off(fc_menu); },
 			[&](int) { if (fc_online_play) menu.toast(std::string(tr::FREECAM_NOT_ONLINE), 3); else fc_menu = !fc_menu; } });
 		p.items.push_back(back_item());
 		return p;
@@ -4137,7 +4142,7 @@ int main(int argc, char **argv)
 				if (e.key.scancode == SDL_SCANCODE_ESCAPE) open_menu();
 				else if (e.key.scancode == SDL_SCANCODE_P && !online.playing()) paused = !paused;   // (a match never pauses)
 				else if (e.key.scancode == SDL_SCANCODE_F9) { perf.show = cfg.timings = !perf.show; cfg_dirty = true; if (!perf.show) present_shape(); }
-				else if (e.key.scancode == SDL_SCANCODE_F3) reset_game();
+				else if (e.key.scancode == SDL_SCANCODE_F3 && !online.playing()) reset_game();   // (never in a match)
 				else if (e.key.scancode == SDL_SCANCODE_F4) set_free_cam(!fc_on, false);
 				else if (e.key.scancode == SDL_SCANCODE_R && fc_on) m.free_cam_reset();   // (back to the game's camera)
 				else if (e.key.scancode == SDL_SCANCODE_F5) player_scale_to(cfg.scale % 6 + 1);

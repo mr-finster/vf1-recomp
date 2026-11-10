@@ -265,7 +265,7 @@ void pages(game_menu &gm, int w, int h)
 		{ D_QUALITY, listed({ D_SCALE, D_AA, D_RENDERER, D_DRIVER, D_BG_FILTER, D_SHADOWS, D_VSYNC, D_FRAME_LIMIT }),
 		  listed({ F(N_X, { { "n", "6" } }), F(D_SUM_AA, { { "n", F(N_X, { { "n", "3" } }) } }), R3D_GPU }) },
 		{ D_SCREEN, listed({ D_SCREEN_FILTER, D_CRT_COLOURS, D_BRIGHTNESS, D_GAMMA }), listed({ D_SCANLINES, D_CRT_COLOURS }) },
-		{ D_FREECAM, D_FREECAM_HELP, D_FREECAM_NOT_NOW } });
+		{ D_FREECAM, D_FREECAM_HELP, D_FREECAM_NOT_ONLINE } });
 	page_shots(gm, w, h, "pages_display_more.png", P_DISPLAY, {   // (the other values of its rows)
 		{ D_PICTURE, "", listed({ "21:9", D_FULLSCREEN }) }, { D_PICTURE, "", listed({ "4:3", D_SUM_WINDOW }) },
 		{ D_QUALITY, "", listed({ F(N_X, { { "n", "1" } }), R3D_CPU }) }, { D_QUALITY, "", listed({ F(N_X, { { "n", "2" } }), F(D_SUM_AA, { { "n", D_AA_LOW } }), R3D_CPU }) },
@@ -297,9 +297,9 @@ void pages(game_menu &gm, int w, int h)
 		{ D_AA, D_AA_HELP, D_AA_LOW }, { D_AA, D_AA_HELP, F(N_X, { { "n", "3" } }) } });
 	page_shots(gm, w, h, "pages_screen.png", D_SCREEN, {
 		{ D_SCREEN_FILTER, D_SCREEN_FILTER_HELP, D_SCANLINES },
-		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, F(NOT_WITH_RENDERER, { { "what", CRT_PAL } }) },
+		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_PAL },
 		{ D_BRIGHTNESS, D_BRIGHTNESS_HELP, F(N_PERCENT, { { "n", "100" } }) },
-		{ D_GAMMA, D_GAMMA_HELP, F(NOT_WITH_RENDERER, { { "what", F(N_PERCENT, { { "n", "100" } }) } }) },
+		{ D_GAMMA, D_GAMMA_HELP, F(N_PERCENT, { { "n", "100" } }) },
 		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_SEGA }, { D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_SONY }, { D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_NTSC_JP },
 		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_NTSC_US }, { D_SCREEN_FILTER, D_SCREEN_FILTER_HELP, D_CRT } });
 	page_shots(gm, w, h, "pages_sound.png", P_SOUND, {
@@ -596,6 +596,13 @@ int main(int argc, char **argv)
 	check(s.max_ping == 0, "and back to Any");
 	key(SDL_SCANCODE_LEFT);
 	check(s.max_ping == 250, "Any's left is the most, 250 ms");
+	key(SDL_SCANCODE_DOWN);   // (Your fighter: the match's terms, after the connection's rows)
+	key(SDL_SCANCODE_RIGHT);
+	check(s.fighter == "*", ("Your fighter: Random (" + s.fighter + ")").c_str());
+	shot("settings.png", w, h);
+	settle_check("settings.png", w, h);
+	key(SDL_SCANCODE_LEFT);
+	check(s.fighter.empty(), "and back to Normal");
 	key(SDL_SCANCODE_DOWN);
 	key(SDL_SCANCODE_RIGHT);
 	check(!s.chime, "the chime turns off");
@@ -607,13 +614,6 @@ int main(int argc, char **argv)
 	check(!s.quick_listed, "and off");
 	key(SDL_SCANCODE_RIGHT);
 	check(s.quick_listed, "and on");
-	key(SDL_SCANCODE_DOWN);
-	key(SDL_SCANCODE_RIGHT);
-	check(s.fighter == "*", ("Your fighter: Random (" + s.fighter + ")").c_str());
-	shot("settings.png", w, h);
-	settle_check("settings.png", w, h);
-	key(SDL_SCANCODE_LEFT);
-	check(s.fighter.empty(), "and back to Normal");
 	s.max_ping = 0;
 	key(SDL_SCANCODE_ESCAPE);
 	key(SDL_SCANCODE_ESCAPE);   // (More: back to the browser)
@@ -999,9 +999,17 @@ int main(int argc, char **argv)
 			// yet, the name asked for first, as every join (the host, the rooms list and the watchers show it)
 			auto show = [&] { gm.close(); gm.open(root()); gm.push(online_menu::page(o, s, gm, changed)); };
 			check(online_menu::link_refused(o).empty(), "a link with nothing on: followed");
-			if (!o.host(s, err)) fprintf(stderr, "menutest: hosting: %s\n", err.en().c_str());
+			// (a port of this run's own, and another if it's taken: 14 menutests side by side, langcheck's, all hosted on
+			// the settings' 7700, and all but one failed this check now and then)
+			const int port_was = s.port;
+			s.port = 20000 + int(SDL_GetTicksNS() / 1000 % 20000);
+			for (int tries = 0; tries < 20 && !o.host(s, err); tries++) {
+				fprintf(stderr, "menutest: hosting on port %d: %s: another port\n", s.port, err.en().c_str());
+				s.port = 20000 + (s.port - 20000 + 7919) % 20000;
+			}
 			check(!online_menu::link_refused(o).empty() && o.waiting(), "a link while hosting: refused, the room kept (as in a match)");
 			o.stop();
+			s.port = port_was;
 			if (!o.join_room(s, "KXQ4M7", err)) fprintf(stderr, "menutest: join: %s\n", err.en().c_str());
 			check(!online_menu::link_refused(o).empty(), "a link while joining a room: refused");
 			o.stop();

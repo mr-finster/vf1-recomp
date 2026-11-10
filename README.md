@@ -205,14 +205,16 @@ Change them in the menu (<kbd>Esc</kbd>, or View / Select on a pad).
 | <kbd>I</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> | Player 2: move |
 | <kbd>B</kbd> <kbd>N</kbd> <kbd>M</kbd> | Player 2: guard, punch, kick |
 | <kbd>2</kbd> | Player 2: start |
-| <kbd>Esc</kbd> | Menu: display (render scale, picture shape, antialiasing, 3D renderer...), sound, game, controls, cheats (the unused characters), quit |
-| <kbd>P</kbd> | Pause |
-| <kbd>F3</kbd> | Reset |
-| <kbd>F4</kbd> | Free camera (below) |
+| <kbd>5</kbd> <kbd>6</kbd> | Coins (Arcade play style) |
+| <kbd>Esc</kbd> | The menu: display, sound, game, arcade settings, online, controls, cheats, quit (a pad: View, L3 + R3, or the touchpad's click) |
+| <kbd>P</kbd> / <kbd>F3</kbd> | Pause / reset (neither in an online match) |
+| <kbd>F4</kbd> | Free camera (see below) |
 | <kbd>F5</kbd> / <kbd>F6</kbd> | Render scale / picture shape |
-| <kbd>F9</kbd> | Frame timings |
-| <kbd>F11</kbd> | Fullscreen |
-| <kbd>F12</kbd> | Screenshot |
+| <kbd>F11</kbd>, <kbd>F</kbd> or <kbd>Alt</kbd>+<kbd>Enter</kbd> | Fullscreen |
+| <kbd>F9</kbd> | The frame rate and timings in the title bar |
+| <kbd>F12</kbd> | A screenshot of the picture (in the Screenshots folder) |
+| <kbd>Tab</kbd> (held) | As fast as it goes |
+| <kbd>F2</kbd> / <kbd>9</kbd> | The arcade's test and service buttons (in its test menu, Down and Start do too) |
 
 Gamepad (Xbox layout): d-pad or stick to move, X guard, A punch, B kick, Y guard + punch (throws), RB punch + kick,
 LB guard + kick, RT all three, Start to start. View (tap), L3 + R3 or the touchpad click opens the menu (Menu can be
@@ -222,24 +224,6 @@ works) for a coin button.
 Arcade sticks the game doesn't know (DirectInput sticks such as HORI's Virtua Stick High Grade or the Astro City
 Mini) get a fighting stick's layout; Controls > Player 1 (or 2) > Set up buttons sets theirs by pressing each in turn. A
 `gamecontrollerdb.txt` (SDL's mappings) in the data folder or beside the program is read too.
-
-### Menu
-
-- **Resume**, **Sound**, **Game**, **Arcade settings**, **Online**, **Controls**, **Cheats** and **Quit**.
-- **Display:** three pages, each shown on its row with what it's set to, and the free camera's On / Off:
-  - **Picture:** picture shape (fit the window, 4:3, 16:10, 16:9, 21:9), window size, fullscreen and (on Windows)
-    fullscreen mode, the HUD, Show FPS.
-  - **Quality:** render scale (up to 6x), antialiasing (Low, 2x, 3x), the 3D renderer and (on Windows) the graphics
-    driver, background filter, shadows (smooth, or the arcade's mesh), V-Sync, frame limit.
-  - **Screen filter and colours:** screen filter (scanlines, CRT), CRT colours (an arcade monitor's and others),
-    brightness, gamma.
-  - **Free camera** (below).
-- **Controls:** each player's pad, keys and buttons (a key for two or three buttons at once: Button combinations, on
-  the keys' page).
-- **Cheats:** each player's fighter (random, a seed, a secret character), random opponents, Kage's mask, and **Fight
-  switches** (infinite energy, one-hit KO, no time limit, the ring's size) on a page of their own.
-
-No page is longer than the menu's 14 rows, so none scrolls.
 
 ### Free camera
 
@@ -278,6 +262,34 @@ for a game's own fullscreen): switching to fullscreen froze on AMD cards in the 
 (vf3-recomp #7). Display > Picture > **Fullscreen mode** (Windows only) switches to **Standard**, the old way, as does
 `fullscreen_exclusive = 1` in settings.ini. A Mac (its green button too), Linux and the Steam Deck keep the system's own
 fullscreen (`fullscreen_window = 1` gives them the borderless window).
+
+## Menu
+
+- **Resume** and **Quit**.
+- **Display:** three pages, each shown on its row with what it's set to, and the free camera's On / Off:
+  - **Picture:** picture shape (fit the window, 4:3, 16:10, 16:9, 21:9), window size, fullscreen and (on Windows)
+    fullscreen mode, the HUD, Show FPS.
+  - **Quality:** render scale (up to 6x), antialiasing (Low, 2x, 3x), the 3D renderer and (on Windows) the graphics
+    driver, background filter, shadows (smooth, or the arcade's mesh), V-Sync, frame limit.
+  - **Screen filter and colours:** screen filter (scanlines, CRT), CRT colours (an arcade monitor's and others),
+    brightness, gamma.
+  - **Free camera** (see [Free camera](#free-camera)).
+
+  **Window size** makes the window a whole multiple of the arcade's 384 lines (see [Window size](#window-size)): Render
+  scale 1x with Window size 1x shows the arcade's lines one to one, Window size 2x doubles each; resizing the window by
+  hand sets it back to Free, and its size and place are remembered either way.
+- **Sound:** volume, music, effects.
+- **Game:** the menus' language, play style (PC, or Arcade with its coins), reset, the log file.
+- **Arcade settings:** the game's language, difficulty, ring size, rounds, continue, demo sound, the service menu.
+- **Online:** a random opponent, a room, a friend's code, play by address, your name and settings (see below).
+- **Controls:** each player's pad, keys and buttons (a key for two or three buttons at once: Button combinations, on
+  the keys' page).
+- **Cheats:** each player's fighter: Normal, Random (a new mixed fighter every game), Seed (one mixed fighter by its
+  name: the same build and moves every game on any machine, its colours new every game) or a secret character;
+  random opponents; **Fight switches** (infinite energy, one-hit KO, no time limit, the ring's size, which overrides
+  Arcade settings' Ring size) on a page of their own; Kage's mask.
+
+No page is longer than the menu's 14 rows, so none scrolls.
 
 ## Online play (experimental)
 
