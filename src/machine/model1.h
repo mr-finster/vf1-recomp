@@ -459,6 +459,10 @@ public:
 	// moved: along its look (forward with its pitch), across, and up the world's up (units); turned (radians)
 	void free_cam_move(double fwd, double right, double up, double dyaw, double dpitch);
 	bool free_cam_shown() const { return m_fc_on && m_fc_live; }   // (the last picture's 3D was the free camera's)
+	// (tests: the free camera flown by a path, free_cam_path.h: called for each picture it draws with the game's camera
+	// (its pose in the world) and the fighters' middle, to set the free camera's pose)
+	struct free_cam_scene { free_cam_pose game; double mid[3] = { 0, 0, 0 }; bool have_mid = false, reset = false; };
+	std::function<void(free_cam_pose &, const free_cam_scene &)> m_fc_pilot;
 	uint8_t *eeprom() { return m_ioboard ? reinterpret_cast<uint8_t *>(m_ioboard->eeprom) : &m_dpram[0x100]; }
 	static constexpr size_t EEPROM_SIZE = 0x80;
 	bool real_ioboard() const { return bool(m_ioboard); }

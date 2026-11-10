@@ -17,6 +17,7 @@
 #include "scene_sync.h"
 #include "gpu_compose.h"
 #include "controls.h"
+#include "free_cam_path.h"
 #include "../machine/parallel.h"
 #include "../rt/rec_rt.h"
 #ifdef VF_NATIVE
@@ -143,6 +144,15 @@ bool g_test_pending = false;   // the menu's Service menu: pressed once the game
 
 // Testing: VF_TEST_RAM_LOG=file: the work RAM hashed every 30 game frames, and the game's mode (a display setting
 // changes no frame). VF_TEST_CHIME_WAV=file: the match found chime's sound (the game's coin, made at the start), a .wav.
+// Testing: VF_TEST_FREECAM_PATH=file: the free camera flown along the path in the file (free_cam_path.h: keys, orbits
+// round the fighters, on, off, pause, unpause and quit at times on the same clock as VF_TEST_FREECAM's, game frames
+// then a tick a picture while paused), for footage with VF_RECORD. VF_TEST_FREECAM_PATH_LOG=1: every 30 ticks where
+// the game's camera is round the fighters, as a path's "rel" key has it (for writing one).
+// Testing: VF_RECORD=dir: a recording (footage): from game frame VF_RECORD_FROM (default 0; the frames before it as
+// fast as they go, a picture only now and then) to VF_RECORD_TO, 60 pictures a second by the game's clock, not the
+// real one (smooth motion's in-betweens), the window's whole picture to dir/video.mp4 (by ffmpeg, which must be
+// installed) and the sound to dir/sound.wav, in step; through a pause too (a picture each pass, silence in the sound
+// for its time). VF_RECORD_HZ=n: n pictures a second instead. Use with VF_HIDDEN and VF_WINDOW.
 // Testing: VF_TEST_CRT_FAILED=1: Screen filter and colours' rows as with a renderer that can't do CRT colours,
 // brightness and gamma (their line under the row).
 // Testing: VF_TEST_FREECAM="on@N,yaw@N=deg,pitch@N=deg,move@N=fwd,right,up,reset@N,pause@N,shot@N,off@N": the free
@@ -2248,6 +2258,37 @@ int main(int argc, char **argv)
 	bool fc_online_play = false;          // (playing a match online: set each pass)
 	double fc_speed = FC_SPEED, fc_mouse_x = 0, fc_mouse_y = 0;
 	uint64_t fc_t = 0;                    // (the last pass's time: its moves by the real clock)
+	// (tests: a path flown, VF_TEST_FREECAM_PATH, on the hooks' clock: game frames, then a tick a pass while the game
+	// is stopped; fc_path_clock that of the picture being drawn, between two frames as far as the picture is)
+	freecam::Path fc_path;
+	uint64_t fc_stopped_passes = 0;
+	double fc_path_clock = 0;
+	if (const char *pf = getenv("VF_TEST_FREECAM_PATH")) {
+		if (!fc_path.load(pf)) fprintf(stderr, "(test) the free camera's path: %s\n", fc_path.error.c_str());
+		else {
+			fprintf(stderr, "(test) the free camera's path: %zu keys, %zu orbits, %zu events\n", fc_path.keys.size(), fc_path.orbits.size(), fc_path.events.size());
+			// (the path's frame: the game camera's heading as the free camera started; the camera's look as its yaw
+			// from there, VF1's own yaw the world's)
+			auto yaw0 = std::make_shared<double>(0);
+			auto have0 = std::make_shared<bool>(false);
+			m.m_fc_pilot = [&fc_path, &fc_path_clock, yaw0, have0](model1::free_cam_pose &pose, const model1::free_cam_scene &sc) {
+				if (sc.reset || !*have0) { *yaw0 = sc.game.yaw; *have0 = true; }
+				freecam::Cam c;
+				const float y0 = float(*yaw0);
+				c.h0[0] = std::sin(y0); c.h0[1] = 0; c.h0[2] = std::cos(y0);
+				c.s0[0] = std::cos(y0); c.s0[1] = 0; c.s0[2] = -std::sin(y0);
+				for (int k = 0; k < 3; k++) c.p[k] = float(pose.pos[k]);
+				c.yaw = float(std::remainder(pose.yaw - *yaw0, 2 * M_PI));
+				c.pitch = float(pose.pitch);
+				const float gp[3] = { float(sc.game.pos[0]), float(sc.game.pos[1]), float(sc.game.pos[2]) };
+				const float mid[3] = { float(sc.mid[0]), float(sc.mid[1]), float(sc.mid[2]) };
+				fc_path.fly(c, gp, float(std::remainder(sc.game.yaw - *yaw0, 2 * M_PI)), float(sc.game.pitch), sc.have_mid ? mid : nullptr, fc_path_clock);
+				for (int k = 0; k < 3; k++) pose.pos[k] = c.p[k];
+				pose.yaw = std::remainder(*yaw0 + c.yaw, 2 * M_PI);
+				pose.pitch = c.pitch;
+			};
+		}
+	}
 	auto set_free_cam = [&](bool on, bool pad) {
 		if (on && fc_online_play) { menu.toast(std::string(tr::FREECAM_NOT_ONLINE), 3); return; }
 		if (on == fc_on) return;
@@ -2255,7 +2296,7 @@ int main(int argc, char **argv)
 		m.set_free_cam(on);
 		fc_mouse_x = fc_mouse_y = 0;
 		fc_t = 0;
-		if (on) menu.toast(std::string(pad ? tr::FREECAM_ON_PAD : tr::FREECAM_ON_KEYS), 4);
+		if (on && !fc_path.no_toast) menu.toast(std::string(pad ? tr::FREECAM_ON_PAD : tr::FREECAM_ON_KEYS), 4);
 		else menu.toast("");
 		fprintf(stderr, "free camera: %s\n", on ? "on" : "off");
 		redraw_if_stopped();
@@ -3595,6 +3636,34 @@ int main(int argc, char **argv)
 	bool vsync_now = true;             // (vsync forced off, or not taken: present returns at once, so not every pass)
 	// A game frame's inputs (false: a hotkey opened the menu, no frame runs) and what follows one: the
 	// scene changes' hold, its sound
+	// VF_RECORD: the recording (see the top)
+	struct {
+		std::string dir;
+		int64_t from = 0, to = INT64_MAX, base = 0;   // game frames (game_run); base: game_run as it started
+		uint64_t n = 0, stopped_n = 0, silent = 0;     // pictures recorded, of them while the game was stopped; silence written for them
+		bool on = false;
+		FILE *video = nullptr, *wav = nullptr;
+		uint32_t wav_bytes = 0;
+		int w = 0, h = 0, hz = 60;
+	} rec;
+	auto wav_header = [&] {
+		const uint32_t rate = m1audio::OUT_RATE, br = rate * 4, sz = 36 + rec.wav_bytes, sixteen = 16;
+		const uint16_t fmt = 1, ch = 2, align = 4, bits = 16;
+		fseek(rec.wav, 0, SEEK_SET);
+		fwrite("RIFF", 1, 4, rec.wav); fwrite(&sz, 4, 1, rec.wav); fwrite("WAVEfmt ", 1, 8, rec.wav);
+		fwrite(&sixteen, 4, 1, rec.wav); fwrite(&fmt, 2, 1, rec.wav); fwrite(&ch, 2, 1, rec.wav);
+		fwrite(&rate, 4, 1, rec.wav); fwrite(&br, 4, 1, rec.wav); fwrite(&align, 2, 1, rec.wav); fwrite(&bits, 2, 1, rec.wav);
+		fwrite("data", 1, 4, rec.wav); fwrite(&rec.wav_bytes, 4, 1, rec.wav);
+		fseek(rec.wav, 0, SEEK_END);
+	};
+	if (const char *d = getenv("VF_RECORD")) {
+		std::error_code ec;
+		rec.dir = d;
+		std::filesystem::create_directories(rec.dir, ec);
+		if (const char *f = getenv("VF_RECORD_FROM")) rec.from = strtoll(f, nullptr, 10);
+		if (const char *f = getenv("VF_RECORD_TO")) rec.to = strtoll(f, nullptr, 10);
+		if (const char *f = getenv("VF_RECORD_HZ")) rec.hz = std::clamp(atoi(f), 1, 240);
+	}
 	auto frame_inputs = [&]() -> bool {
 		switch (read_inputs(m, pads, pstate, cfg.ctl)) {
 		case hotkey::menu: open_menu(); break;
@@ -3652,7 +3721,11 @@ int main(int argc, char **argv)
 					m.smooth_state(sa, older, newer);
 					if (older < 0 || uint64_t(older) + 1 < hold_from) m.smooth_cut();
 				}
-				if (audio && !ff) {
+				if (rec.wav && rec.on) {   // (recording: the sound to its file only)
+					fwrite(m.m_audio_out.data(), sizeof(int16_t), m.m_audio_out.size(), rec.wav);
+					rec.wav_bytes += uint32_t(m.m_audio_out.size() * sizeof(int16_t));
+				}
+				else if (audio && !ff && rec.dir.empty()) {
 					if (SDL_GetAudioStreamQueued(audio) == 0) perf.starved++;   // the sound ran dry: a crackle
 					SDL_PutAudioStreamData(audio, m.m_audio_out.data(), int(m.m_audio_out.size() * 2));
 				}
@@ -3886,6 +3959,21 @@ int main(int argc, char **argv)
 		fc_online_play = online.playing() && !online.watching();
 		if (fc_on && fc_online_play) { set_free_cam(false, false); menu.toast(std::string(tr::FREECAM_NOT_ONLINE), 3); }
 		const int64_t pass_now = frames_run - 1;
+		if (game_stopped()) fc_stopped_passes++;
+		if (fc_path.loaded) {   // (tests: the path's events, on its clock)
+			const double clock = double(game_run) + double(fc_stopped_passes);
+			fc_path_clock = clock;
+			for (freecam::Path::Event &e : fc_path.events) {
+				if (e.done || clock < e.t) continue;
+				e.done = true;
+				fprintf(stderr, "(test) the free camera's path: %s at %.0f (frame %lld)\n", e.what.c_str(), clock, (long long)game_run);
+				if (e.what == "on") set_free_cam(true, false);
+				else if (e.what == "off") set_free_cam(false, false);
+				else if (e.what == "pause") paused = true;
+				else if (e.what == "unpause") paused = false;
+				else if (e.what == "quit") running = false;
+			}
+		}
 		double test_turn[2] = { 0, 0 }, test_move[3] = { 0, 0, 0 };
 		for (const fc_step &st : fc_test) {
 			if (st.at != pass_now) continue;
@@ -4282,6 +4370,28 @@ int main(int argc, char **argv)
 			due = std::max(due, 0);
 			if (ff) { due = 8; frame_clock = double(game_run + due); }
 			else if (sound_full) due = 0;   // (the clock stops at the next frame, below)
+			if (!rec.dir.empty()) {
+				// the recording: before it starts, frames as fast as they go; then 60 pictures a second by the game's clock
+				if (!rec.on && game_run >= rec.from) {
+					rec.on = true;
+					rec.from = game_run;
+					rec.base = game_run;
+					int ww = 0, wh = 0;
+					SDL_GetRenderOutputSize(ren, &ww, &wh);   // (the window's pixels, as VF_SHOT_AT's)
+					rec.w = ww & ~1; rec.h = wh & ~1;
+					const std::string cmd = "ffmpeg -loglevel error -y -f rawvideo -pix_fmt bgra -s " + std::to_string(rec.w) + "x" + std::to_string(rec.h) +
+					                        " -r " + std::to_string(rec.hz) + " -i - -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p '" + rec.dir + "/video.mp4'";
+					rec.video = popen(cmd.c_str(), "w");
+					rec.wav = fopen((rec.dir + "/sound.wav").c_str(), "wb");
+					if (rec.wav) wav_header();
+					fprintf(stderr, "record: from frame %lld, %dx%d\n", (long long)rec.from, rec.w, rec.h);
+				}
+				if (!rec.on) { due = int(std::clamp<int64_t>(rec.from - game_run, 1, 8)); frame_clock = double(game_run + due); }   // (to its first frame exactly)
+				else {
+					frame_clock = double(rec.base) + double(rec.n - rec.stopped_n + 1) * FRAME_HZ / double(rec.hz);
+					due = std::max(0, int(int64_t(std::floor(frame_clock)) - game_run));
+				}
+			}
 			const uint64_t t0 = SDL_GetTicksNS();
 			if (online.playing()) {
 				// A match: each frame through the session, with this player's input (either player's controls play
@@ -4367,7 +4477,8 @@ int main(int argc, char **argv)
 			// the change as a ghost, and with a rollback every few frames the motion jittered; as VF2's and VF3's, 57.5 a
 			// second online)
 			const bool match_frames = online.playing();
-			const bool picture_now = match_frames ? due > 0 && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
+			bool picture_now = match_frames ? due > 0 && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
+			if (!rec.dir.empty()) picture_now = rec.on || frames_run % 120 == 0;   // (recording: each pass; before it, now and then)
 			// (a frame run, here or ahead during the last present, but the limit says no picture this pass: the last one
 			// stays, not shown again)
 			if (m.smooth() && !sync.holding() && !unseen && !picture_now && !curtain && !game_stopped()) show_frame = false;
@@ -4376,6 +4487,7 @@ int main(int argc, char **argv)
 				const double now = match_frames ? double(m.frame_number()) : double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
 				const uint64_t tr = SDL_GetTicksNS();
 				const double t = std::min(now, double(m.frame_number()));
+				if (fc_path.loaded) fc_path_clock = double(game_run) + double(fc_stopped_passes) + std::clamp(frame_clock - double(game_run), 0.0, 1.0) - 1;
 				tp.now = t;
 				tp.kind = 'N';
 				if (on_gpu()) {
@@ -4541,6 +4653,34 @@ int main(int argc, char **argv)
 		draw_filter();
 		menu.render(true);
 		static const int shot_at = getenv("VF_SHOT_AT") ? atoi(getenv("VF_SHOT_AT")) : -1;   // testing: the window at that pass too
+		if (rec.on && rec.video) {   // (VF_RECORD: this pass's picture, the window's whole, as VF_SHOT_AT reads it)
+			int lw, lh;
+			SDL_RendererLogicalPresentation mode;
+			SDL_GetRenderLogicalPresentation(ren, &lw, &lh, &mode);
+			SDL_SetRenderLogicalPresentation(ren, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+			if (SDL_Surface *sh = SDL_RenderReadPixels(ren, nullptr)) {
+				if (SDL_Surface *c = SDL_ConvertSurface(sh, SDL_PIXELFORMAT_ARGB8888)) {
+					for (int y = 0; y < rec.h && y < c->h; y++)
+						fwrite(static_cast<uint8_t *>(c->pixels) + size_t(y) * c->pitch, 4, size_t(rec.w), rec.video);
+					SDL_DestroySurface(c);
+				}
+				SDL_DestroySurface(sh);
+			}
+			SDL_SetRenderLogicalPresentation(ren, lw, lh, mode);
+			rec.n++;
+			if (game_stopped()) {   // (a paused picture: the game's clock stands still, the sound silent for its time, in step)
+				rec.stopped_n++;
+				if (rec.wav) {
+					const uint64_t want = rec.stopped_n * uint64_t(m1audio::OUT_RATE) / uint64_t(rec.hz);
+					const std::vector<int16_t> zero(size_t(want - rec.silent) * 2, 0);
+					fwrite(zero.data(), sizeof(int16_t), zero.size(), rec.wav);
+					rec.wav_bytes += uint32_t(zero.size() * sizeof(int16_t));
+					rec.silent = want;
+				}
+			}
+			if (rec.n % (uint64_t(rec.hz) * 10) == 0) fprintf(stderr, "record: %.0f s\n", rec.n / double(rec.hz));
+			if (game_run >= rec.to) running = false;
+		}
 		for (const fc_step &st : fc_test)   // (VF_TEST_FREECAM's shots: the picture as shown)
 			if (st.what == "shot" && st.at == frames_run - 1) {
 				const std::string path = "build/freecam_" + std::to_string(st.at) + ".png";
@@ -4581,7 +4721,7 @@ int main(int argc, char **argv)
 		// the next frame, if it'll be due by the next refresh, run while this present waits
 		bool ahead = false;
 		uint64_t ahead_t = 0;
-		if (!no_game_thread && running && m.smooth() && !paused && !menu.is_open() && !sync.holding() && !online.playing() && !g_match_board &&
+		if (!no_game_thread && rec.dir.empty() && running && m.smooth() && !paused && !menu.is_open() && !sync.holding() && !online.playing() && !g_match_board &&
 			!SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] && frame_clock - double(game_run) >= 0.5 &&
 			!(audio && SDL_GetAudioStreamQueued(audio) > frame_bytes * int(FRAME_HZ * 0.3)) &&   // (the game waiting for the sound: none ahead either)
 			frame_inputs()) {
@@ -4681,6 +4821,9 @@ int main(int argc, char **argv)
 
 	}
 
+	if (rec.video) pclose(rec.video);
+	if (rec.wav) { wav_header(); fclose(rec.wav); }
+	if (rec.on) fprintf(stderr, "record: %llu pictures, %.2f s, to %s\n", (unsigned long long)rec.n, rec.n / double(rec.hz), rec.dir.c_str());
 	if (g3) fprintf(stderr, "the 3D at the end: %llu pictures drawn by the GPU, %llu checked against the CPU's, %llu differ; %llu drawn by the CPU instead, %llu GPU errors\n",
 					(unsigned long long)m.m_g3.pictures, (unsigned long long)m.m_g3.checked, (unsigned long long)m.m_g3.differ,
 					(unsigned long long)m.m_g3.cpu_fallback, (unsigned long long)m.m_g3.failed);

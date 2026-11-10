@@ -2271,11 +2271,20 @@ void model1::free_cam_frame()
 	int slot = 0, off = 0;
 	uint32_t first = 0, kept = 0;
 	float first_m[12];
+	// (the fighters' models' places in the view, for a path's "fighters' middle": every model in the fight's view that
+	// isn't the stage's, the fighters' and their shadows', drawn before the stage)
+	std::vector<std::array<float, 3>> bodies;
 	for (int n = 0; n < 0x8000; n++) {
 		const int type = readi(off);
 		if (type == 0) off += 2;
 		else if (type == 1 || type == 0x41) {
 			const uint32_t poly = readi(off + 4) & 0x7fffff;
+			if (type == 1 && full && !stage_model(poly) && m_fc_pilot) {
+				float blended[12];
+				m_replay_slot = slot;
+				const float *use = m_replaying && smooth_matrix(poly, blended) ? blended : mat;
+				bodies.push_back({ use[9], use[10], use[11] });
+			}
 			if (type == 1 && full && stage_model(poly) && (!first || poly == m_fc_anchor)) {
 				float blended[12];
 				m_replay_slot = slot;
@@ -2319,7 +2328,22 @@ void model1::free_cam_frame()
 	m_fc_game.pitch = std::clamp(game_pitch, -89 * M_PI / 180, 89 * M_PI / 180);
 	m_fc_mirror = R[0][0] * std::cos(game_yaw) - R[0][2] * std::sin(game_yaw) < 0;   // (the game's right: the world's other way)
 	m_fc_have_game = true;
+	const bool was_reset = m_fc_reset;
 	if (m_fc_reset) { m_fc_reset = false; m_fc = m_fc_game; m_fc_zoom[0] = m_fc_game_zoom[0]; m_fc_zoom[1] = m_fc_game_zoom[1]; }
+	// (tests: a path flies it, free_cam_path.h: the fighters' middle in the world, the mean of their models' places)
+	if (m_fc_pilot) {
+		free_cam_scene sc;
+		sc.game = m_fc_game;
+		if (bodies.size() >= 8) {
+			double sum[3] = { 0, 0, 0 };
+			for (const auto &b : bodies)
+				for (int j = 0; j < 3; j++) sum[j] += R[0][j] * (b[0] - t[0]) + R[1][j] * (b[1] - t[1]) + R[2][j] * (b[2] - t[2]);
+			for (int j = 0; j < 3; j++) sc.mid[j] = sum[j] / double(bodies.size());
+			sc.have_mid = true;
+		}
+		sc.reset = was_reset;
+		m_fc_pilot(m_fc, sc);
+	}
 	static const bool log = getenv("VF_LOG_FREECAM") != nullptr;   // (tests: the anchor and both cameras, each picture)
 	if (log)
 		fprintf(stderr, "freecam: frame %llu anchor %06x game eye %.3f %.3f %.3f yaw %.2f pitch %.2f, free eye %.3f %.3f %.3f yaw %.2f pitch %.2f, zoom %.0f, free %.0f\n",
