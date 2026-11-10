@@ -36,6 +36,7 @@ struct menu_page
 	std::function<std::string(int sel, bool pad)> screen;
 	std::function<bool(const SDL_Event &)> on_event;   // (a screen's) the input first: true if it used it (typing)
 	bool text = false;                    // (a screen's) typed into: the keyboard's text on while it's shown
+	std::string above;                    // its name over a page opened from it, if not `name` (a long one: Cheats')
 };
 
 // A screen's selectable element: its class (row, and selected) and id, with more classes
@@ -56,7 +57,7 @@ public:
 	std::vector<std::string> overflow();
 	std::vector<std::string> misaligned();   // (rows whose labels don't start where the others' do: for tests)
 	// (tests: the page of rows shown, if it doesn't fit whole: its rows past their space, where they'd scroll, or the
-	// panel past the window's bottom; empty if it fits, or a screen is shown)
+	// panel past the window's bottom, or the help under them wider than the panel; empty if it fits, or a screen is shown)
 	std::string page_fit();
 	void set_title(const std::string &text);    // (PAUSED; a match goes on under the menu: ONLINE MATCH)
 	void select_row(int i) { select(i); }

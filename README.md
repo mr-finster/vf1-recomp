@@ -51,9 +51,9 @@ your screen's refresh rate.
 | The arcade's V60 program, recompiled to native code | Working |
 | TGP, rasterizer, tile layers, sound and I/O boards | Working: reimplemented from MAME's Model 1 code |
 | Render scale up to 6x, widescreen and ultrawide, smooth motion | Working |
-| The 3D drawn on the GPU (Display > 3D renderer: Auto, GPU or CPU) | Working on macOS (Metal), Windows (Direct3D 12 or Vulkan) and Steam Deck / Linux (Vulkan): the same picture as the CPU's, checked when the game starts; Auto uses the GPU whenever that check passes (not a software GPU such as llvmpipe), and any difference or error falls back to the CPU |
+| The 3D drawn on the GPU (Display > Quality > 3D renderer: Auto, GPU or CPU) | Working on macOS (Metal), Windows (Direct3D 12 or Vulkan) and Steam Deck / Linux (Vulkan): the same picture as the CPU's, checked when the game starts; Auto uses the GPU whenever that check passes (not a software GPU such as llvmpipe), and any difference or error falls back to the CPU |
 | Sarah's stage lighting (the light from below pulsing with the floor) | Working, as on the cabinet |
-| The arcade's shadows at any render scale (Display > Shadows: Arcade): the checkered mesh, over a fighter lying in it | Working (new); Smooth (blended, kept off the fighters) the default above 1x |
+| The arcade's shadows at any render scale (Display > Quality > Shadows: Arcade): the checkered mesh, over a fighter lying in it | Working (new); Smooth (blended, kept off the fighters) the default above 1x |
 | Portable mode, your own ROM folder | Working |
 | Menu, keyboard and gamepads, two players | Working |
 | macOS, Windows, Steam Deck / x86-64 Linux | Working |
@@ -223,6 +223,24 @@ Arcade sticks the game doesn't know (DirectInput sticks such as HORI's Virtua St
 Mini) get a fighting stick's layout; Controls > Player 1 (or 2) > Set up buttons sets theirs by pressing each in turn. A
 `gamecontrollerdb.txt` (SDL's mappings) in the data folder or beside the program is read too.
 
+### Menu
+
+- **Resume**, **Sound**, **Game**, **Arcade settings**, **Online**, **Controls**, **Cheats** and **Quit**.
+- **Display:** three pages, each shown on its row with what it's set to, and the free camera's On / Off:
+  - **Picture:** picture shape (fit the window, 4:3, 16:10, 16:9, 21:9), window size, fullscreen and (on Windows)
+    fullscreen mode, the HUD, Show FPS.
+  - **Quality:** render scale (up to 6x), antialiasing (Low, 2x, 3x), the 3D renderer and (on Windows) the graphics
+    driver, background filter, shadows (smooth, or the arcade's mesh), V-Sync, frame limit.
+  - **Screen filter and colours:** screen filter (scanlines, CRT), CRT colours (an arcade monitor's and others),
+    brightness, gamma.
+  - **Free camera** (below).
+- **Controls:** each player's pad, keys and buttons (a key for two or three buttons at once: Button combinations, on
+  the keys' page).
+- **Cheats:** each player's fighter (random, a seed, a secret character), random opponents, Kage's mask, and **Fight
+  switches** (infinite energy, one-hit KO, no time limit, the ring's size) on a page of their own.
+
+No page is longer than the menu's 14 rows, so none scrolls.
+
 ### Free camera
 
 <kbd>F4</kbd>, View + R3 on a pad, or Display > **Free camera** (taken as the menu closes): a camera you fly round the
@@ -246,7 +264,7 @@ camera sees: from odd angles some polygons overlap wrongly, and parts the game's
 
 ### Window size
 
-Display > **Window size** makes the window a whole multiple of the arcade's 384 lines (1x 512 x 384 for the 4:3
+Display > Picture > **Window size** makes the window a whole multiple of the arcade's 384 lines (1x 512 x 384 for the 4:3
 picture, the board's 496 x 384 on its 4:3 tube; 2x 1024 x 768; up to 4x, as many as your screen holds; a wider picture
 shape makes it as wide as the shape), each arcade line that many of your screen's: Render scale 1x with Window size 1x
 shows the arcade's 384 lines one to one, Window size 2x with Render scale 1x doubles each of them. It's for playing in
@@ -257,7 +275,7 @@ that's gone now opens it in the middle of one that's there.
 
 On Windows, fullscreen is a borderless window over the screen (a line taller than it, so no graphics driver takes it
 for a game's own fullscreen): switching to fullscreen froze on AMD cards in the driver's exclusive fullscreen
-(vf3-recomp #7). Display > **Fullscreen mode** (Windows only) switches to **Standard**, the old way, as does
+(vf3-recomp #7). Display > Picture > **Fullscreen mode** (Windows only) switches to **Standard**, the old way, as does
 `fullscreen_exclusive = 1` in settings.ini. A Mac (its green button too), Linux and the Steam Deck keep the system's own
 fullscreen (`fullscreen_window = 1` gives them the borderless window).
 
@@ -372,8 +390,8 @@ Online > Settings > **Connection display** sets it to On, Detailed or Off. **Det
 - **Mac:** System Settings > Network > Firewall > Options: allow it. Also System Settings > Privacy & Security > Local Network: on.
 
 **Stutter, slowdown, or lots of rollback**
-- **Use the GPU renderer:** Menu > Display > 3D renderer: **GPU**. On Windows and Linux, Vulkan or Direct3D 12 work best.
-- **Check your speed offline:** Display > Show FPS should read 57 or 58 steadily. If it doesn't offline, it won't online. Lower the render scale (F5).
+- **Use the GPU renderer:** Menu > Display > Quality > 3D renderer: **GPU**. On Windows and Linux, Vulkan or Direct3D 12 work best.
+- **Check your speed offline:** Display > Picture > Show FPS should read 57 or 58 steadily. If it doesn't offline, it won't online. Lower the render scale (F5).
 - **Use a cable** if you can: Wi-Fi adds jitter.
 - **Steam Deck:** turn off Wi-Fi power management (Settings > System > Developer Mode on, then Settings > Developer > Enable Wi-Fi power management: off).
 - Set the Connection display to **Detailed**: a high JITTER means the network; a high FRAME means the machine.

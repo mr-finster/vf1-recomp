@@ -232,6 +232,8 @@ void page_shots(game_menu &gm, int w, int h, const char *file, tr::text title, c
 		gm.select_row(int(i));
 		shot("", w, h);
 		for (const std::string &o : gm.overflow()) overflows.push_back(std::string(file) + " row " + std::to_string(i) + ": " + o);
+		// (every row's help within the panel, not only the pictured one's)
+		if (const std::string f = gm.page_fit(); !f.empty()) unfit.push_back(std::string(file) + " row " + std::to_string(i) + ": " + f);
 	}
 	gm.select_row(int(longest));
 	for (int i = 0; i < 8; i++) { shot("", w, h); SDL_Delay(40); }   // (the rows' slide, 0.12 s, over before the picture)
@@ -251,35 +253,55 @@ void pages(game_menu &gm, int w, int h)
 		{ M_QUIT, M_QUIT_HELP, "" } });
 	page_shots(gm, w, h, "pages_main_match.png", M_RESUME, {   // (in an online match)
 		{ M_RESUME, M_RESUME_MATCH_HELP, "" }, { P_DISPLAY, M_DISPLAY_HELP, "" }, { P_SOUND, M_SOUND_HELP, "" }, { P_CONTROLS, M_CONTROLS_MATCH_HELP, "" } });
+	// Display: its three pages' rows, each with what it's set to, and the free camera's; then each page (as main.cpp's
+	// display_page, picture_page, quality_page and screen_page)
+	auto listed = [&](std::initializer_list<std::string> parts) {
+		std::string out;
+		for (const std::string &x : parts) out = out.empty() ? x : F(LIST_PAIR, { { "a", out }, { "b", x } });
+		return out;
+	};
 	page_shots(gm, w, h, "pages_display.png", P_DISPLAY, {
+		{ D_PICTURE, listed({ D_SHAPE, D_WINDOW_SIZE, D_FULLSCREEN, D_FS_MODE, D_HUD, D_SHOW_FPS }), listed({ D_SUM_FIT, F(D_SUM_WINDOW_N, { { "n", "4" } }) }) },
+		{ D_QUALITY, listed({ D_SCALE, D_AA, D_RENDERER, D_DRIVER, D_BG_FILTER, D_SHADOWS, D_VSYNC, D_FRAME_LIMIT }),
+		  listed({ F(N_X, { { "n", "6" } }), F(D_SUM_AA, { { "n", F(N_X, { { "n", "3" } }) } }), R3D_GPU }) },
+		{ D_SCREEN, listed({ D_SCREEN_FILTER, D_CRT_COLOURS, D_BRIGHTNESS, D_GAMMA }), listed({ D_SCANLINES, D_CRT_COLOURS }) },
+		{ D_FREECAM, D_FREECAM_HELP, D_FREECAM_NOT_NOW } });
+	page_shots(gm, w, h, "pages_display_more.png", P_DISPLAY, {   // (the other values of its rows)
+		{ D_PICTURE, "", listed({ "21:9", D_FULLSCREEN }) }, { D_PICTURE, "", listed({ "4:3", D_SUM_WINDOW }) },
+		{ D_QUALITY, "", listed({ F(N_X, { { "n", "1" } }), R3D_CPU }) }, { D_QUALITY, "", listed({ F(N_X, { { "n", "2" } }), F(D_SUM_AA, { { "n", D_AA_LOW } }), R3D_CPU }) },
+		{ D_SCREEN, "", OFF }, { D_SCREEN, "", listed({ D_CRT, D_CRT_COLOURS }) },
+		{ D_FREECAM, D_FREECAM_HELP, on } });
+	page_shots(gm, w, h, "pages_picture.png", D_PICTURE, {
+		{ D_SHAPE, D_SHAPE_HELP, D_SHAPE_FIT },
+		{ D_WINDOW_SIZE, D_WINDOW_SIZE_HELP, F(D_WINDOW_N_IN_WINDOW, { { "n", "3" }, { "w", "1536" }, { "h", "1152" } }) },
+		{ D_FULLSCREEN, D_FULLSCREEN_HELP, on },
+		{ D_FS_MODE, D_FS_MODE_HELP, D_BORDERLESS },
+		{ D_HUD, D_HUD_HELP, on },
+		{ D_SHOW_FPS, D_SHOW_FPS_HELP, off },
+		{ D_WINDOW_SIZE, D_WINDOW_SIZE_HELP, D_FREE },
+		{ D_WINDOW_SIZE, D_WINDOW_SIZE_HELP, F(D_WINDOW_N, { { "n", "3" }, { "w", "1536" }, { "h", "1152" } }) }, { D_FS_MODE, D_FS_MODE_HELP, D_STANDARD } });
+	page_shots(gm, w, h, "pages_quality.png", D_QUALITY, {
 		{ D_SCALE, D_SCALE_HELP, F(N_X, { { "n", "6" } }) },
 		{ D_AA, D_AA_HELP, D_AA_OFF_TOO_LARGE },
 		{ D_RENDERER, D_RENDERER_HELP, F(D_R3D_WONT_START, { { "what", AUTO } }) },
 		{ D_DRIVER, D_DRIVER_HELP, D_DRIVER_AUTO },
-		{ D_SHAPE, D_SHAPE_HELP, D_SHAPE_FIT },
 		{ D_BG_FILTER, D_BG_FILTER_HELP, D_SMOOTH },
 		{ D_SHADOWS, D_SHADOWS_HELP, D_SHADOWS_ARCADE },
-		{ D_SCREEN_FILTER, D_SCREEN_FILTER_HELP, D_SCANLINES },
-		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, F(NOT_WITH_RENDERER, { { "what", CRT_PAL } }) },
-		{ D_BRIGHTNESS, D_BRIGHTNESS_HELP, F(N_PERCENT, { { "n", "100" } }) },
-		{ D_GAMMA, D_GAMMA_HELP, F(NOT_WITH_RENDERER, { { "what", F(N_PERCENT, { { "n", "100" } }) } }) },
-		{ D_SHOW_FPS, D_SHOW_FPS_HELP, off },
-		{ D_HUD, D_HUD_HELP, on },
 		{ D_VSYNC, D_VSYNC_HELP, on },
-		{ D_FRAME_LIMIT, D_FRAME_LIMIT_HELP, F(D_FRAME_LIMIT_SCREEN, { { "n", "144" } }) },
-		{ D_WINDOW_SIZE, D_WINDOW_SIZE_HELP, F(D_WINDOW_N_IN_WINDOW, { { "n", "3" }, { "w", "1536" }, { "h", "1152" } }) },
-		{ D_FULLSCREEN, D_FULLSCREEN_HELP, on },
-		{ D_FS_MODE, D_FS_MODE_HELP, D_BORDERLESS } });
-	page_shots(gm, w, h, "pages_display_more.png", P_DISPLAY, {   // (the other values of its rows)
+		{ D_FRAME_LIMIT, D_FRAME_LIMIT_HELP, F(D_FRAME_LIMIT_SCREEN, { { "n", "144" } }) } });
+	page_shots(gm, w, h, "pages_quality_more.png", D_QUALITY, {   // (the other values of its rows)
 		{ D_RENDERER, D_RENDERER_HELP, F(D_R3D_NEXT_START, { { "what", AUTO } }) }, { D_RENDERER, D_RENDERER_HELP, F(D_R3D_NEXT_START, { { "what", R3D_GPU } }) },
 		{ D_RENDERER, D_RENDERER_HELP, F(AUTO_IS, { { "what", R3D_GPU } }) }, { D_RENDERER, D_RENDERER_HELP, D_R3D_CRASHED },
 		{ D_RENDERER, D_RENDERER_HELP, F(D_R3D_WONT_START, { { "what", R3D_GPU } }) }, { D_RENDERER, D_RENDERER_HELP, F(D_R3D_THIS_RUN, { { "what", AUTO } }) },
 		{ D_RENDERER, D_RENDERER_HELP, D_R3D_NO_GPU }, { D_RENDERER, D_RENDERER_HELP, D_R3D_NO_GPU_BUILD },
-		{ D_AA, D_AA_HELP, D_AA_LOW }, { D_AA, D_AA_HELP, F(N_X, { { "n", "3" } }) }, { D_SCREEN_FILTER, D_SCREEN_FILTER_HELP, D_CRT } });
-	page_shots(gm, w, h, "pages_display_more2.png", P_DISPLAY, {
+		{ D_AA, D_AA_HELP, D_AA_LOW }, { D_AA, D_AA_HELP, F(N_X, { { "n", "3" } }) } });
+	page_shots(gm, w, h, "pages_screen.png", D_SCREEN, {
+		{ D_SCREEN_FILTER, D_SCREEN_FILTER_HELP, D_SCANLINES },
+		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, F(NOT_WITH_RENDERER, { { "what", CRT_PAL } }) },
+		{ D_BRIGHTNESS, D_BRIGHTNESS_HELP, F(N_PERCENT, { { "n", "100" } }) },
+		{ D_GAMMA, D_GAMMA_HELP, F(NOT_WITH_RENDERER, { { "what", F(N_PERCENT, { { "n", "100" } }) } }) },
 		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_SEGA }, { D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_SONY }, { D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_NTSC_JP },
-		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_NTSC_US }, { D_WINDOW_SIZE, D_WINDOW_SIZE_HELP, D_FREE },
-		{ D_WINDOW_SIZE, D_WINDOW_SIZE_HELP, F(D_WINDOW_N, { { "n", "3" }, { "w", "1536" }, { "h", "1152" } }) }, { D_FS_MODE, D_FS_MODE_HELP, D_STANDARD } });
+		{ D_CRT_COLOURS, D_CRT_COLOURS_HELP, CRT_NTSC_US }, { D_SCREEN_FILTER, D_SCREEN_FILTER_HELP, D_CRT } });
 	page_shots(gm, w, h, "pages_sound.png", P_SOUND, {
 		{ S_VOLUME, S_VOLUME_HELP, F(N_PERCENT, { { "n", "100" } }) }, { S_MUSIC, S_MUSIC_HELP, F(N_PERCENT, { { "n", "80" } }) },
 		{ S_EFFECTS, S_EFFECTS_HELP, F(N_PERCENT, { { "n", "100" } }) } });
@@ -289,7 +311,10 @@ void pages(game_menu &gm, int w, int h)
 	{   // (Game > Language: each of its choices, its name in its own letters)
 		std::vector<row> v;
 		for (int i = 0; i < CHOICES; i++) v.push_back({ G_LANGUAGE, G_LANGUAGE_HELP, choice_name(tr::choice{ i }) });
-		page_shots(gm, w, h, "pages_languages.png", P_GAME, v);
+		// (in two pictures: a page is 14 rows at most)
+		const size_t half = v.size() / 2;
+		page_shots(gm, w, h, "pages_languages.png", P_GAME, std::vector<row>(v.begin(), v.begin() + std::ptrdiff_t(half)));
+		page_shots(gm, w, h, "pages_languages2.png", P_GAME, std::vector<row>(v.begin() + std::ptrdiff_t(half), v.end()));
 	}
 	page_shots(gm, w, h, "pages_arcade.png", P_ARCADE, {
 		{ A_LANGUAGE, A_LANGUAGE_HELP, A_JAPANESE }, { A_DIFFICULTY, A_DIFFICULTY_HELP, A_HARDEST }, { A_RING_SIZE, A_RING_SIZE_HELP, A_RING_XL },
@@ -303,15 +328,18 @@ void pages(game_menu &gm, int w, int h)
 	page_shots(gm, w, h, "pages_cheats.png", P_CHEATS_RESTART, {   // (as it is with a secret character and a seed being chosen)
 		{ C_H_FIGHTERS, "", "", true }, { C_P1_FIGHTER, C_FIGHTER_HELP, C_SECRET }, { C_CHARACTER, C_ABOUT_REKKA, koskol, false, true },
 		{ C_P2_FIGHTER, C_FIGHTER_HELP, C_SEED }, { C_SEED, C_SEED_HELP, C_SEED_PENDING, false, true }, { C_RANDOM_CPU, C_RANDOM_CPU_HELP, on },
-		{ C_H_FIGHT, "", "", true }, { C_INFINITE, C_INFINITE_HELP, P_PLAYER_2 }, { C_ONE_HIT, C_ONE_HIT_HELP, on }, { C_NO_TIME, C_NO_TIME_HELP, on },
-		{ C_RING, C_RING_HELP, C_RING_TINY }, { C_H_LOOKS, "", "", true }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_ARCADE } });
+		{ C_H_FIGHT, "", "", true }, { C_FIGHT_SWITCHES, listed({ C_INFINITE, C_ONE_HIT, C_NO_TIME, C_RING }), on },
+		{ C_H_LOOKS, "", "", true }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_ARCADE } });
+	page_shots(gm, w, h, "pages_fight.png", C_FIGHT_SWITCHES, {   // (Cheats > Fight switches, and the other values of its rows)
+		{ C_INFINITE, C_INFINITE_HELP, P_PLAYER_2 }, { C_ONE_HIT, C_ONE_HIT_HELP, on }, { C_NO_TIME, C_NO_TIME_HELP, on }, { C_RING, C_RING_HELP, C_RING_TINY },
+		{ C_INFINITE, C_INFINITE_HELP, C_BOTH }, { C_INFINITE, C_INFINITE_HELP, P_PLAYER_1 }, { C_RING, C_RING_HELP, C_RING_HUGE },
+		{ C_RING, C_RING_HELP, C_RING_NORMAL } });
 	page_shots(gm, w, h, "pages_cheats_more.png", P_CHEATS_RESTART, {   // (each secret character, and the other values)
 		{ C_CHARACTER, C_ABOUT_SIBA, "Siba (Majido)", false, true }, { C_CHARACTER, C_ABOUT_JEFF, "Jeff", false, true },
 		{ C_CHARACTER, C_ABOUT_TAKERU, early, false, true }, { C_CHARACTER, C_ABOUT_SCORE, F(C_SECRET_KOSKOL, { { "name", "Score" } }), false, true },
 		{ C_CHARACTER, C_ABOUT_AEON, F(C_SECRET_KOSKOL, { { "name", "Aeon" } }), false, true }, { C_CHARACTER, C_ABOUT_DURAL, "Dural", false, true },
 		{ C_P1_FIGHTER, C_FIGHTER_HELP, C_NORMAL }, { C_P2_FIGHTER, C_FIGHTER_HELP, C_RANDOM }, { C_SEED, C_SEED_HELP, "SAJACWOLF_", false, true },
-		{ C_INFINITE, C_INFINITE_HELP, C_BOTH }, { C_INFINITE, C_INFINITE_HELP, P_PLAYER_1 }, { C_RING, C_RING_HELP, C_RING_HUGE },
-		{ C_RING, C_RING_HELP, C_RING_NORMAL }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_OFF } });
+		{ C_FIGHT_SWITCHES, listed({ C_INFINITE, C_ONE_HIT, C_NO_TIME, C_RING }), off }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_OFF } });
 	page_shots(gm, w, h, "pages_online_fighter.png", P_SETTINGS, {   // (Online > Settings' fighter: each of its values)
 		{ OS_FIGHTER, OS_FIGHTER_HELP, C_NORMAL }, { OS_FIGHTER, OS_FIGHTER_HELP, C_RANDOM }, { OS_FIGHTER, OS_FIGHTER_HELP, C_SEED },
 		{ C_SEED, C_SEED_HELP, C_SEED_PENDING, false, true }, { OS_FIGHTER, OS_FIGHTER_HELP, F(C_SECRET_NAMED, { { "name", "Siba (Majido)" } }) },
@@ -326,12 +354,15 @@ void pages(game_menu &gm, int w, int h)
 	{   // (VF1's controls: no Escape)
 		const tr::text names[] = { CTL_UP, CTL_DOWN, CTL_LEFT, CTL_RIGHT, CTL_GUARD, CTL_PUNCH, CTL_KICK, CTL_GUARD_PUNCH, CTL_PUNCH_KICK, CTL_GUARD_KICK,
 			CTL_ALL_THREE, CTL_START, CTL_COIN, CTL_MENU };
-		std::vector<row> keys, pads;
+		// (a player's keys: the four combinations on a page of their own, Button combinations, as main.cpp's keys_page)
+		std::vector<row> keys, pads, combos;
 		for (int a = 0; a < 14; a++) {
-			keys.push_back({ names[a], a == 12 ? CTL_KEY_HELP_COIN : a == 13 ? CTL_KEY_HELP_MENU : CTL_KEY_HELP, "Left Shift" });
+			if (a == 7) keys.push_back({ CTL_COMBOS, F(CTL_COMBOS_HELP, { { "list", listed({ CTL_GUARD_PUNCH, CTL_PUNCH_KICK, CTL_GUARD_KICK, CTL_ALL_THREE }) } }), "" });
+			(a >= 7 && a <= 10 ? combos : keys).push_back({ names[a], a == 12 ? CTL_KEY_HELP_COIN : a == 13 ? CTL_KEY_HELP_MENU : CTL_KEY_HELP, "Left Shift" });
 			if (a >= 4) pads.push_back({ names[a], a == 12 ? CTL_PADB_HELP_COIN : a == 13 ? CTL_PADB_HELP_MENU : CTL_PADB_HELP, a == 5 ? PAD_RIGHT_STICK : a == 6 ? PAD_TOUCHPAD : a == 7 ? std::string(PAD_DPAD_RIGHT) : a == 8 ? std::string(PAD_LEFT_STICK) : std::string("LB") });
 		}
 		page_shots(gm, w, h, "pages_keys.png", P_P2_KEYBOARD, keys);
+		page_shots(gm, w, h, "pages_combos.png", CTL_COMBOS, combos);
 		page_shots(gm, w, h, "pages_pad.png", P_P2_PAD, pads);
 		page_shots(gm, w, h, "pages_keys2.png", P_P2_KEYBOARD2, keys);   // (the second keys' and buttons': the same rows)
 		page_shots(gm, w, h, "pages_pad2.png", P_P2_PAD2, pads);
