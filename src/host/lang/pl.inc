@@ -204,7 +204,7 @@ T(A_SERVICE, "Menu serwisowe")
 T(A_SERVICE_HELP, "Menu testowe automatu: testy sterowania i dźwięku, monety i księgowość. Dół przesuwa, Start wybiera (lub 9 i F2 na klawiaturze). Wybierz EXIT, by wrócić.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "Kody: większość zmian restartuje grę po zamknięciu menu")
+T(P_CHEATS_RESTART, "Kody: większość zmian restartuje grę")
 T(C_H_FIGHTERS, "POSTACIE")
 T(C_H_FIGHT, "WALKA")
 T(C_H_LOOKS, "WYGLĄD")

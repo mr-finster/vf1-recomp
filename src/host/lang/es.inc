@@ -204,7 +204,7 @@ T(A_SERVICE, "Menú de servicio")
 T(A_SERVICE_HELP, "El menú de pruebas propio del arcade: pruebas de controles y sonido, ajustes de monedas y contabilidad. Abajo se mueve, Start elige (o 9 y F2 en un teclado). Elige EXIT para volver.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "Trucos: casi todo reinicia el juego al cerrar el menú")
+T(P_CHEATS_RESTART, "Trucos: casi todo reinicia el juego")
 T(C_H_FIGHTERS, "LUCHADORES")
 T(C_H_FIGHT, "COMBATE")
 T(C_H_LOOKS, "ASPECTO")

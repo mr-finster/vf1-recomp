@@ -143,6 +143,8 @@ bool g_test_pending = false;   // the menu's Service menu: pressed once the game
 
 // Testing: VF_TEST_RAM_LOG=file: the work RAM hashed every 30 game frames, and the game's mode (a display setting
 // changes no frame). VF_TEST_CHIME_WAV=file: the match found chime's sound (the game's coin, made at the start), a .wav.
+// Testing: VF_TEST_CRT_FAILED=1: Screen filter and colours' rows as with a renderer that can't do CRT colours,
+// brightness and gamma (their line under the row).
 // Testing: VF_TEST_FREECAM="on@N,yaw@N=deg,pitch@N=deg,move@N=fwd,right,up,reset@N,pause@N,shot@N,off@N": the free
 // camera at those passes (N): on, turned (degrees, right and up), moved (the game's units, along its look, across,
 // up), back to the game's camera, P (the pause, on or off), the picture as shown to build/freecam_N.png, off.
@@ -2577,7 +2579,10 @@ int main(int argc, char **argv)
 			[&](int d) { cfg.gamma = std::clamp(cfg.gamma + 5 * d, crt::GAMMA_MIN, crt::GAMMA_MAX); cfg_dirty = true; } });
 		// (the renderer in use can't do them: said under each of the three rows, its value as set)
 		for (size_t i = 1; i < p.items.size(); i++) {
-			p.items[i].below = [&] { return crt_on && crt_paint.failed() ? std::string(tr::D_NOT_WITH_RENDERER) : std::string(); };
+			p.items[i].below = [&] {
+				static const bool test = getenv("VF_TEST_CRT_FAILED") != nullptr;   // (tests: as a renderer that can't)
+				return crt_on && (crt_paint.failed() || test) ? std::string(tr::D_NOT_WITH_RENDERER) : std::string();
+			};
 			p.items[i].good = [] { return false; };
 		}
 		p.items.push_back(back_item());

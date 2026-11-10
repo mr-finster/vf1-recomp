@@ -204,7 +204,7 @@ T(A_SERVICE, "服务菜单")
 T(A_SERVICE_HELP, "街机自己的测试菜单：输入和声音测试、投币设置和记录。下移动，开始确认（键盘为 9 和 F2）。选择 EXIT 返回。")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "作弊：多数更改会在关闭菜单时重启游戏")
+T(P_CHEATS_RESTART, "作弊：多数更改后游戏会重新启动")
 T(C_H_FIGHTERS, "角色")
 T(C_H_FIGHT, "对战")
 T(C_H_LOOKS, "外观")

@@ -209,7 +209,7 @@ T(A_SERVICE, "Service menu")
 T(A_SERVICE_HELP, "The arcade's own test menu: input and sound tests, coin settings and bookkeeping. Down moves, Start selects (or 9 and F2 on a keyboard). Choose EXIT to come back.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "Cheats: most changes restart the game when the menu closes")   // the Cheats page's name (one line over its rows)
+T(P_CHEATS_RESTART, "Cheats: most changes restart the game")   // the Cheats page's name (one line over its rows)
 T(C_H_FIGHTERS, "FIGHTERS")                  // (the page's headings: small capitals over a rule)
 T(C_H_FIGHT, "FIGHT")
 T(C_H_LOOKS, "LOOKS")

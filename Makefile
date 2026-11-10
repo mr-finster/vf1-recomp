@@ -258,7 +258,15 @@ clean:
 	rm -rf build/obj build/bin
 
 -include $(shell find $(OBJ) -name '*.d' 2>/dev/null)
-.PHONY: all clean regions
+# The menus' tests, always from this tree's sources: langtest (the strings' tables and fonts) and menutest (every page
+# drawn and checked, English; tools/langcheck.py for every language). The default make builds neither, and a menutest
+# built before a change passes for a tree it isn't: run them through here
+test: $(BIN)/langtest $(BIN)/menutest
+	$(BIN)/langtest
+	mkdir -p build/menutest
+	SDL_VIDEO_DRIVER=offscreen SDL_RENDER_DRIVER=software SDL_AUDIO_DRIVER=dummy $(BIN)/menutest build/menutest
+
+.PHONY: all clean regions test
 
 # vf1watchsound: a late watcher's match sound after its catch-up against a from-the-start watcher's (join points swept)
 $(BIN)/vf1watchsound: $(call objs,tools/vf1watchsound.cpp src/host/vf1_netplay.cpp src/rt/rec_table_none.cpp $(NET) $(CORE) $(MACHINE) $(SOUND) $(RT) $(NATIVE)) $(SLJIT_OBJ) $(MUSASHI_OBJ) $(Z80_OBJ) $(patsubst %.S,$(OBJ)/%.o,$(CORO_ASM))

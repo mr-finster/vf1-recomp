@@ -204,7 +204,7 @@ T(A_SERVICE, "Menu de service")
 T(A_SERVICE_HELP, "Le menu de test de l'arcade\xC2\xA0: tests des commandes et du son, les pièces et la comptabilité. Bas déplace, Start choisit (ou 9 et F2 au clavier). Choisis EXIT pour revenir.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "Astuces\xC2\xA0: presque tout relance le jeu à la fermeture du menu")
+T(P_CHEATS_RESTART, "Astuces\xC2\xA0: presque tout relance le jeu")
 T(C_H_FIGHTERS, "COMBATTANTS")
 T(C_H_FIGHT, "COMBAT")
 T(C_H_LOOKS, "APPARENCE")

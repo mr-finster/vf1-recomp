@@ -205,7 +205,7 @@ T(A_SERVICE, "Servis menüsü")
 T(A_SERVICE_HELP, "Salon makinesinin kendi test menüsü: giriş ve ses testleri, jeton ayarları ve kayıtlar. Aşağı hareket ettirir, Start seçer (klavyede 9 ve F2). Dönmek için EXIT'i seç.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "Hileler: çoğu değişiklik menü kapanınca oyunu yeniden başlatır")
+T(P_CHEATS_RESTART, "Hileler: çoğu değişiklik oyunu yeniden başlatır")
 T(C_H_FIGHTERS, "DÖVÜŞÇÜLER")
 T(C_H_FIGHT, "DÖVÜŞ")
 T(C_H_LOOKS, "GÖRÜNÜM")

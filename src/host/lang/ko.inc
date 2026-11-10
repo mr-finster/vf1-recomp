@@ -204,7 +204,7 @@ T(A_SERVICE, "서비스 메뉴")
 T(A_SERVICE_HELP, "아케이드 고유의 테스트 메뉴: 입력·사운드 테스트, 코인 설정, 기록. 아래로 이동, 스타트로 선택 (키보드는 9와 F2). EXIT를 고르면 돌아와요.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "치트: 대부분 메뉴를 닫으면 게임이 다시 시작돼요")
+T(P_CHEATS_RESTART, "치트: 대부분 바꾸면 게임이 다시 시작돼요")
 T(C_H_FIGHTERS, "캐릭터")
 T(C_H_FIGHT, "대전")
 T(C_H_LOOKS, "외형")

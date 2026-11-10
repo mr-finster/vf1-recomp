@@ -204,7 +204,7 @@ T(A_SERVICE, "Service-Menü")
 T(A_SERVICE_HELP, "Das Testmenü des Automaten: Eingabe- und Tontests, Münzen und Buchhaltung. Unten bewegt, Start wählt (oder 9 und F2 auf der Tastatur). Wähle EXIT, um zurückzukehren.")
 
 // ---- Cheats ----
-T(P_CHEATS_RESTART, "Cheats: das meiste startet das Spiel beim Schließen neu")
+T(P_CHEATS_RESTART, "Cheats: das meiste startet das Spiel neu")
 T(C_H_FIGHTERS, "KÄMPFER")
 T(C_H_FIGHT, "KAMPF")
 T(C_H_LOOKS, "AUSSEHEN")
