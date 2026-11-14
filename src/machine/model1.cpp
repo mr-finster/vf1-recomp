@@ -2874,6 +2874,57 @@ int model1::dural_lightmode()
 	return m_dural_lm;
 }
 
+// Cheats' Dural's colour: whether a model is one of Dural's own: her record's parts (its body's, her
+// head at +16, her hands' tables), from the ROM as VF has it, less any other record's (a part she
+// shares stays as it is)
+bool model1::dural_model(uint32_t poly_adr)
+{
+	if (!m_dural_models_made) {
+		m_dural_models_made = true;
+		const auto &rom = m_regions.maincpu;
+		auto rd = [&](uint32_t a) { if (a + 4 > rom.size()) return 0u; const uint8_t *q = rom_pristine(a); return uint32_t(q[0] | q[1] << 8 | q[2] << 16 | uint32_t(q[3]) << 24); };
+		auto parts = [&](uint32_t rec, std::unordered_set<uint32_t> &out) {
+			if ((rec >> 16) != 0xfd || rec + RECORD_SIZE > rom.size()) return;
+			auto add = [&](uint32_t m) { if ((m >> 16) == 0x2d && m + 12 <= rom.size()) out.insert(rd(m + 8) & 0x7fffff); };
+			for (uint32_t o = 0x0e; o < 0x4e; o += 4) add(rd(rec + o));
+			if (const uint32_t head = rd(rec + 0x72); (head >> 16) == 0xfd)
+				for (uint32_t k = 0; k < 121; k++) { const uint32_t m = rd(head + 0x40 + 4 * k); if ((m >> 16) != 0x2d) break; add(m); }
+			for (uint32_t t : { 0x5eu, 0x62u })
+				if (const uint32_t tb = rd(rec + t); (tb >> 16) == 0xfd)
+					for (uint32_t k = 0; k < 32; k++) { const uint32_t m = rd(tb + 4 * k); if ((m >> 16) != 0x2d) break; add(m); }
+		};
+		constexpr uint32_t DURAL = 0xfd369b, SLOTS = 0xfd2e8f;
+		parts(DURAL, m_dural_models);
+		std::unordered_set<uint32_t> others;
+		std::vector<uint32_t> recs = { 0xfd4f99, 0xfd3f6f, 0xfd510f, 0xfd5285, 0xfd53fb };
+		for (int i = 0; i < 26; i++) recs.push_back(rd(SLOTS + 4 * i));
+		for (uint32_t r : recs) if (r != DURAL) parts(r, others);
+		for (uint32_t p : others) m_dural_models.erase(p);
+		m_dural_models.erase(0);
+	}
+	return m_dural_models.count(poly_adr) != 0;
+}
+
+// (as a list is drawn) the sides whose fighter is Dural: her body in their record (hers, or Akira's
+// with Cheats' Secret character: her models, as the ROM has them in her record), not a random fighter
+// (Random fighter's, Random opponents': its own colours)
+void model1::dural_sides()
+{
+	m_dural_sides = 0;
+	m_dural_seen.clear();
+	const auto &rom = m_regions.maincpu;
+	if (m_dural_colour == DURAL_CHROME || m_ram_a.size() < 0x1f00) return;
+	auto rd = [](const uint8_t *q) { return uint32_t(q[0] | q[1] << 8 | q[2] << 16 | uint32_t(q[3]) << 24); };
+	constexpr uint32_t DURAL = 0xfd369b;
+	for (int pl = 0; pl < 2; pl++) {
+		const uint32_t rec = rd(&m_ram_a[0x700 + 0x1800 * pl - 0x50]);
+		if ((rec >> 16) != 0xfd || rec + RECORD_SIZE > rom.size() || m_random_names.count(rec)) continue;
+		bool hers = true;
+		for (uint32_t o : { 0x12u, 0x16u, 0x1au, 0x36u }) hers = hers && rd(&rom[rec + o]) == rd(rom_pristine(DURAL + o));
+		if (hers) m_dural_sides |= 1 << pl;
+	}
+}
+
 // Random opponents: every record but Akira's, a Secret character's and those the players picked
 // (their character, -4B in their blocks, through player 1's side's table, fd2f1b: player 2's
 // side's +9 in it) made random

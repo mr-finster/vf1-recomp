@@ -250,6 +250,11 @@ T(C_KAGE_MASK, "Kage 的面罩")
 T(C_KAGE_MASK_HELP, "会脱落：打掉 Kage 头巾的一击会露出他的脸，就像运行了九小时的机台。照街机：要等这个游戏玩到那么久才会脱落。")
 T(C_MASK_OFF, "会脱落")
 T(C_MASK_ARCADE, "照街机")
+T(C_DURAL_COLOUR, "Dural 的颜色")
+T(C_DURAL_COLOUR_HELP, "镀铬：和街机一样。2P 为金色：2P 一侧的 Dural 为金色，如同土星版的 2P 配色。金色：始终金色。只影响这台屏幕：联机时各自看到自己的选择。")
+T(C_DURAL_CHROME, "镀铬（街机）")
+T(C_DURAL_GOLD_P2, "2P 为金色（土星）")
+T(C_DURAL_GOLD, "金色")
 
 // ---- Controls ----
 T(CTL_UP, "上")

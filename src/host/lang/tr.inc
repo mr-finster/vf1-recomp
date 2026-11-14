@@ -251,6 +251,11 @@ T(C_KAGE_MASK, "Kage'nin maskesi")
 T(C_KAGE_MASK_HELP, "Düşer: Kage'nin başlığını geri atan bir vuruş yüzünü gösterir, dokuz saat oynanmış bir kabindeki gibi. Salondaki gibi: bu oyun o kadar oynanana dek düşmez.")
 T(C_MASK_OFF, "Düşer")
 T(C_MASK_ARCADE, "Salondaki gibi")
+T(C_DURAL_COLOUR, "Dural'ın rengi")
+T(C_DURAL_COLOUR_HELP, "Krom: salon makinesindeki gibi. Oyuncu 2'de altın: oyuncu 2 tarafındaki Dural altın renginde, Saturn sürümünün ikinci rengi gibi. Altın: her zaman. Yalnızca senin ekranında: çevrimiçi herkes kendi seçimini görür.")
+T(C_DURAL_CHROME, "Krom (salon)")
+T(C_DURAL_GOLD_P2, "Oyuncu 2'de altın (Saturn)")
+T(C_DURAL_GOLD, "Altın")
 
 // ---- Controls ----
 T(CTL_UP, "Yukarı")

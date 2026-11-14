@@ -250,6 +250,11 @@ T(C_KAGE_MASK, "Maska Kage")
 T(C_KAGE_MASK_HELP, "Spada: cios, który zrzuca kaptur Kage, odsłania jego twarz, jak na automacie po dziewięciu godzinach grania. Jak automat: zostaje, dopóki w tę grę nie zagra się tyle samo.")
 T(C_MASK_OFF, "Spada")
 T(C_MASK_ARCADE, "Jak automat")
+T(C_DURAL_COLOUR, "Kolor Dural")
+T(C_DURAL_COLOUR_HELP, "Chrom: jak w automacie. Złota u gracza 2: Dural po stronie gracza 2 w złocie, jak drugi kolor w wersji na Saturna. Złota: zawsze. Tylko na twoim ekranie: online każdy widzi swój wybór.")
+T(C_DURAL_CHROME, "Chrom (automat)")
+T(C_DURAL_GOLD_P2, "Złota u gracza 2 (Saturn)")
+T(C_DURAL_GOLD, "Złota")
 
 // ---- Controls ----
 T(CTL_UP, "Góra")

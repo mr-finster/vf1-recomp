@@ -250,6 +250,11 @@ T(C_KAGE_MASK, "카게의 가면")
 T(C_KAGE_MASK_HELP, "벗겨짐: 카게의 두건을 젖히는 공격을 맞으면 얼굴이 보여요. 9시간 동안 가동한 기체처럼요. 아케이드대로: 이 게임을 그만큼 플레이할 때까지 벗겨지지 않아요.")
 T(C_MASK_OFF, "벗겨짐")
 T(C_MASK_ARCADE, "아케이드대로")
+T(C_DURAL_COLOUR, "듀랄의 색")
+T(C_DURAL_COLOUR_HELP, "크롬: 아케이드 그대로. 2P는 금색: 2P 쪽 듀랄을 금색으로, 새턴판의 2P 컬러처럼. 금색: 항상. 내 화면에서만 바뀌어요: 온라인에서는 각자 고른 색으로 보여요.")
+T(C_DURAL_CHROME, "크롬 (아케이드)")
+T(C_DURAL_GOLD_P2, "2P는 금색 (새턴)")
+T(C_DURAL_GOLD, "금색")
 
 // ---- Controls ----
 T(CTL_UP, "위")

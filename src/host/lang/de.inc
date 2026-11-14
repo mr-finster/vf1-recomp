@@ -250,6 +250,11 @@ T(C_KAGE_MASK, "Kages Maske")
 T(C_KAGE_MASK_HELP, "Fällt ab: ein Treffer, der Kages Kapuze zurückwirft, zeigt sein Gesicht, wie an einem Gerät nach neun Stunden Spielzeit. Wie am Automaten: sie bleibt, bis dieses Spiel so lange gespielt wurde.")
 T(C_MASK_OFF, "Fällt ab")
 T(C_MASK_ARCADE, "Wie am Automaten")
+T(C_DURAL_COLOUR, "Durals Farbe")
+T(C_DURAL_COLOUR_HELP, "Chrom: wie am Automaten. Gold bei Spieler 2: Dural auf der Seite von Spieler 2 in Gold, wie die zweite Farbe der Saturn-Version. Gold: immer. Nur auf deinem Bildschirm: online sieht jeder seine eigene Wahl.")
+T(C_DURAL_CHROME, "Chrom (Automat)")
+T(C_DURAL_GOLD_P2, "Gold bei Spieler 2 (Saturn)")
+T(C_DURAL_GOLD, "Gold")
 
 // ---- Controls ----
 T(CTL_UP, "Oben")

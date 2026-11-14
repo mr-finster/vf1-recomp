@@ -329,7 +329,8 @@ void pages(game_menu &gm, int w, int h)
 		{ C_H_FIGHTERS, "", "", true }, { C_P1_FIGHTER, C_FIGHTER_HELP, C_SECRET }, { C_CHARACTER, C_ABOUT_REKKA, koskol, false, true },
 		{ C_P2_FIGHTER, C_FIGHTER_HELP, C_SEED }, { C_SEED, C_SEED_HELP, C_SEED_PENDING, false, true }, { C_RANDOM_CPU, C_RANDOM_CPU_HELP, on },
 		{ C_H_FIGHT, "", "", true }, { C_FIGHT_SWITCHES, listed({ C_INFINITE, C_ONE_HIT, C_NO_TIME, C_RING }), on },
-		{ C_H_LOOKS, "", "", true }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_ARCADE } });
+		{ C_H_LOOKS, "", "", true }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_ARCADE },
+		{ C_DURAL_COLOUR, C_DURAL_COLOUR_HELP, C_DURAL_GOLD_P2 } });
 	page_shots(gm, w, h, "pages_fight.png", C_FIGHT_SWITCHES, {   // (Cheats > Fight switches, and the other values of its rows)
 		{ C_INFINITE, C_INFINITE_HELP, P_PLAYER_2 }, { C_ONE_HIT, C_ONE_HIT_HELP, on }, { C_NO_TIME, C_NO_TIME_HELP, on }, { C_RING, C_RING_HELP, C_RING_TINY },
 		{ C_INFINITE, C_INFINITE_HELP, C_BOTH }, { C_INFINITE, C_INFINITE_HELP, P_PLAYER_1 }, { C_RING, C_RING_HELP, C_RING_HUGE },
@@ -339,7 +340,8 @@ void pages(game_menu &gm, int w, int h)
 		{ C_CHARACTER, C_ABOUT_TAKERU, early, false, true }, { C_CHARACTER, C_ABOUT_SCORE, F(C_SECRET_KOSKOL, { { "name", "Score" } }), false, true },
 		{ C_CHARACTER, C_ABOUT_AEON, F(C_SECRET_KOSKOL, { { "name", "Aeon" } }), false, true }, { C_CHARACTER, C_ABOUT_DURAL, "Dural", false, true },
 		{ C_P1_FIGHTER, C_FIGHTER_HELP, C_NORMAL }, { C_P2_FIGHTER, C_FIGHTER_HELP, C_RANDOM }, { C_SEED, C_SEED_HELP, "SAJACWOLF_", false, true },
-		{ C_FIGHT_SWITCHES, listed({ C_INFINITE, C_ONE_HIT, C_NO_TIME, C_RING }), off }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_OFF } });
+		{ C_FIGHT_SWITCHES, listed({ C_INFINITE, C_ONE_HIT, C_NO_TIME, C_RING }), off }, { C_KAGE_MASK, C_KAGE_MASK_HELP, C_MASK_OFF },
+		{ C_DURAL_COLOUR, C_DURAL_COLOUR_HELP, C_DURAL_CHROME }, { C_DURAL_COLOUR, C_DURAL_COLOUR_HELP, C_DURAL_GOLD } });
 	page_shots(gm, w, h, "pages_online_fighter.png", P_SETTINGS, {   // (Online > Settings' fighter: each of its values)
 		{ OS_FIGHTER, OS_FIGHTER_HELP, C_NORMAL }, { OS_FIGHTER, OS_FIGHTER_HELP, C_RANDOM }, { OS_FIGHTER, OS_FIGHTER_HELP, C_SEED },
 		{ C_SEED, C_SEED_HELP, C_SEED_PENDING, false, true }, { OS_FIGHTER, OS_FIGHTER_HELP, F(C_SECRET_NAMED, { { "name", "Siba (Majido)" } }) },

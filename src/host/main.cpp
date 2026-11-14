@@ -607,6 +607,7 @@ struct settings
 	bool log = true;   // log.txt written (Game > Log file: read before the log's opened, so from the next start)
 	std::string language = "auto";   // Game > Language: auto (the system's), or a language's code (tr::choice_key)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
+	int dural_colour = 0;   // Cheats > Dural's colour: 0 chrome (the arcade's), 1 gold on player 2 (the Saturn's), 2 gold (drawing only)
 	bool hud = true;   // Display > HUD: the 2D over a fight (energy bars, timer, names...) drawn; off: the 3D and the sky only
 	bool vsync = true;   // Display > V-Sync: each picture presented at a refresh (off: at once, maybe torn)
 	int frame_limit = -1;   // Display > Frame limit: the pictures a second at most, 30 60 120 144; 0 none, -1 the screen's refresh (as before with vsync)
@@ -683,6 +684,7 @@ struct settings
 		flag("arcade_shadows", arcade_shadows);
 		flag("show_fps", show_fps);
 		flag("hud", hud);
+		num("dural_colour", dural_colour, 0, 2);
 		flag("vsync", vsync);
 		num("frame_limit", frame_limit, -1, 1000);
 		if (frame_limit != -1 && frame_limit != 0 && frame_limit != 30 && frame_limit != 60 && frame_limit != 120 && frame_limit != 144) frame_limit = -1;
@@ -780,6 +782,7 @@ struct settings
 		if (one_hit_ko) fprintf(f, "one_hit_ko = 1\n");
 		if (no_time_limit) fprintf(f, "no_time_limit = 1\n");
 		if (kage_unmasked) fprintf(f, "kage_unmasked = 1\n");
+		if (dural_colour) fprintf(f, "dural_colour = %d\n", dural_colour);
 		if (english_set) fprintf(f, "english_set = 1\n");
 		if (vs_rounds_set) fprintf(f, "vs_rounds_set = 1\n");
 		if (vs_rounds_3) fprintf(f, "vs_rounds_3 = 1\n");
@@ -1307,6 +1310,7 @@ int main(int argc, char **argv)
 	load_backgrounds(m, dir + "/backgrounds");   // the player's own (hi-res stage skies...), which win
 	m.set_ring_width(cfg.ring_now());
 	m.set_kage_unmasked(cfg.kage_unmasked);
+	m.set_dural_colour(cfg.dural_colour);
 	// (a player's Random fighter wins over Secret character: both are Akira's place; Random opponents alone doesn't)
 	auto akira_now = [&] { return 0; };   // (a secret character is a player's fighter now: Player 1 / 2 fighter)
 	// (Random fighter first: its records put back as VF has them, then the Secret character's
@@ -2916,6 +2920,9 @@ int main(int argc, char **argv)
 		p.items.push_back({ tr::C_KAGE_MASK, tr::C_KAGE_MASK_HELP,
 			[&] { return std::string(cfg.kage_unmasked ? tr::C_MASK_OFF : tr::C_MASK_ARCADE); },
 			[&](int) { cfg.kage_unmasked = !cfg.kage_unmasked; cfg_dirty = true; m.set_kage_unmasked(cfg.kage_unmasked); } });
+		p.items.push_back({ tr::C_DURAL_COLOUR, tr::C_DURAL_COLOUR_HELP,   // (drawing only: online too, each player's own)
+			[&] { const tr::text names[] = { tr::C_DURAL_CHROME, tr::C_DURAL_GOLD_P2, tr::C_DURAL_GOLD }; return std::string(names[std::clamp(cfg.dural_colour, 0, 2)]); },
+			[&](int d) { cfg.dural_colour = wrap(cfg.dural_colour + d, 3); cfg_dirty = true; m.set_dural_colour(cfg.dural_colour); redraw_if_stopped(); } });
 		p.items.push_back(back_item());
 		return p;
 	};

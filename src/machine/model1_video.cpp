@@ -1349,6 +1349,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 	int outfit_theme = 0;
 	outfit_tones *tones = nullptr;   // (black and white's, black and gold's split)
 	int chrome_lm = -1;              // (>= 0: Dural's chrome, her light mode)
+	bool gold = false;               // (Cheats' Dural's colour: her chrome in gold)
 	uint32_t skin_rec = 0;           // (the random fighter whose model this is: its one skin, below)
 	const skin_sum *skin_ref = nullptr;
 	bool skin_prev = false;          // (the skin of a record just gone (build_prev): not measured further)
@@ -1371,6 +1372,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 		if (rec && m_random_names.count(rec) && !skin_off) { skin_rec = rec; const auto it = m_skin_ref.find(rec); if (it != m_skin_ref.end()) skin_ref = &it->second; }
 		// (Random opponents' last fight, a random fighter in Dural's record: all of it in her chrome, with her shine)
 		if (rec == 0xfd369b && m_random_cpu && m_random_names.count(rec)) chrome_lm = dural_lightmode();
+		if (chrome_lm >= 0) gold = m_dural_colour == DURAL_GOLD || (m_dural_colour == DURAL_GOLD_P2 && pl == 1);
 		if (chrome_lm < 0 && rec && m_random_names.count(rec) && !(outfit_test && !strcmp(outfit_test, "off")))
 			if (const auto it = m_random_outfit.find(rec); it != m_random_outfit.end()) {
 				outfit = outfit_test && *outfit_test ? float(atof(outfit_test)) : it->second;
@@ -1421,6 +1423,11 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 			if (m_select_seen && st->side >= 0 && st->side != ((m_view->lx1 + m_view->lx2) * 0.5f >= SCREEN_W * 0.5f ? 1 : 0)) st = nullptr;
 			if (st) turn_c = st->c, turn_s = st->s, head_hue = st->hue, head_metal = st->metal, head_bright = st->bright;
 		}
+	// Cheats' Dural's colour: Dural's own models, by whose fighter she is (both sides': player 1's drawn first)
+	if (m_dural_sides && chrome_lm < 0 && dural_model(poly_adr)) {
+		const int pl = m_dural_sides == 3 ? (m_dural_seen[poly_adr]++ ? 1 : 0) : m_dural_sides >> 1;
+		gold = m_dural_colour == DURAL_GOLD || pl == 1;
+	}
 	auto turn = [&](float &x, float &z) { const float tx = turn_c * x + turn_s * z; z = turn_c * z - turn_s * x; x = tx; };
 	// a random fighter's torso noted, its head brought down onto it (neck_torso, neck_head)
 	float neck_off[3] = { 0, 0, 0 };
@@ -1796,6 +1803,11 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 				g = std::clamp(int(std::lround(vv * 0.96f * 31)), 0, 31);
 				b = std::clamp(int(std::lround(vv * 31)), 0, 31);
 			}
+			const bool in_gold = gold && !(flags & 0x00002000);   // (not her shadow)
+			if (in_gold) {   // (Dural in gold: her grey lifted as the chrome's, shaded as ever, then made gold below)
+				const float v = std::max({ r, g, b }) / 31.f, vv = 0.8f + 0.2f * v;
+				r = g = b = std::clamp(int(std::lround(vv * 31)), 0, 31);
+			}
 			if (build == 2) r = g = b = 31;   // (the build: a flash as a part goes on)
 			else if (build == 3) { const int v = (r * 30 + g * 59 + b * 11) / 100; r = g = b = std::clamp(v / 2 + 9, 0, 31); }   // (grey till all are on)
 
@@ -1825,6 +1837,14 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 				cquad.col = c;
 			} else
 				cquad.col = colour_of(lumval);
+			if (in_gold) {
+				// the Saturn's gold: its shade (the grey drawn) as a warm gold, brighter, and its shine (the
+				// brightest shades, her light mode's specular) toward a pale gold
+				const float l = std::min(1.0f, float(cquad.col & 0xff) / 255.f * 1.25f);
+				const float h = std::clamp((l - 0.72f) / 0.28f, 0.0f, 1.0f), hh = h * h;
+				const float gr = l * (1 - hh) + hh, gg = l * 0.76f * (1 - hh) + 0.93f * hh, gb = l * 0.2f * (1 - hh) + 0.62f * hh;
+				cquad.col = (cquad.col & 0xff000000) | uint32_t(std::lround(gr * 255)) << 16 | uint32_t(std::lround(gg * 255)) << 8 | uint32_t(std::lround(gb * 255));
+			}
 		}
 
 		if (flags & 0x00002000)
@@ -2399,6 +2419,7 @@ void model1::tgp_render(bitmap_rgb32 &bitmap, const rectangle &cliprect, render_
 		float old_z = 0;
 		m_head_seen.clear();
 		neck_settle();
+		dural_sides();
 
 		int list_offset = 0;
 		for (;;) {

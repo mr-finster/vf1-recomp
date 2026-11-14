@@ -250,6 +250,11 @@ T(C_KAGE_MASK, "Masque de Kage")
 T(C_KAGE_MASK_HELP, "Tombe\xC2\xA0: un coup qui fait sauter la capuche de Kage montre son visage, comme sur une borne qui a tourné neuf heures. Comme l'arcade\xC2\xA0: il reste jusqu'à ce que le jeu ait tourné aussi longtemps.")
 T(C_MASK_OFF, "Tombe")
 T(C_MASK_ARCADE, "Comme l'arcade")
+T(C_DURAL_COLOUR, "Couleur de Dural")
+T(C_DURAL_COLOUR_HELP, "Chrome\xC2\xA0: comme l'arcade. Or pour le joueur 2\xC2\xA0: Dural du côté du joueur 2 en or, comme la deuxième couleur de la version Saturn. Or\xC2\xA0: toujours. Sur ton écran seulement\xC2\xA0: en ligne, chacun voit son propre choix.")
+T(C_DURAL_CHROME, "Chrome (arcade)")
+T(C_DURAL_GOLD_P2, "Or pour le joueur 2 (Saturn)")
+T(C_DURAL_GOLD, "Or")
 
 // ---- Controls ----
 T(CTL_UP, "Haut")

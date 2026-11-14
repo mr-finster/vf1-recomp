@@ -255,6 +255,11 @@ T(C_KAGE_MASK, "Kage's mask")
 T(C_KAGE_MASK_HELP, "Comes off: a hit that knocks Kage's hood back shows his face, as on a cabinet that's been played for nine hours. As the arcade: it stays on until this game has been played that long.")
 T(C_MASK_OFF, "Comes off")
 T(C_MASK_ARCADE, "As the arcade")
+T(C_DURAL_COLOUR, "Dural's colour")              // Cheats > Dural's colour (drawing only): her chrome, gold on player 2's side as the Saturn's second colour, or gold
+T(C_DURAL_COLOUR_HELP, "Chrome: as the arcade. Gold on player 2: Dural on player 2's side in gold, as the Saturn version's second colour. Gold: always. Only on your screen: online, each player sees their own choice.")
+T(C_DURAL_CHROME, "Chrome (arcade)")
+T(C_DURAL_GOLD_P2, "Gold on player 2 (Saturn)")
+T(C_DURAL_GOLD, "Gold")
 
 // ---- Controls ----
 T(CTL_UP, "Up")                            // (the game's controls: rows in Controls, and the steps of Set up buttons)

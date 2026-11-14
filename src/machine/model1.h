@@ -111,6 +111,19 @@ public:
 	// what the clock earned
 	void set_kage_unmasked(bool on);
 	bool m_kage_unmasked = false;
+	// Cheats' Dural's colour, in the drawing only (no game RAM: online, each side sees its own): 0 her
+	// chrome, as the arcade; 1 gold on player 2's side, as the Saturn version's second colour; 2 gold
+	// on both. Her own models (her record's, as the ROM has them, none another's), by the side whose
+	// fighter she is (both: player 1's drawn first)
+	enum { DURAL_CHROME, DURAL_GOLD_P2, DURAL_GOLD };
+	void set_dural_colour(int mode) { m_dural_colour = mode; }
+	int m_dural_colour = DURAL_CHROME;
+	bool dural_model(uint32_t poly_adr);
+	std::unordered_set<uint32_t> m_dural_models;
+	bool m_dural_models_made = false;
+	int m_dural_sides = 0;                            // (the sides whose fighter is Dural, this list: bit 0 player 1's)
+	std::unordered_map<uint32_t, int> m_dural_seen;   // (each of her models drawn so far in this list: both Dural, whose)
+	void dural_sides();
 	// The unused characters left in the game (TCRF: Jeff, Majido, Takeru, the Koskol brothers)
 	// play in Akira's place: his entries in the character tables point at theirs. 0 is Akira; the
 	// rest are UNUSED_CHARACTERS. Read as a fight loads, so a change wants a restart.
