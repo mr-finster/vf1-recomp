@@ -1838,12 +1838,18 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 			} else
 				cquad.col = colour_of(lumval);
 			if (in_gold) {
-				// the Saturn's gold: its shade (the grey drawn) as a warm gold, brighter, and its shine (the
-				// brightest shades, her light mode's specular) toward a pale gold
-				const float l = std::min(1.0f, float(cquad.col & 0xff) / 255.f * 1.25f);
-				const float h = std::clamp((l - 0.72f) / 0.28f, 0.0f, 1.0f), hh = h * h;
-				const float gr = l * (1 - hh) + hh, gg = l * 0.76f * (1 - hh) + 0.93f * hh, gb = l * 0.2f * (1 - hh) + 0.62f * hh;
-				cquad.col = (cquad.col & 0xff000000) | uint32_t(std::lround(gr * 255)) << 16 | uint32_t(std::lround(gg * 255)) << 8 | uint32_t(std::lround(gb * 255));
+				// the Saturn's gold: its shade (the grey drawn), its contrast raised so the facets glint, along a
+				// gold ramp: warm amber darks, a rich saturated gold in the middle, pale gold to near white at
+				// the top (her light mode's specular)
+				static constexpr float RAMP[][4] = { { 0.00f, 0.20f, 0.09f, 0.01f }, { 0.30f, 0.55f, 0.30f, 0.04f }, { 0.58f, 0.91f, 0.72f, 0.19f },
+					{ 0.80f, 1.00f, 0.88f, 0.42f }, { 0.93f, 1.00f, 0.96f, 0.74f }, { 1.00f, 1.00f, 0.99f, 0.93f } };
+				const float l0 = float(cquad.col & 0xff) / 255.f;
+				const float l = std::clamp((l0 - 0.5f) * 1.6f + 0.55f, 0.0f, 1.0f);
+				int k = 0;
+				while (k < 4 && l > RAMP[k + 1][0]) k++;
+				const float t = (l - RAMP[k][0]) / (RAMP[k + 1][0] - RAMP[k][0]);
+				auto ch = [&](int c) { return uint32_t(std::lround(std::clamp(RAMP[k][c] + (RAMP[k + 1][c] - RAMP[k][c]) * t, 0.0f, 1.0f) * 255)); };
+				cquad.col = (cquad.col & 0xff000000) | ch(1) << 16 | ch(2) << 8 | ch(3);
 			}
 		}
 
