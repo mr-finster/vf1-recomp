@@ -1423,10 +1423,13 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 			if (m_select_seen && st->side >= 0 && st->side != ((m_view->lx1 + m_view->lx2) * 0.5f >= SCREEN_W * 0.5f ? 1 : 0)) st = nullptr;
 			if (st) turn_c = st->c, turn_s = st->s, head_hue = st->hue, head_metal = st->metal, head_bright = st->bright;
 		}
-	// Cheats' Dural's colour: Dural's own models, by whose fighter she is (both sides': player 1's drawn first)
+	// Cheats' Dural's colour: Dural's own models, by whose fighter she is. Both sides': player 1's drawn first;
+	// likewise her head on a random fighter (Random fighter's Dural head, a head style) against her, which stays
+	// as Random fighter has it
 	if (m_dural_sides && chrome_lm < 0 && dural_model(poly_adr)) {
-		const int pl = m_dural_sides == 3 ? (m_dural_seen[poly_adr]++ ? 1 : 0) : m_dural_sides >> 1;
-		gold = m_dural_colour == DURAL_GOLD || pl == 1;
+		const bool shared = m_dural_sides == 3 || (st && st->pl >= 0);
+		const int pl = shared ? (m_dural_seen[poly_adr]++ ? 1 : 0) : m_dural_sides >> 1;
+		gold = (m_dural_sides >> pl & 1) && (m_dural_colour == DURAL_GOLD || pl == 1);
 	}
 	auto turn = [&](float &x, float &z) { const float tx = turn_c * x + turn_s * z; z = turn_c * z - turn_s * x; x = tx; };
 	// a random fighter's torso noted, its head brought down onto it (neck_torso, neck_head)
@@ -1803,7 +1806,7 @@ void model1::push_object(uint32_t tex_adr, uint32_t poly_adr, uint32_t size, flo
 				g = std::clamp(int(std::lround(vv * 0.96f * 31)), 0, 31);
 				b = std::clamp(int(std::lround(vv * 31)), 0, 31);
 			}
-			const bool in_gold = gold && !(flags & 0x00002000);   // (not her shadow)
+			const bool in_gold = gold && !(flags & 0x00002000) && build == 0;   // (not her shadow, nor Random fighter's build's flash and grey)
 			if (in_gold) {   // (Dural in gold: her grey lifted as the chrome's, shaded as ever, then made gold below)
 				const float v = std::max({ r, g, b }) / 31.f, vv = 0.8f + 0.2f * v;
 				r = g = b = std::clamp(int(std::lround(vv * 31)), 0, 31);
