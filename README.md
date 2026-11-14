@@ -50,7 +50,7 @@ your screen's refresh rate.
 | --- | --- |
 | The arcade's V60 program, recompiled to native code | Working |
 | TGP, rasterizer, tile layers, sound and I/O boards | Working: reimplemented from MAME's Model 1 code |
-| Render scale up to 6x, widescreen and ultrawide, smooth motion | Working |
+| Render scale up to 6x, widescreen and ultrawide, smooth motion | Working; Display > Quality > Smooth motion Off shows the arcade's own frames, the 3D at 30 a second as on the cabinet |
 | The 3D drawn on the GPU (Display > Quality > 3D renderer: Auto, GPU or CPU) | Working on macOS (Metal), Windows (Direct3D 12 or Vulkan) and Steam Deck / Linux (Vulkan): the same picture as the CPU's, checked when the game starts; Auto uses the GPU whenever that check passes (not a software GPU such as llvmpipe), and any difference or error falls back to the CPU |
 | Sarah's stage lighting (the light from below pulsing with the floor) | Working, as on the cabinet |
 | The arcade's shadows at any render scale (Display > Quality > Shadows: Arcade): the checkered mesh, over a fighter lying in it | Working (new); Smooth (blended, kept off the fighters) the default above 1x |
@@ -272,7 +272,8 @@ fullscreen (`fullscreen_window = 1` gives them the borderless window).
   - **Picture:** picture shape (fit the window, 4:3, 16:10, 16:9, 21:9), window size, fullscreen and (on Windows)
     fullscreen mode, the HUD, Show FPS.
   - **Quality:** render scale (up to 6x), antialiasing (Low, 2x, 3x), the 3D renderer and (on Windows) the graphics
-    driver, background filter, shadows (smooth, or the arcade's mesh), V-Sync, frame limit.
+    driver, background filter, shadows (smooth, or the arcade's mesh), smooth motion (Off: the arcade's own frames,
+    the 3D 30 a second), V-Sync, frame limit.
   - **Screen filter and colours:** screen filter (scanlines, CRT), CRT colours (an arcade monitor's and others),
     brightness, gamma.
   - **Free camera** (see [Free camera](#free-camera)).

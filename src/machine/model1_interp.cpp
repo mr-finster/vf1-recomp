@@ -205,67 +205,77 @@ bool model1::render_smooth(double now, bool shown)
 	if (!m_redrawing) m_last_alpha = m_alpha;
 	m_replaying = true;
 	m_smooth_stats[0] = m_smooth_stats[1] = m_smooth_stats[2] = 0;
-	blend_slots(a, b, alpha);
-	// A cut can't be blended: the older view stays until the newer one's moment (as the blend
-	// would), so the cut lands when the game's sky, written two frames later, changes too. It
-	// stood still meanwhile, a game frame (4 refreshes at 120 Hz) at every camera cut; now it
-	// carries on from the list before it as it was moving, easing to half speed at the cut, three
-	// quarters of a list on at most (straight on, a fast camera swung into views the game never
-	// showed).
-	// An update the game skipped (a list with nothing moved, record_frame) carries on the same
-	// way, the move before it eased out over it (half a list's move), and the list after starts
-	// from there, catching up the rest: no stop, no lurch.
-	const bool cut = m_blend_cut;
-	if (!cut && a.still && a.frame == m_still_carried && alpha < 1 && b.move > 0) {
-		alpha += (1 - alpha) * std::min(0.5, 0.5 * a.carried / b.move);
-		blend_slots(a, b, alpha);
-		m_alpha = float(alpha);
-		if (!m_redrawing) m_last_alpha = m_alpha;
-	}
-	// (and carries on through it until the next list is in, a frame late at times)
-	// (Into a cut, three quarters of a list on, slowing to half speed as the cut lands: eased to a
-	// stop, the last refreshes before every cut stood still)
-	m_replay_older = (cut && alpha < 1) || b.still;
-	m_replay_extra = false;
-	if (m_replay_older && !m_logic_prev.list.empty() && b.frame - a.frame == a.frame - m_logic_prev.frame) {
-		const double c = std::min(alpha, 1.0);
-		blend_slots(m_logic_prev, a, 1 + (cut ? c - 0.25 * c * c : 0.5 * (1 - (1 - c) * (1 - c))));
-		m_replay_extra = !m_blend_cut;
-		if (!cut && m_replay_extra) m_still_carried = b.frame;   // (the list after it catches up from there)
-	}
-	m_blend_cut = cut;
-	if (cut && b.frame != m_cut_frame) m_cut_frame = b.frame;
-	if (m_random_fighter && !cut && !m_replay_older && getenv("VF_POSE_EASE")) pose_apply(b);   // (testing: record_frame)
-	// After a cut the game moves the sky into place over a few frames (at most 4): the picture
-	// before the cut used to stay until it stopped jumping, a picture held for 2-7 refreshes at
-	// every replay's camera cut; now the new view shows at once, its sky where it settles
-	// (smooth_sky_shift).
-	// (the camera's RAM has the new view from the cut's frame on; the scroll the game writes
-	// follows it a frame later, mixed with the old view's, and lands one or two frames after that)
-	// Where it lands is too far to move the sky to (the tile layer moves 24 pixels at most, a
-	// panorama 160; a cut swings it hundreds, up or down too): the sky as the game has it, as the
-	// arcade shows it. The picture before the cut used to stay instead, 1-9 refreshes at a replay's
-	// cuts (up to 100 ms with the hold before the cut), mostly for views looking down at the floor
-	// with no sky in them.
-	m_sky_settling_now = false;
-	if (!m_replay_older && m_cut_frame >= 0 && int(m_frame) - 1 <= m_cut_frame + 4) {
-		const sky_sample &cur = m_sky_hist[(m_frame - 1) % SKY_HIST];
-		m_sky_settling_now = cur.frame == int(m_frame) - 1 && (cur.lands_h != cur.h || cur.lands_v != cur.v) && sky_reaches(cur);
-	}
-	if (!m_redrawing) {
-		// testing: where the 3D is in this picture, on average (the trace's check that each picture
-		// lies between its neighbours: a picture blended from the wrong pair stands out)
-		const logic_frame &l = m_replay_older ? a : b;
-		const bool own = !m_replay_older || m_replay_extra;
-		double sum[3] = { 0, 0, 0 };
-		int n = 0;
-		for (size_t i = 0; i < l.slots.size(); i++) {
-			if (l.slots[i].polys.empty()) continue;
-			const float *mt = own && i < m_blend_ok.size() && m_blend_ok[i] ? m_blend[i].data() : l.slots[i].mat;
-			for (int k = 0; k < 3; k++) sum[k] += mt[9 + k];
-			n++;
+	blend_slots(a, b, alpha);   // (Smooth motion off too: its cuts' history kept)
+	if (m_arcade_frames) {
+		// Smooth motion off: a list as the game made it, never blended: the older till the newer's own
+		// moment, so the 3D moves 30 times a second as on the board; the sky each frame's own scroll
+		m_alpha = 1;
+		if (!m_redrawing) m_last_alpha = alpha < 1 ? 0.f : 1.f;
+		m_replay_older = alpha < 1;
+		m_replay_extra = false;
+		m_sky_settling_now = false;
+	} else {
+		// A cut can't be blended: the older view stays until the newer one's moment (as the blend
+		// would), so the cut lands when the game's sky, written two frames later, changes too. It
+		// stood still meanwhile, a game frame (4 refreshes at 120 Hz) at every camera cut; now it
+		// carries on from the list before it as it was moving, easing to half speed at the cut, three
+		// quarters of a list on at most (straight on, a fast camera swung into views the game never
+		// showed).
+		// An update the game skipped (a list with nothing moved, record_frame) carries on the same
+		// way, the move before it eased out over it (half a list's move), and the list after starts
+		// from there, catching up the rest: no stop, no lurch.
+		const bool cut = m_blend_cut;
+		if (!cut && a.still && a.frame == m_still_carried && alpha < 1 && b.move > 0) {
+			alpha += (1 - alpha) * std::min(0.5, 0.5 * a.carried / b.move);
+			blend_slots(a, b, alpha);
+			m_alpha = float(alpha);
+			if (!m_redrawing) m_last_alpha = m_alpha;
 		}
-		for (int k = 0; k < 3; k++) m_pic_place[k] = n ? float(sum[k] / n) : 0;
+		// (and carries on through it until the next list is in, a frame late at times)
+		// (Into a cut, three quarters of a list on, slowing to half speed as the cut lands: eased to a
+		// stop, the last refreshes before every cut stood still)
+		m_replay_older = (cut && alpha < 1) || b.still;
+		m_replay_extra = false;
+		if (m_replay_older && !m_logic_prev.list.empty() && b.frame - a.frame == a.frame - m_logic_prev.frame) {
+			const double c = std::min(alpha, 1.0);
+			blend_slots(m_logic_prev, a, 1 + (cut ? c - 0.25 * c * c : 0.5 * (1 - (1 - c) * (1 - c))));
+			m_replay_extra = !m_blend_cut;
+			if (!cut && m_replay_extra) m_still_carried = b.frame;   // (the list after it catches up from there)
+		}
+		m_blend_cut = cut;
+		if (cut && b.frame != m_cut_frame) m_cut_frame = b.frame;
+		if (m_random_fighter && !cut && !m_replay_older && getenv("VF_POSE_EASE")) pose_apply(b);   // (testing: record_frame)
+		// After a cut the game moves the sky into place over a few frames (at most 4): the picture
+		// before the cut used to stay until it stopped jumping, a picture held for 2-7 refreshes at
+		// every replay's camera cut; now the new view shows at once, its sky where it settles
+		// (smooth_sky_shift).
+		// (the camera's RAM has the new view from the cut's frame on; the scroll the game writes
+		// follows it a frame later, mixed with the old view's, and lands one or two frames after that)
+		// Where it lands is too far to move the sky to (the tile layer moves 24 pixels at most, a
+		// panorama 160; a cut swings it hundreds, up or down too): the sky as the game has it, as the
+		// arcade shows it. The picture before the cut used to stay instead, 1-9 refreshes at a replay's
+		// cuts (up to 100 ms with the hold before the cut), mostly for views looking down at the floor
+		// with no sky in them.
+		m_sky_settling_now = false;
+		if (!m_replay_older && m_cut_frame >= 0 && int(m_frame) - 1 <= m_cut_frame + 4) {
+			const sky_sample &cur = m_sky_hist[(m_frame - 1) % SKY_HIST];
+			m_sky_settling_now = cur.frame == int(m_frame) - 1 && (cur.lands_h != cur.h || cur.lands_v != cur.v) && sky_reaches(cur);
+		}
+		if (!m_redrawing) {
+			// testing: where the 3D is in this picture, on average (the trace's check that each picture
+			// lies between its neighbours: a picture blended from the wrong pair stands out)
+			const logic_frame &l = m_replay_older ? a : b;
+			const bool own = !m_replay_older || m_replay_extra;
+			double sum[3] = { 0, 0, 0 };
+			int n = 0;
+			for (size_t i = 0; i < l.slots.size(); i++) {
+				if (l.slots[i].polys.empty()) continue;
+				const float *mt = own && i < m_blend_ok.size() && m_blend_ok[i] ? m_blend[i].data() : l.slots[i].mat;
+				for (int k = 0; k < 3; k++) sum[k] += mt[9 + k];
+				n++;
+			}
+			for (int k = 0; k < 3; k++) m_pic_place[k] = n ? float(sum[k] / n) : 0;
+		}
 	}
 	const auto render_done = m_render_done;     // emulation state: drawing again mustn't touch it
 	const int quads = m_last_quads;

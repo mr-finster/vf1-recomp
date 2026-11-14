@@ -262,7 +262,7 @@ void pages(game_menu &gm, int w, int h)
 	};
 	page_shots(gm, w, h, "pages_display.png", P_DISPLAY, {
 		{ D_PICTURE, listed({ D_SHAPE, D_WINDOW_SIZE, D_FULLSCREEN, D_FS_MODE, D_HUD, D_SHOW_FPS }), listed({ D_SUM_FIT, F(D_SUM_WINDOW_N, { { "n", "4" } }) }) },
-		{ D_QUALITY, listed({ D_SCALE, D_AA, D_RENDERER, D_DRIVER, D_BG_FILTER, D_SHADOWS, D_VSYNC, D_FRAME_LIMIT }),
+		{ D_QUALITY, listed({ D_SCALE, D_AA, D_RENDERER, D_DRIVER, D_BG_FILTER, D_SHADOWS, D_SMOOTH_MOTION, D_VSYNC, D_FRAME_LIMIT }),
 		  listed({ F(N_X, { { "n", "6" } }), F(D_SUM_AA, { { "n", F(N_X, { { "n", "3" } }) } }), R3D_GPU }) },
 		{ D_SCREEN, listed({ D_SCREEN_FILTER, D_CRT_COLOURS, D_BRIGHTNESS, D_GAMMA }), listed({ D_SCANLINES, D_CRT_COLOURS }) },
 		{ D_FREECAM, D_FREECAM_HELP, D_FREECAM_NOT_ONLINE } });
@@ -287,6 +287,7 @@ void pages(game_menu &gm, int w, int h)
 		{ D_DRIVER, D_DRIVER_HELP, D_DRIVER_AUTO },
 		{ D_BG_FILTER, D_BG_FILTER_HELP, D_SMOOTH },
 		{ D_SHADOWS, D_SHADOWS_HELP, D_SHADOWS_ARCADE },
+		{ D_SMOOTH_MOTION, D_SMOOTH_MOTION_HELP, off },
 		{ D_VSYNC, D_VSYNC_HELP, on },
 		{ D_FRAME_LIMIT, D_FRAME_LIMIT_HELP, F(D_FRAME_LIMIT_SCREEN, { { "n", "144" } }) } });
 	page_shots(gm, w, h, "pages_quality_more.png", D_QUALITY, {   // (the other values of its rows)

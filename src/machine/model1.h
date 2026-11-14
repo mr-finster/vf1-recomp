@@ -124,6 +124,10 @@ public:
 	int m_dural_sides = 0;                            // (the sides whose fighter is Dural, this list: bit 0 player 1's)
 	std::unordered_map<uint32_t, int> m_dural_seen;   // (each of her models drawn so far in this list: both Dural, whose)
 	void dural_sides();
+	// Smooth motion off (Display > Smooth motion): each picture a frame's own, the 3D's list as the
+	// game made it (not blended), as the board shows it: the 3D 30 times a second, the 2D each frame
+	void set_arcade_frames(bool on) { m_arcade_frames = on; }
+	bool m_arcade_frames = false;
 	// The unused characters left in the game (TCRF: Jeff, Majido, Takeru, the Koskol brothers)
 	// play in Akira's place: his entries in the character tables point at theirs. 0 is Akira; the
 	// rest are UNUSED_CHARACTERS. Read as a fight loads, so a change wants a restart.

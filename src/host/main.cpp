@@ -607,6 +607,7 @@ struct settings
 	bool log = true;   // log.txt written (Game > Log file: read before the log's opened, so from the next start)
 	std::string language = "auto";   // Game > Language: auto (the system's), or a language's code (tr::choice_key)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
+	bool smooth = true;   // Display > Smooth motion: a picture each refresh, between the arcade's frames; off: each frame's own, the 3D 30 a second as the board's
 	int dural_colour = 0;   // Cheats > Dural's colour: 0 chrome (the arcade's), 1 gold on player 2 (the Saturn's), 2 gold (drawing only)
 	bool hud = true;   // Display > HUD: the 2D over a fight (energy bars, timer, names...) drawn; off: the 3D and the sky only
 	bool vsync = true;   // Display > V-Sync: each picture presented at a refresh (off: at once, maybe torn)
@@ -684,6 +685,7 @@ struct settings
 		flag("arcade_shadows", arcade_shadows);
 		flag("show_fps", show_fps);
 		flag("hud", hud);
+		flag("smooth_motion", smooth);
 		num("dural_colour", dural_colour, 0, 2);
 		flag("vsync", vsync);
 		num("frame_limit", frame_limit, -1, 1000);
@@ -764,7 +766,7 @@ struct settings
 		if (arcade_shadows) fprintf(f, "arcade_shadows = 1\n");
 		fprintf(f, "language = %s\n", language.c_str());
 		fprintf(f, "window_scale = %d\n", window_scale);
-		fprintf(f, "hud = %d\nvsync = %d\nframe_limit = %d\n", int(hud), int(vsync), frame_limit);
+		fprintf(f, "hud = %d\nvsync = %d\nframe_limit = %d\nsmooth_motion = %d\n", int(hud), int(vsync), frame_limit, int(smooth));
 		if (fs_window) fprintf(f, "fullscreen_window = 1\n");
 		if (fs_exclusive) fprintf(f, "fullscreen_exclusive = 1\n");
 		if (window_w > 0) fprintf(f, "window_w = %d\nwindow_h = %d\nwindow_x = %d\nwindow_y = %d\nwindow_maximised = %d\n", window_w, window_h, window_x, window_y, int(window_max));
@@ -1226,7 +1228,8 @@ int main(int argc, char **argv)
 	};
 	m.set_render_scale(scale * aa_fit(scale, cfg.aa));   // antialiasing: drawn larger, averaged down
 	m.set_edge_aa(cfg.aa == 0);                           // or Low: the edges smoothed
-	m.set_smooth(true);   // always: a picture for each refresh of the screen, between the arcade's 57.5 frames a second
+	m.set_smooth(true);   // always: the lists kept, for a picture each refresh of the screen between the arcade's 57.5 frames a second
+	m.set_arcade_frames(!cfg.smooth);   // (Display > Smooth motion off: each frame's own picture, its list unblended)
 	m.set_sky_filter(cfg.smooth_bg);
 	m.set_arcade_shadows(cfg.arcade_shadows);
 	m.set_aspect(ASPECTS[aspect_i] > 0 ? ASPECTS[aspect_i] : 16.0f / 9.0f);
@@ -2244,7 +2247,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "render state (%s): %dx (drawn at %dx), antialiasing %s, %s, the 3D: %s, the 2D on the %s (%s), smooth pictures %s, governor %s, vsync %d, screen %.2f Hz, window %d x %d\n",
 				why, cfg.scale, m.render_scale(), cfg.aa == 0 ? "Low" : aa_now() > 1 ? (aa_now() == 2 ? "2x" : "3x") : "off",
 				aspect_i ? ASPECT_NAMES[aspect_i] : "fit", renderer_name().en().c_str(), on_gpu() ? "GPU" : "CPU",
-				rn ? rn : "?", "each refresh", "none", vsync, hz, pw, ph);
+				rn ? rn : "?", cfg.smooth ? "each refresh" : "off (each frame's own)", "none", vsync, hz, pw, ph);
 	};
 
 	// ---- the menu (Esc, or View on a pad) ----
@@ -2576,6 +2579,9 @@ int main(int argc, char **argv)
 		p.items.push_back({ tr::D_SHADOWS, tr::D_SHADOWS_HELP,
 			[&] { return std::string(cfg.arcade_shadows ? tr::D_SHADOWS_ARCADE : tr::D_SMOOTH); },
 			[&](int) { cfg.arcade_shadows = !cfg.arcade_shadows; cfg_dirty = true; m.set_arcade_shadows(cfg.arcade_shadows); redraw_if_stopped(); } });
+		p.items.push_back({ tr::D_SMOOTH_MOTION, tr::D_SMOOTH_MOTION_HELP,
+			[&] { return on_off(cfg.smooth); },
+			[&](int) { cfg.smooth = !cfg.smooth; cfg_dirty = true; m.set_arcade_frames(!cfg.smooth); log_state("the player's smooth motion"); } });   // (the picture on show stays)
 		p.items.push_back({ tr::D_VSYNC, tr::D_VSYNC_HELP,
 			[&] { return on_off(cfg.vsync); },
 			[&](int) {
@@ -2656,9 +2662,9 @@ int main(int argc, char **argv)
 		// Quality: the render scale, the antialiasing in use if any, and the 3D renderer drawing ("3x, AA 2x, GPU")
 		p.items.push_back({ tr::D_QUALITY,
 #ifdef _WIN32
-			listed({ tr::D_SCALE, tr::D_AA, tr::D_RENDERER, tr::D_DRIVER, tr::D_BG_FILTER, tr::D_SHADOWS, tr::D_VSYNC, tr::D_FRAME_LIMIT }),
+			listed({ tr::D_SCALE, tr::D_AA, tr::D_RENDERER, tr::D_DRIVER, tr::D_BG_FILTER, tr::D_SHADOWS, tr::D_SMOOTH_MOTION, tr::D_VSYNC, tr::D_FRAME_LIMIT }),
 #else
-			listed({ tr::D_SCALE, tr::D_AA, tr::D_RENDERER, tr::D_BG_FILTER, tr::D_SHADOWS, tr::D_VSYNC, tr::D_FRAME_LIMIT }),
+			listed({ tr::D_SCALE, tr::D_AA, tr::D_RENDERER, tr::D_BG_FILTER, tr::D_SHADOWS, tr::D_SMOOTH_MOTION, tr::D_VSYNC, tr::D_FRAME_LIMIT }),
 #endif
 			[&] {
 				const int k = aa_now();
@@ -4484,14 +4490,17 @@ int main(int argc, char **argv)
 			// the change as a ghost, and with a rollback every few frames the motion jittered; as VF2's and VF3's, 57.5 a
 			// second online)
 			const bool match_frames = online.playing();
-			bool picture_now = match_frames ? due > 0 && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
+			// (Display > Smooth motion off: each frame's own picture as it's run, as in a match: 57.5 a second, the 3D 30 of them)
+			const bool own_frames = match_frames || !cfg.smooth;
+			bool picture_now = own_frames ? due > 0 && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
 			if (!rec.dir.empty()) picture_now = rec.on || frames_run % 120 == 0;   // (recording: each pass; before it, now and then)
 			// (a frame run, here or ahead during the last present, but the limit says no picture this pass: the last one
 			// stays, not shown again)
 			if (m.smooth() && !sync.holding() && !unseen && !picture_now && !curtain && !game_stopped()) show_frame = false;
 			if (m.smooth() && !sync.holding() && !unseen && picture_now) {
 				smooth_budget = std::max(0.0, smooth_budget - 1);
-				const double now = match_frames ? double(m.frame_number()) : double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
+				const double now = match_frames ? double(m.frame_number()) : !cfg.smooth ? double(m.frame_number() - 1)   // (the newest frame's own moment)
+					: double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
 				const uint64_t tr = SDL_GetTicksNS();
 				const double t = std::min(now, double(m.frame_number()));
 				if (fc_path.loaded) fc_path_clock = double(game_run) + double(fc_stopped_passes) + std::clamp(frame_clock - double(game_run), 0.0, 1.0) - 1;
