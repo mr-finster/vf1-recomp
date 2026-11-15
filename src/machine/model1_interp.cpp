@@ -214,6 +214,7 @@ bool model1::render_smooth(double now, bool shown)
 		m_replay_older = alpha < 1;
 		m_replay_extra = false;
 		m_sky_settling_now = false;
+		if (m_blend_cut && b.frame != m_cut_frame) m_cut_frame = b.frame;   // (the cuts kept as with it on: switched back on just after one, its sky settles as ever)
 	} else {
 		// A cut can't be blended: the older view stays until the newer one's moment (as the blend
 		// would), so the cut lands when the game's sky, written two frames later, changes too. It
