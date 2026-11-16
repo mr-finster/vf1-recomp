@@ -204,6 +204,11 @@ $(BIN)/langtest: $(call objs,$(I18N) tools/langtest.cpp)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(SDL_LIBS) $(FT_LIBS)
 $(OBJ)/tools/langtest.o: CXXFLAGS += $(FT_CFLAGS)
 
+# updatetest: the update check's versions compared and GitHub's answers read (src/host/update_check.h); no network
+$(BIN)/updatetest: $(call objs,tools/updatetest.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) -lpthread
+
 # The 3D on the GPU in the game (src/gpu, Display > 3D renderer): SDL_GPU everywhere (Direct3D 12, Vulkan or
 # Metal: gpu3d_sdlgpu.cpp, its shaders precompiled in gpu3d_shaders.h by tools/gpu/shaders.sh), on the device of
 # SDL's gpu renderer, drawing straight into its textures. (The Mac had its own Metal code, gpu3d_metal.mm, on SDL's
@@ -258,11 +263,12 @@ clean:
 	rm -rf build/obj build/bin
 
 -include $(shell find $(OBJ) -name '*.d' 2>/dev/null)
-# The menus' tests, always from this tree's sources: langtest (the strings' tables and fonts) and menutest (every page
-# drawn and checked, English; tools/langcheck.py for every language). The default make builds neither, and a menutest
-# built before a change passes for a tree it isn't: run them through here
-test: $(BIN)/langtest $(BIN)/menutest
+# The tests, always from this tree's sources: langtest (the strings' tables and fonts), menutest (every page drawn and
+# checked, English; tools/langcheck.py for every language) and updatetest (the update check's versions and answers).
+# The default make builds none, and a menutest built before a change passes for a tree it isn't: run them through here
+test: $(BIN)/langtest $(BIN)/menutest $(BIN)/updatetest
 	$(BIN)/langtest
+	$(BIN)/updatetest
 	mkdir -p build/menutest
 	SDL_VIDEO_DRIVER=offscreen SDL_RENDER_DRIVER=software SDL_AUDIO_DRIVER=dummy $(BIN)/menutest build/menutest
 

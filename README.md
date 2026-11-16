@@ -282,7 +282,7 @@ fullscreen (`fullscreen_window = 1` gives them the borderless window).
   scale 1x with Window size 1x shows the arcade's lines one to one, Window size 2x doubles each; resizing the window by
   hand sets it back to Free, and its size and place are remembered either way.
 - **Sound:** volume, music, effects.
-- **Game:** the menus' language, play style (PC, or Arcade with its coins), reset, the log file.
+- **Game:** the menus' language, play style (PC, or Arcade with its coins), reset, the log file, and **Check for updates** (On by default: once a day at the start the game asks GitHub whether a newer release is out; if one is, the menu says "Version X is out" with **Get it**, which opens its release page in your browser. It only checks and tells, never downloads or installs anything; Off makes no request at all).
 - **Arcade settings:** the game's language, difficulty, ring size, rounds, continue, demo sound, the service menu.
 - **Online:** a random opponent, a room, a friend's code, play by address, your name and settings (see below).
 - **Controls:** each player's pad, keys and buttons (a key for two or three buttons at once: Button combinations, on
