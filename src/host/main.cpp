@@ -608,7 +608,7 @@ struct settings
 	std::string language = "auto";   // Game > Language: auto (the system's), or a language's code (tr::choice_key)
 	bool fullscreen = false, timings = false, arcade = false, smooth_bg = false, show_fps = false;
 	bool smooth = true;   // Display > Smooth motion: a picture each refresh, between the arcade's frames; off: each frame's own, the 3D 30 a second as the board's
-	int dural_colour = 0;   // Cheats > Dural's colour: 0 chrome (the arcade's), 1 gold on player 2 (the Saturn's), 2 gold (drawing only)
+	int dural_colour = 1;   // Cheats > Dural's colour: 0 chrome (the arcade's), 1 gold on player 2 (the Saturn's, the default), 2 gold (drawing only)
 	bool hud = true;   // Display > HUD: the 2D over a fight (energy bars, timer, names...) drawn; off: the 3D and the sky only
 	bool vsync = true;   // Display > V-Sync: each picture presented at a refresh (off: at once, maybe torn)
 	int frame_limit = -1;   // Display > Frame limit: the pictures a second at most, 30 60 120 144; 0 none, -1 the screen's refresh (as before with vsync)
@@ -784,7 +784,7 @@ struct settings
 		if (one_hit_ko) fprintf(f, "one_hit_ko = 1\n");
 		if (no_time_limit) fprintf(f, "no_time_limit = 1\n");
 		if (kage_unmasked) fprintf(f, "kage_unmasked = 1\n");
-		if (dural_colour) fprintf(f, "dural_colour = %d\n", dural_colour);
+		fprintf(f, "dural_colour = %d\n", dural_colour);
 		if (english_set) fprintf(f, "english_set = 1\n");
 		if (vs_rounds_set) fprintf(f, "vs_rounds_set = 1\n");
 		if (vs_rounds_3) fprintf(f, "vs_rounds_3 = 1\n");
@@ -4492,13 +4492,19 @@ int main(int argc, char **argv)
 			const bool match_frames = online.playing();
 			// (Display > Smooth motion off: each frame's own picture as it's run, as in a match: 57.5 a second, the 3D 30 of them)
 			const bool own_frames = match_frames || !cfg.smooth;
-			bool picture_now = own_frames ? due > 0 && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
+			// (a frame not yet shown, not "a frame run this pass": with the screen faster than 57.5 the next frame is mostly
+			// run ahead, during the last present, and a pass with none due then drew nothing: the picture stood still for
+			// seconds with Smooth motion off at 120 Hz)
+			static uint64_t own_shown = UINT64_MAX;
+			const bool own_new = match_frames ? due > 0 : m.frame_number() != own_shown;
+			bool picture_now = own_frames ? own_new && (!capped_low || smooth_budget >= 1) : ((due && !capped_low) || every_refresh || smooth_budget >= 1);   // (a limit under 57.5, online too: by the budget, as VF3's)
 			if (!rec.dir.empty()) picture_now = rec.on || frames_run % 120 == 0;   // (recording: each pass; before it, now and then)
 			// (a frame run, here or ahead during the last present, but the limit says no picture this pass: the last one
 			// stays, not shown again)
 			if (m.smooth() && !sync.holding() && !unseen && !picture_now && !curtain && !game_stopped()) show_frame = false;
 			if (m.smooth() && !sync.holding() && !unseen && picture_now) {
 				smooth_budget = std::max(0.0, smooth_budget - 1);
+				own_shown = m.frame_number();
 				const double now = match_frames ? double(m.frame_number()) : !cfg.smooth ? double(m.frame_number() - 1)   // (the newest frame's own moment)
 					: double(m.frame_number() - 1) + std::clamp(frame_clock - double(game_run), 0.0, 1.0);
 				const uint64_t tr = SDL_GetTicksNS();

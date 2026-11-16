@@ -118,7 +118,7 @@ ROM, by the game's own renderer:
 | Dural | Made portrait (no blinking) | DURAL | |
 
 The rest of Cheats: Kage's mask (a hit can knock his hood back, as on a cabinet played for nine hours), Dural's
-colour (her chrome, as the arcade; gold on player 2's side, as the Saturn version's second colour; or always gold:
+colour (gold on player 2's side, as the Saturn version's second colour, the default; her chrome, as the arcade; or always gold:
 drawn only on your screen, so online each player sees their own choice), infinite energy (player 1, 2 or both),
 one-hit KO, no time limit, and a tiny or huge ring.
 
@@ -290,8 +290,8 @@ fullscreen (`fullscreen_window = 1` gives them the borderless window).
 - **Cheats:** each player's fighter: Normal, Random (a new mixed fighter every game), Seed (one mixed fighter by its
   name: the same build and moves every game on any machine, its colours new every game) or a secret character;
   random opponents; **Fight switches** (infinite energy, one-hit KO, no time limit, the ring's size, which overrides
-  Arcade settings' Ring size) on a page of their own; Kage's mask; Dural's colour (chrome, gold on player 2 as on the
-  Saturn, or gold).
+  Arcade settings' Ring size) on a page of their own; Kage's mask; Dural's colour (gold on player 2 as on the Saturn, the
+  default; chrome; or gold).
 
 No page is longer than the menu's 14 rows, so none scrolls.
 
