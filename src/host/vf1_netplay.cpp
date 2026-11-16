@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <chrono>
 
@@ -72,7 +73,9 @@ std::vector<uint8_t> start_blob(model1 &b, const std::string &host_fighter, uint
 	out.insert(out.end(), backup.begin(), backup.end());
 	for (model1::game_assignment a : ASSIGNMENTS) {
 		// (-1: never set, the game's own; two players' rounds always ONLINE_VS_ROUNDS, the host's own setting untouched)
-		const int16_t v = int16_t(a == model1::game_assignment::match_vs ? ONLINE_VS_ROUNDS : b.assignment(a));
+		// (tests: VF1_TEST_VS_ROUNDS=n, shorter matches for a run with many of them; the host's, which both play)
+		static const int test_rounds = getenv("VF1_TEST_VS_ROUNDS") ? std::clamp(atoi(getenv("VF1_TEST_VS_ROUNDS")), 1, 5) : 0;
+		const int16_t v = int16_t(a == model1::game_assignment::match_vs ? (test_rounds ? test_rounds : ONLINE_VS_ROUNDS) : b.assignment(a));
 		out.push_back(uint8_t(v));
 		out.push_back(uint8_t(uint16_t(v) >> 8));
 	}

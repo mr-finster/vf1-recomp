@@ -2261,6 +2261,13 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 		}
 		for (int i = 0; i < int(name.size()); i++) { put(text + i, ROW, glyph(name[i])); put(text + i, ROW + 1, uint16_t(glyph(name[i]) + 0x10)); }
 		put(from + n - 1, ROW, 0x9b04); put(from + n - 1, ROW + 1, 0x9b14);
+		// netplay's tag (a Rooms 2 room's run of wins) in a box of its own under the name's, on the same side
+		if (const std::string &tag = names ? m_hud_tags[pl] : std::string(); !tag.empty()) {
+			const int tn = int(tag.size()) + 2, tfrom = pl ? from + n - tn : from;
+			put(tfrom, ROW + 2, 0x9b03); put(tfrom, ROW + 3, 0x9b13);
+			for (int i = 0; i < int(tag.size()); i++) { put(tfrom + 1 + i, ROW + 2, glyph(tag[i])); put(tfrom + 1 + i, ROW + 3, uint16_t(glyph(tag[i]) + 0x10)); }
+			put(tfrom + tn - 1, ROW + 2, 0x9b04); put(tfrom + tn - 1, ROW + 3, 0x9b14);
+		}
 	}
 	if (names && undo) hud_edges(*undo);
 }
@@ -2272,7 +2279,7 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 // this picture only (the undo puts the tile graphics back too: entries with CHAR_UNDO set).
 void model1::hud_edges(std::vector<std::pair<uint32_t, uint16_t>> &undo)
 {
-	constexpr int ROW = 6, W = 64;
+	constexpr int ROW0 = 6, W = 64;
 	constexpr uint32_t FONT = 0x1b00, A = FONT + 2 * 0x20 + 1;   // (the font's tiles; 'A''s upper tile)
 	auto font_char = [](uint32_t code) { return code >= FONT && code < FONT + 0x80 && (code & 0x10) == 0; };   // (an upper tile)
 	auto words = [&](uint32_t code) { return code * 16; };
@@ -2294,8 +2301,10 @@ void model1::hud_edges(std::vector<std::pair<uint32_t, uint16_t>> &undo)
 		return -1;
 	};
 	std::map<uint32_t, uint32_t> copies;   // (a character's upper tile: its edged copy's)
-	for (int pl = 0; pl < 2; pl++) {
+	for (int pl = 0; pl < 2; pl++)
+	for (const int ROW : { ROW0, ROW0 + 2 }) {   // (the name's box, and its tag's under it)
 		if (m_hud_flag_x[pl] < 0 && m_hud_names[pl].empty()) continue;
+		if (ROW != ROW0 && m_hud_tags[pl].empty()) continue;
 		for (int x = pl ? 32 : 0; x < (pl ? W : 32); x++) {
 			const uint16_t e = m_tiles.tile_r(uint32_t(ROW * W + x)), e2 = m_tiles.tile_r(uint32_t((ROW + 1) * W + x));
 			const uint32_t code = m_tiles.tile_code(e);

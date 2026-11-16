@@ -27,7 +27,7 @@ CORE = src/core/v60_device.cpp src/core/mb86233.cpp
 NET = src/net/session.cpp src/net/link.cpp src/net/stun.cpp src/net/room_link.cpp src/net/http.cpp src/net/watch.cpp
 # the menus' languages (src/host/i18n.cpp, text.cpp and lang/*.inc: docs/i18n-design.md, VF3's)
 I18N = src/host/i18n.cpp src/host/text.cpp
-ONLINE = src/host/online.cpp src/host/links.cpp src/host/vf1_netplay.cpp $(I18N) $(NET)
+ONLINE = src/host/online.cpp src/host/online_room.cpp src/host/links.cpp src/host/vf1_netplay.cpp $(I18N) $(NET)
 SOUND = src/machine/m1audio.cpp src/machine/multipcm.cpp third_party/ymfm/ymfm_opn.cpp third_party/ymfm/ymfm_adpcm.cpp third_party/ymfm/ymfm_ssg.cpp
 MUSASHI_OBJ = $(OBJ)/musashi/m68kcpu.o $(OBJ)/musashi/m68kops.o $(OBJ)/musashi/m68kdasm.o $(OBJ)/musashi/softfloat.o
 MACHINE = src/machine/model1.cpp src/machine/model1_tgp.cpp src/machine/model1_tgp_lle.cpp src/machine/model1_video.cpp src/machine/model1_sky.cpp src/machine/model1_interp.cpp src/machine/model1_gpu.cpp src/machine/model1_edge_aa.cpp src/machine/model1io.cpp src/machine/model1_state.cpp
@@ -189,7 +189,7 @@ RML_SRC = $(wildcard third_party/rmlui/Source/Core/*.cpp third_party/rmlui/Sourc
 RML_CFLAGS = -DRMLUI_STATIC_LIB -DRMLUI_FONT_ENGINE_FREETYPE -DRMLUI_SDL_VERSION_MAJOR=3 -Ithird_party/rmlui/Include -Ithird_party/rmlui/Backends
 $(OBJ)/third_party/rmlui/%.o: CXXFLAGS += $(RML_CFLAGS) $(FT_CFLAGS) $(SDL_CFLAGS) -w
 $(OBJ)/src/host/stb_image_impl.o: CXXFLAGS += -w
-$(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o $(OBJ)/src/host/online.o $(OBJ)/src/host/i18n.o $(OBJ)/tools/langtest.o $(OBJ)/tools/menutest.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
+$(OBJ)/src/host/main.o $(OBJ)/src/host/menu.o $(OBJ)/src/host/online.o $(OBJ)/src/host/online_room.o $(OBJ)/src/host/i18n.o $(OBJ)/tools/langtest.o $(OBJ)/tools/menutest.o: CXXFLAGS += $(SDL_CFLAGS) $(RML_CFLAGS)
 $(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: $(OBJ)/version.h
 $(OBJ)/src/host/main.o $(OBJ)/src/host/online.o: CXXFLAGS += -I$(OBJ)
 # menutest: the Online pages drawn offscreen to pictures (SDL_VIDEO_DRIVER=offscreen), no ROM (VF3's)

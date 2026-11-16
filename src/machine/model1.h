@@ -526,16 +526,17 @@ public:
 	// game's own entries put back after, so the board (and its save state) never holds them. Empty: none.
 	// flags: room for each player's flag in their box (two cells, out from the middle: player 1's left of the name,
 	// player 2's right of it), which the host draws over the picture (hud_flag_at)
-	void set_hud_names(const std::string names[2], const bool flags[2] = nullptr)
+	// tags: a line under each name in a box of its own ("" none; a Rooms 2 room's run of wins, "3 WINS"), the same font
+	void set_hud_names(const std::string names[2], const bool flags[2] = nullptr, const std::string *tags = nullptr)
 	{
 		std::lock_guard<std::mutex> lk(m_hud_mx);
-		for (int p = 0; p < 2; p++) { m_hud_names[p] = names[p]; m_hud_flag_on[p] = flags && flags[p]; m_hud_flag_x[p] = -1; }
+		for (int p = 0; p < 2; p++) { m_hud_names[p] = names[p]; m_hud_flag_on[p] = flags && flags[p]; m_hud_flag_x[p] = -1; m_hud_tags[p] = tags ? tags[p] : std::string(); }
 	}
 	// Where a player's flag goes in the last picture drawn (its two cells, 16 x 16 arcade pixels: x from the frame's
 	// left edge, widescreen's sides included; y from its top), false when it isn't on screen (no fight's HUD)
 	bool hud_flag_at(int pl, int &x, int &y) const { if (pl < 0 || pl > 1 || m_hud_flag_x[pl] < 0) return false; x = m_hud_flag_x[pl]; y = m_hud_flag_y[pl]; return true; }
 	int arcade_width() const { return SCREEN_W + 2 * m_ext; }   // (the frame, in arcade pixels)
-	std::string m_hud_names[2];
+	std::string m_hud_names[2], m_hud_tags[2];
 	bool m_hud_flag_on[2] = { false, false };
 	int m_hud_flag_x[2] = { -1, -1 }, m_hud_flag_y[2] = { -1, -1 };
 	std::mutex m_hud_mx;
