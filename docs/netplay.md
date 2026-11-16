@@ -135,7 +135,7 @@ build/bin/nettest && build/bin/delaytest && build/bin/netfuzz && build/bin/watch
 SDL_VIDEO_DRIVER=offscreen build/bin/menutest shots   # the Online pages as pictures, no ROM
 ```
 
-Rooms 2 (VF3's docs/ROOMS2-DESIGN.md; src/host/online_room.cpp, as VF3's): `VF1_ROOM2_CREATE=1` and `VF1_ROOM2_ENTER=CODE` (at pass 60), `VF1_ROOM2_READY=auto|never|late` (the ready check), `VF1_ROOM2_FIGHT=win|lose` (this player's input at the table), `VF1_ROOM2_LEAVE_AT=N`, `VF1_ROOM2_SHOT=1`, `VF1_TEST_STORY_AT=s:open,s:key:K,s:shot:NAME,s:leaveline,s:joinline,...`, `VF1_TEST_VS_ROUNDS=n`, `VF1_TEST_NET_DROP=S,D[,N]`, `VF1_TEST_DESYNC_AT=F` (main.cpp says what each does).
+Rooms 2 (VF3's docs/ROOMS2-DESIGN.md; src/host/online_room.cpp, as VF3's): `VF1_ROOM2_CREATE=1` and `VF1_ROOM2_ENTER=CODE` (at pass 60), `VF1_ROOM2_READY=now|esc|away` (READY or AWAY: Start or Esc 1 s into GET READY, or AWAY once in), `VF1_ROOM2_FIGHT=win|lose` (this player's input at the table), `VF1_ROOM2_LEAVE_AT=N`, `VF1_ROOM2_SHOT=1`, `VF1_TEST_STORY_AT=s:open,s:key:K,s:shot:NAME,s:leaveline,s:joinline,s:readyon,s:readyoff,...`, `VF1_TEST_VS_ROUNDS=n`, `VF1_TEST_NET_DROP=S,D[,N]`, `VF1_TEST_DESYNC_AT=F` (main.cpp says what each does).
 
 Tests with the real game: `VF1_HOST_ROOM=1`, `VF1_JOIN_CODE=XXXXXX`, `VF1_RANDOM=1`, `VF1_WATCH_CODE=XXXXXX` (at pass 60,
 as the menu's; `VF1_HOST_PUBLIC=1` lists the room),
