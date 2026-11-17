@@ -688,7 +688,7 @@ struct settings
 		{
 			update_check::version v;
 			auto tag = kv.find("update_tag"), url = kv.find("update_url"), seen = kv.find("update_seen");
-			if (tag != kv.end() && url != kv.end() && update_check::parse(tag->second, v) && update_check::page_ok(url->second))
+			if (tag != kv.end() && url != kv.end() && update_check::parse(tag->second, v) && update_check::page_ok(url->second, "vf1-recomp"))
 				update_tag = tag->second, update_url = url->second;
 			if (seen != kv.end() && update_check::parse(seen->second, v)) update_seen = seen->second;
 		}
@@ -762,6 +762,19 @@ struct settings
 	}
 
 	// False if it couldn't be written (the caller keeps it to save again; said once in the log)
+	// The command line's --scale, --aspect, --fullscreen / --window: for this run only. Saved as settings.ini had them
+	// (a save for anything else, the update check's daily one too, never writes them), unless the player changes that
+	// setting in the menu meanwhile (then it's theirs, saved)
+	struct run_only { bool on = false; int file = 0, given = 0; };
+	run_only arg_scale_, arg_aspect_, arg_full_;
+	void override_for_run(int scale_arg, int aspect_arg, int full_arg)
+	{
+		if (scale_arg) { arg_scale_ = { true, scale, scale_arg }; scale = scale_arg; }
+		if (aspect_arg >= 0) { arg_aspect_ = { true, aspect, aspect_arg }; aspect = aspect_arg; }
+		if (full_arg >= 0) { arg_full_ = { true, int(fullscreen), full_arg }; fullscreen = full_arg != 0; }
+	}
+	static int saved_as(const run_only &r, int now) { return r.on && now == r.given ? r.file : now; }
+
 	bool save(const std::string &path) const
 	{
 		const std::string tmp = path + ".tmp";
@@ -776,8 +789,8 @@ struct settings
 		}
 		fprintf(f, "# Virtua Fighter settings (the in-game menu writes these)\n");
 		fprintf(f, "scale = %d\npicture_shape = %d\nfullscreen = %d\nframe_timings = %d\nvolume = %d\narcade_mode = %d\n"
-				"background_filter = %d\nmusic_volume = %d\neffects_volume = %d\nantialiasing = %d\nshow_fps = %d\nscreen_filter = %d\nring_size = %d\n", scale, aspect,
-				int(fullscreen), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
+				"background_filter = %d\nmusic_volume = %d\neffects_volume = %d\nantialiasing = %d\nshow_fps = %d\nscreen_filter = %d\nring_size = %d\n", saved_as(arg_scale_, scale), saved_as(arg_aspect_, aspect),
+				saved_as(arg_full_, int(fullscreen)), int(timings), volume, int(arcade), int(smooth_bg), music, effects, aa, int(show_fps), filter, ring);
 		if (!log) fprintf(f, "log = 0\n");
 		fprintf(f, "update_check = %d\nupdate_checked = %lld\n", int(update_check), (long long)update_checked);
 		if (!update_tag.empty()) fprintf(f, "update_tag = %s\nupdate_url = %s\n", update_tag.c_str(), update_url.c_str());
@@ -1229,13 +1242,11 @@ int main(int argc, char **argv)
 			const std::string url = test_url ? test_url : update_check::api_url("vf1-recomp", VF_VERSION);   // (a beta's build: the list, betas too)
 			cfg.update_checked = now;
 			cfg_dirty = update_save = true;
-			updates.start(url, std::string("VF1Recomp/") + VF_VERSION + " (update check)", VF_VERSION);
+			updates.start(url, std::string("VF1Recomp/") + VF_VERSION + " (update check)", VF_VERSION, "vf1-recomp");
 			fprintf(stderr, "updates: asking %s\n", test_url ? "the test's address" : "GitHub");
 		}
 	}
-	if (arg_scale) cfg.scale = std::clamp(arg_scale, 1, 6);
-	if (arg_aspect >= 0) cfg.aspect = arg_aspect;
-	if (arg_full >= 0) cfg.fullscreen = arg_full;
+	cfg.override_for_run(arg_scale ? std::clamp(arg_scale, 1, 6) : 0, arg_aspect, arg_full);   // (--scale, --aspect, --fullscreen / --window: this run's, never saved)
 	if (arg_arcade) cfg.arcade = true;
 	g_pc_mode = !cfg.arcade;
 	// the 3D's renderer: VF_3D=cpu|gpu|auto (tests) over the setting
@@ -1624,7 +1635,8 @@ int main(int argc, char **argv)
 	// for whichever renderer this is; one without it says so)
 	if (!SDL_SetRenderVSync(ren, cfg.vsync ? 1 : 0)) fprintf(stderr, "vsync %s: not taken (%s)\n", cfg.vsync ? "on" : "off", SDL_GetError());
 	SDL_Texture *tex = nullptr;
-	auto aa_now = [&] { return m.render_scale() / std::max(1, cfg.scale); };   // the antialiasing in use
+	// the antialiasing in use: 1 at least (the 3D on the CPU at 1x for a run, cpu_cut, has the render scale under cfg.scale)
+	auto aa_now = [&] { return std::max(1, m.render_scale() / std::max(1, cfg.scale)); };
 	// Antialiasing: the picture is drawn cfg.aa times larger each way and each aa x aa block
 	// averaged into one pixel of what is shown.
 	auto shown_w = [&] { return m.frame_w() / aa_now(); };
@@ -2392,6 +2404,9 @@ int main(int argc, char **argv)
 		show_frame = false;
 	};
 	auto save_settings = [&] { return cfg.save(settings_path); };
+	// (the scale to save: the one in use, the render scale over its antialiasing; never the CPU cut's 1x for this run, the
+	// player's own kept, and never a division by an antialiasing of 0, aa_now's 1 at least)
+	auto keep_scale = [&] { if (!cpu_cut) cfg.scale = std::max(1, m.render_scale() / aa_now()); };
 	auto set_scale = [&](int v) {
 		// (a new picture size or antialiasing: the GPU's pictures checked against the CPU's again, as at the
 		// start. Low's edge pass on the GPU, chosen after the start's checks, was never checked: on some
@@ -3359,6 +3374,7 @@ int main(int argc, char **argv)
 	static Online online(m, !interp);
 	online.set_room2_file(dir + "/room2.txt");   // (a Rooms 2 room's membership: taken back after a crash, within 30 s)
 	if (const char *r = getenv("VF1_ROOM2_READY")) online.room2_test_ready = r;
+	if (const char *r = getenv("VF1_ROOM2_REGATHER_S")) online.room2_regather_ms = std::max(5.0, atof(r)) * 1000;
 	std::vector<uint8_t> own_backup;
 	uint8_t own_eeprom[model1::EEPROM_SIZE] = {};
 	std::string own_rank_names;
@@ -3576,7 +3592,7 @@ int main(int argc, char **argv)
 	auto online_row = [&] { return online_at; };
 	// a newer release out, to be said: the check on, nothing online going on (never in or around a match)
 	auto update_out = [&] {
-		return update_check::AVAILABLE && cfg.update_check && update_check::newer(cfg.update_tag, VF_VERSION) && update_check::page_ok(cfg.update_url) &&
+		return update_check::AVAILABLE && cfg.update_check && update_check::newer(cfg.update_tag, VF_VERSION) && update_check::page_ok(cfg.update_url, "vf1-recomp") &&
 		       online.phase() == Online::Phase::off && !online.in_room2() && !g_match_board;
 	};
 	auto main_page = [&] {
@@ -4229,7 +4245,8 @@ int main(int argc, char **argv)
 		// line, watching its match); VF1_ROOM2_READY=now|esc|away READY or AWAY: Start 1 s into GET READY
 		// (now: seated at once), Esc then (esc: AWAY, the first time), or AWAY as soon as in the room (away); unset: seated
 		// by itself when GET READY's 3 s are up; VF1_ROOM2_FIGHT=win|lose this player's input at the room's table: Start when the match wants it, then
-		// random play (win) or nothing (lose); VF1_ROOM2_LEAVE_AT=N Leave room at pass N; VF1_ROOM2_SHOT=1 the window to
+		// random play (win) or nothing (lose); VF1_ROOM2_LEAVE_AT=N Leave room at pass N; VF1_ROOM2_REGATHER_S=s the room's link
+		// gathered again s seconds after it last was (between seats), not 5 hours; VF1_ROOM2_SHOT=1 the window to
 		// build/host_room2_ready.png 1 s into GET READY; VF1_TEST_STORY_AT=s:open,s:key:K,s:text:T,s:shot:NAME,
 		// s:close,s:leave,s:leaveline,s:joinline,s:closeroom,s:readyon,s:readyoff at s seconds from the start (the Online
 		// page opened, a key, a code typed, the window to build/story_NAME.png, the menu closed, Leave room, Leave line,
@@ -4496,7 +4513,7 @@ int main(int argc, char **argv)
 			cfg_dirty = update_save = true;
 		}
 		if (update_save && !menu.is_open() && quit_after < 0) {   // (as the menu's close saves them; test runs save nothing)
-			cfg.scale = m.render_scale() / aa_now();
+			keep_scale();
 			cfg.aspect = aspect_i;
 			if (save_settings()) cfg_dirty = false;
 			update_save = false;
@@ -4507,7 +4524,7 @@ int main(int argc, char **argv)
 			// settings changed in the menu are saved as it closes (not only at quit: a crash or a
 			// force quit would lose them); test runs save nothing
 			if (cfg_dirty && quit_after < 0) {
-				cfg.scale = m.render_scale() / aa_now();
+				keep_scale();
 				cfg.aspect = aspect_i;
 				if (save_settings()) cfg_dirty = false;   // (else tried again at the next close, and at quit)
 			}
@@ -5147,7 +5164,7 @@ int main(int argc, char **argv)
 	save_blob(ee_path, m.eeprom(), model1::EEPROM_SIZE);
 	save_rank_names(true);
 	if (cfg_dirty) {
-		cfg.scale = m.render_scale() / aa_now();
+		keep_scale();
 		cfg.aspect = aspect_i;
 		save_settings();
 	}
