@@ -144,7 +144,9 @@ int g_test_frames = 0;
 bool g_test_pending = false;   // the menu's Service menu: pressed once the game is past its boot (a restart first)
 
 // Testing: VF_TEST_RAM_LOG=file: the work RAM hashed every 30 game frames, and the game's mode (a display setting
-// changes no frame). VF_TEST_CHIME_WAV=file: the match found chime's sound (the game's coin, made at the start), a .wav.
+// changes no frame), and the whole board's saved state hashed (its tile RAM's too). VF1_TEST_HUD_ROOM2=tag1,tag2: a
+// Rooms 2 room's HUD offline (the names P1 and P2, these runs of wins over the bars, the game's CHAMPION line not
+// drawn): the picture only, the state's hash the same as without it. VF_TEST_CHIME_WAV=file: the match found chime's sound (the game's coin, made at the start), a .wav.
 // Testing: VF_TEST_FREECAM_PATH=file: the free camera flown along the path in the file (free_cam_path.h: keys, orbits
 // round the fighters, on, off, pause, unpause and quit at times on the same clock as VF_TEST_FREECAM's, game frames
 // then a tick a picture while paused), for footage with VF_RECORD. VF_TEST_FREECAM_PATH_LOG=1: every 30 ticks where
@@ -3778,7 +3780,12 @@ int main(int argc, char **argv)
 				if (static FILE *rl = getenv("VF_TEST_RAM_LOG") ? fopen(getenv("VF_TEST_RAM_LOG"), "w") : nullptr; rl && game_run % 30 == 0) {
 					uint64_t h = 1469598103934665603ull;
 					for (uint8_t b : m.work_ram()) h = (h ^ b) * 1099511628211ull;
-					fprintf(rl, "%llu %016llx %d\n", (unsigned long long)game_run, (unsigned long long)h, vf1net::scene_byte(m));
+					static std::vector<uint8_t> st;
+					st.clear();
+					m.save_state(st);
+					uint64_t hs = 1469598103934665603ull;
+					for (uint8_t b : st) hs = (hs ^ b) * 1099511628211ull;
+					fprintf(rl, "%llu %016llx %d %016llx\n", (unsigned long long)game_run, (unsigned long long)h, vf1net::scene_byte(m), (unsigned long long)hs);
 					fflush(rl);
 				}
 				// leaving the service menu: the PC build restarts at once, past the boot screen
@@ -3974,10 +3981,18 @@ int main(int argc, char **argv)
 			}
 			fprintf(stderr, "online: %s\n", Online::log_masked(n.text.en()).c_str());
 		}
-		for (int p = 0; p < 2; p++) {   // (a Rooms 2 room's run of wins, under its holder's name: the HUD's own letters, as the game's text, never translated)
+		for (int p = 0; p < 2; p++) {   // (a Rooms 2 room's run of wins, over its holder's bar where the game's CHAMPION is, in the game's letters: never translated)
 			const int k = match_on ? online.room2_streak(p) : 0;
 			hud_tag[p] = k > 0 ? std::to_string(k) + (k == 1 ? " WIN" : " WINS") : std::string();
 		}
+		// (and the game's own CHAMPION n WINS and CHALLENGER over the bars not drawn in a room's match, played or watched:
+		// two counts of wins would disagree, the game's only of this session's; the room's is drawn there. The picture only)
+		static const char *test_hud_room2 = getenv("VF1_TEST_HUD_ROOM2");   // (tests: a room's HUD offline)
+		if (test_hud_room2 && !match_on && frames_run == 60) {
+			const std::string all = test_hud_room2, names[2] = { "P1", "P2" }, tags[2] = { all.substr(0, all.find(',')), all.find(',') == std::string::npos ? std::string() : all.substr(all.find(',') + 1) };
+			m.set_hud_names(names, nullptr, tags);
+		}
+		m.set_hud_room2((match_on && online.in_room2()) || (test_hud_room2 && !match_on));
 		if (match_on) {   // (each player's name and flag on the HUD only while they're in the game: a side the CPU has, the game's own)
 			const int in = online.players_in_game();
 			if (in != hud_in_shown || hud_tag[0] != hud_tags_shown[0] || hud_tag[1] != hud_tags_shown[1]) {

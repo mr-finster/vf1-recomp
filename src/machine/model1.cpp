@@ -2261,12 +2261,45 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 		}
 		for (int i = 0; i < int(name.size()); i++) { put(text + i, ROW, glyph(name[i])); put(text + i, ROW + 1, uint16_t(glyph(name[i]) + 0x10)); }
 		put(from + n - 1, ROW, 0x9b04); put(from + n - 1, ROW + 1, 0x9b14);
-		// netplay's tag (a Rooms 2 room's run of wins) in a box of its own under the name's, on the same side
-		if (const std::string &tag = names ? m_hud_tags[pl] : std::string(); !tag.empty()) {
-			const int tn = int(tag.size()) + 2, tfrom = pl ? from + n - tn : from;
-			put(tfrom, ROW + 2, 0x9b03); put(tfrom, ROW + 3, 0x9b13);
-			for (int i = 0; i < int(tag.size()); i++) { put(tfrom + 1 + i, ROW + 2, glyph(tag[i])); put(tfrom + 1 + i, ROW + 3, uint16_t(glyph(tag[i]) + 0x10)); }
-			put(tfrom + tn - 1, ROW + 2, 0x9b04); put(tfrom + tn - 1, ROW + 3, 0x9b14);
+	}
+	// A Rooms 2 room's match (netplay's, set_hud_room2): the game's own line over the energy bars (rows 1 and 2, in its
+	// heading letters, two tiles tall: a digit's top tile 83a0 + 2 x the digit, a letter's 83c2 + 2 x its place in the
+	// alphabet, each with its bottom one on; CHAMPION n WIN(S) over one bar, CHALLENGER or PUSH START BUTTON over the
+	// other; bf83 the blank) has no CHAMPION and no CHALLENGER (the game's count is only of this session's matches), and
+	// nothing on the holder's side: the room's run of wins ("3 WINS") is there instead, in those letters, hard to the
+	// bar's outer end (player 1's from column 2, player 2's to column 59, as the names' boxes). Through the undo, as the names.
+	if (names && undo && m_hud_room2 && win[0] && win[1]) {
+		constexpr int LINE = 1;
+		constexpr uint16_t BLANK = 0xbf83;
+		auto heading = [](uint16_t e) { return (e & 0xff00) == 0x8300; };
+		auto top_of = [](char c) { return c >= '0' && c <= '9' ? 0x83a0 + 2 * (c - '0') : c >= 'A' && c <= 'Z' ? 0x83c2 + 2 * (c - 'A') : -1; };
+		auto glyph = [](char ch) { const int c = std::clamp(int(ch), 0x20, 0x5f) - 0x20; return uint16_t(0x9b00 + (c >> 4) * 0x20 + (c & 15)); };   // (the names' font)
+		auto drawn = [&](uint32_t code) { for (uint32_t w = 0; w < 16; w++) if (m_tiles.char_r(code * 16 + w)) return true; return false; };
+		for (int pl = 0; pl < 2; pl++) {
+			const int x_from = pl ? 35 : 0, x_to = pl ? W - 1 : 26;   // (either side of the timer's box, columns 27-34)
+			std::string line;
+			for (int x = x_from; x <= x_to; x++) {
+				const uint16_t e = at(x, LINE);
+				const int t = e & 0xff;
+				line += !heading(e) || (t & 1) ? ' ' : t >= 0xc2 && t < 0xc2 + 52 ? char('A' + (t - 0xc2) / 2) : t >= 0xa0 && t < 0xa0 + 20 ? char('0' + (t - 0xa0) / 2) : ' ';
+			}
+			const std::string &tag = m_hud_tags[pl];
+			if (line.find("CHAMPION") == std::string::npos && line.find("CHALLENGER") == std::string::npos && tag.empty()) continue;
+			for (int x = x_from; x <= x_to; x++)
+				for (int y = LINE; y <= LINE + 1; y++)
+					if (heading(at(x, y))) put(x, y, BLANK);
+			if (tag.empty()) continue;
+			// the heading letters' tiles there (as in every fight), else the names' font's in their place
+			bool heads = true;
+			for (char c : tag)
+				if (c != ' ' && (top_of(c) < 0 || !drawn(m_tiles.tile_code(uint16_t(top_of(c)))) || !drawn(m_tiles.tile_code(uint16_t(top_of(c) + 1))))) heads = false;
+			const int tn = int(tag.size()), x0 = pl ? 60 - tn : 2;
+			for (int i = 0; i < tn; i++) {
+				const char c = tag[size_t(i)];
+				const uint16_t t = c == ' ' ? BLANK : heads ? uint16_t(top_of(c)) : glyph(c), b = c == ' ' ? BLANK : heads ? uint16_t(t + 1) : uint16_t(t + 0x10);
+				put(x0 + i, LINE, t);
+				put(x0 + i, LINE + 1, b);
+			}
 		}
 	}
 	if (names && undo) hud_edges(*undo);
@@ -2301,10 +2334,9 @@ void model1::hud_edges(std::vector<std::pair<uint32_t, uint16_t>> &undo)
 		return -1;
 	};
 	std::map<uint32_t, uint32_t> copies;   // (a character's upper tile: its edged copy's)
-	for (int pl = 0; pl < 2; pl++)
-	for (const int ROW : { ROW0, ROW0 + 2 }) {   // (the name's box, and its tag's under it)
+	for (int pl = 0; pl < 2; pl++) {
+		constexpr int ROW = ROW0;   // (the name's box)
 		if (m_hud_flag_x[pl] < 0 && m_hud_names[pl].empty()) continue;
-		if (ROW != ROW0 && m_hud_tags[pl].empty()) continue;
 		for (int x = pl ? 32 : 0; x < (pl ? W : 32); x++) {
 			const uint16_t e = m_tiles.tile_r(uint32_t(ROW * W + x)), e2 = m_tiles.tile_r(uint32_t((ROW + 1) * W + x));
 			const uint32_t code = m_tiles.tile_code(e);
