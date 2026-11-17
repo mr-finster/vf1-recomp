@@ -3945,6 +3945,7 @@ int main(int argc, char **argv)
 				const std::string ft1 = fighter_shown(vf1net::fighter_words(online.player_extra(0), m)), ft2 = fighter_shown(vf1net::fighter_words(online.player_extra(1), m));
 				const std::string host = online.player_name(0), guest = online.player_name(1);
 				const int ms = online.ping();
+				if (watching && online.in_room2()) online.room2_next_on();   // (the loser's banner not over the next match)
 				if (watching)
 					menu.show_versus({ tr::VS_PLAYER_1, host, tr::VS_PLAYER_2, guest, tr::WATCHING_BEHIND, tr::WATCHING_HOW_TO_STOP, false,
 					                   online.player_country(0), online.player_country(1), ft1, ft2 });
