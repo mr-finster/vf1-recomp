@@ -84,6 +84,8 @@ public:
 	~Online();
 	vf1net::Adapter adapter;      // (its run, settle and program_changed set by main)
 	vfnet::Identity identity;     // the game, build and ROM hash (main's); the name from the settings
+	std::string release;          // this build's own version (the release's tag, a beta's v1.9.0-beta1): told the lobby with a Rooms 2 room it
+	                              // creates, so an older build given that room's code is told which version it needs (main's)
 
 	// With a room code: open a room (the code comes in a moment: room_code()), or join one
 	// (want: the room's code from before, kept if it's free: a match's Play again; patient: no room yet is waited for,

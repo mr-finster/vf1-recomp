@@ -3564,6 +3564,7 @@ int main(int argc, char **argv)
 	bool online_ready = false;
 	auto online_page = [&] {
 		if (!online_ready) {   // (the ROMs' hash for the handshake, once)
+			online.release = VF_VERSION;
 			online.identity = { "vf1", vf1net::online_version(VF_VERSION), vf1net::content_hash(m), "" };   // (the online version, not the release's)
 			online_ready = true;
 		}
