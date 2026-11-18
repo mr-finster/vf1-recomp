@@ -2265,9 +2265,11 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 	// A Rooms 2 room's match (netplay's, set_hud_room2): the game's own line over the energy bars (rows 1 and 2, in its
 	// heading letters, two tiles tall: a digit's top tile 83a0 + 2 x the digit, a letter's 83c2 + 2 x its place in the
 	// alphabet, each with its bottom one on; CHAMPION n WIN(S) over one bar, CHALLENGER or PUSH START BUTTON over the
-	// other; bf83 the blank) has no CHAMPION and no CHALLENGER (the game's count is only of this session's matches), and
-	// nothing on the holder's side: the room's run of wins ("3 WINS") is there instead, in those letters, hard to the
-	// bar's outer end (player 1's from column 2, player 2's to column 59, as the names' boxes). Through the undo, as the names.
+	// other; bf83 the blank) has no CHAMPION n WIN(S) and no CHALLENGER (the game's count is only of this session's
+	// matches): the room's run of wins ("3 WINS") is over the holder's bar instead, in those letters, hard to the bar's
+	// outer end (player 1's from column 2, player 2's to column 59, as the names' boxes), whatever the game has in its own
+	// place taken out; the rest of the line (PUSH START BUTTON) left as the game draws it. Through the undo, as the names.
+	// With or without the names (screen_update: the room's flag alone does)
 	if (names && undo && m_hud_room2 && win[0] && win[1]) {
 		constexpr int LINE = 1;
 		constexpr uint16_t BLANK = 0xbf83;
@@ -2284,16 +2286,35 @@ void model1::random_fighter_hud(const std::string *names, std::vector<std::pair<
 				line += !heading(e) || (t & 1) ? ' ' : t >= 0xc2 && t < 0xc2 + 52 ? char('A' + (t - 0xc2) / 2) : t >= 0xa0 && t < 0xa0 + 20 ? char('0' + (t - 0xa0) / 2) : ' ';
 			}
 			const std::string &tag = m_hud_tags[pl];
-			if (line.find("CHAMPION") == std::string::npos && line.find("CHALLENGER") == std::string::npos && tag.empty()) continue;
+			const int tn = int(tag.size()), x0 = pl ? 60 - tn : 2;
+			// (the places of CHAMPION, its count and WIN or WINS after it, and CHALLENGER; and the streak's own)
+			std::vector<bool> out(line.size(), false);
+			auto mark = [&](size_t a, size_t b) { for (size_t i = a; i < b && i < out.size(); i++) out[i] = true; };
+			for (size_t a = line.find("CHALLENGER"); a != std::string::npos; a = line.find("CHALLENGER", a + 1)) mark(a, a + 10);
+			for (size_t a = line.find("CHAMPION"); a != std::string::npos; a = line.find("CHAMPION", a + 1)) {
+				size_t end = a + 8, k = end;
+				while (k < line.size() && line[k] == ' ') k++;
+				size_t d = k;
+				while (d < line.size() && line[d] >= '0' && line[d] <= '9') d++;
+				if (d > k) {
+					end = d;
+					size_t w = d;
+					while (w < line.size() && line[w] == ' ') w++;
+					if (line.compare(w, 3, "WIN") == 0) end = w + 3 + (w + 3 < line.size() && line[w + 3] == 'S' ? 1 : 0);
+				}
+				mark(a, end);
+			}
+			for (int x = x0; x < x0 + tn; x++)
+				if (x >= x_from && x <= x_to) out[size_t(x - x_from)] = true;
 			for (int x = x_from; x <= x_to; x++)
-				for (int y = LINE; y <= LINE + 1; y++)
-					if (heading(at(x, y))) put(x, y, BLANK);
+				if (out[size_t(x - x_from)])
+					for (int y = LINE; y <= LINE + 1; y++)
+						if (heading(at(x, y))) put(x, y, BLANK);
 			if (tag.empty()) continue;
 			// the heading letters' tiles there (as in every fight), else the names' font's in their place
 			bool heads = true;
 			for (char c : tag)
 				if (c != ' ' && (top_of(c) < 0 || !drawn(m_tiles.tile_code(uint16_t(top_of(c)))) || !drawn(m_tiles.tile_code(uint16_t(top_of(c) + 1))))) heads = false;
-			const int tn = int(tag.size()), x0 = pl ? 60 - tn : 2;
 			for (int i = 0; i < tn; i++) {
 				const char c = tag[size_t(i)];
 				const uint16_t t = c == ' ' ? BLANK : heads ? uint16_t(top_of(c)) : glyph(c), b = c == ' ' ? BLANK : heads ? uint16_t(t + 1) : uint16_t(t + 0x10);
@@ -3584,10 +3605,12 @@ void model1::screen_update(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 				else m.m_tiles.tile_w(it->first, it->second, 0xffff);
 		}
 	} hud_back{ *this, undo };
-	if (!m_hud_names[0].empty() || !m_hud_names[1].empty()) {
+	{   // (and a Rooms 2 room's match's line over the bars, by its flag alone: set_hud_room2)
 		std::lock_guard<std::mutex> lk(m_hud_mx);
-		random_fighter_hud(m_hud_names, &undo);
-		if (!undo.empty()) m_tiles_updated = ~0ull;   // (decoded with them)
+		if (!m_hud_names[0].empty() || !m_hud_names[1].empty() || m_hud_room2) {
+			random_fighter_hud(m_hud_names, &undo);
+			if (!undo.empty()) m_tiles_updated = ~0ull;   // (decoded with them)
+		}
 	}
 	view_t *view = m_view.get();
 	view->ayyc = cos(view->ayy);
