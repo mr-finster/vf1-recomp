@@ -313,6 +313,8 @@ bool Adapter::begin(const std::vector<uint8_t> &given)
 	memcpy(&seed, blob.data() + FIXED - 5, 4);
 	// each player's fighter: the host's (player 1's) in its blob, the guest's in its hello
 	const std::string host_x(reinterpret_cast<const char *>(blob.data()) + FIXED, blob[FIXED - 1]);
+	refused_random = false;
+	if (no_random && !watching && (!host_x.empty() || !(hosting ? their_extra : own_extra).empty())) { refused_random = true; return false; }
 	if (!fighter_setting(host_x, board, fighters[0]) || !fighter_setting(watching ? wx[1] : hosting ? their_extra : own_extra, board, fighters[1])) return false;
 	const bool random = !fighters[0].empty() || !fighters[1].empty();
 	// (a seed's fighter: every seed's name made now, before the boot, as a named fighter's own side does at the

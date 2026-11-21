@@ -6,7 +6,9 @@
 // (the interpreter) runs the same inputs straight through, and both players' boards must have been in its state at
 // every checkpoint. Reports the rollbacks and what a frame cost each side. VF3's vf3net, for VF1.
 //   vf1net [regions dir] [--random SEED] [--frames N] [--latency MS] [--jitter MS] [--loss PERCENT] [--delay D]
-//          [--interp] [--soft] [--map FILE] [--p1 F] [--p2 F] [--hashes FILE]
+//          [--interp] [--soft] [--map FILE] [--p1 F] [--p2 F] [--no-random h|g|hg] [--hashes FILE]
+// --no-random: that side (host, guest) in a Rooms 2 room with Random fighters off (Adapter::no_random): a fighter in
+// either player's word refused at the start, both sessions ended, nothing played
 // --hashes FILE: the straight board's state hash every 30 frames ("frame hash", hex): a release's file against the
 // last online release's says whether the two play each other (docs: the online version); the same every run
 // --vs-rounds N: the host's own Rounds to win (vs player), set before the match, as the menu does (the match plays the
@@ -168,7 +170,7 @@ bool tail_frames(const std::vector<uint8_t> &x, uint32_t &first, std::vector<std
 
 int main(int argc, char **argv)
 {
-	std::string dir = "build/vf", map_path = "assets/vf_map.txt", p1, p2;
+	std::string dir = "build/vf", map_path = "assets/vf_map.txt", p1, p2, no_random;
 	long frames = 3000;
 	uint32_t seed = 1;
 	vfnet::SimWire::Params p{ 40, 8, 0 };
@@ -187,6 +189,7 @@ int main(int argc, char **argv)
 		else if (a == "--map" && i + 1 < argc) map_path = argv[++i];
 		else if (a == "--p1" && i + 1 < argc) p1 = argv[++i];   // (each player's fighter, as the handshake has it: R, S<seed>, X<k>)
 		else if (a == "--p2" && i + 1 < argc) p2 = argv[++i];
+		else if (a == "--no-random" && i + 1 < argc) no_random = argv[++i];   // (h, g or hg: that side's adapter in a Rooms 2 room with Random fighters off)
 		else if (a == "--hashes" && i + 1 < argc) hashes_path = argv[++i];
 		else if (a == "--vs-rounds" && i + 1 < argc) vs_rounds = atoi(argv[++i]);
 		else if (a == "--blob-out" && i + 1 < argc) blob_out = argv[++i];
@@ -318,6 +321,8 @@ int main(int argc, char **argv)
 	A.adapter->hosting = true;
 	A.adapter->own_extra = p1;
 	B.adapter->own_extra = p2;
+	A.adapter->no_random = no_random.find('h') != std::string::npos;
+	B.adapter->no_random = no_random.find('g') != std::string::npos;
 	if (vs_rounds) {   // (the host's settings as its own game wrote them, then the round count changed, as the menu does)
 		if (!A.adapter->begin(vf1net::start_blob(*A.m, p1, 1))) { fprintf(stderr, "vf1net: the host's board didn't start\n"); return 1; }
 		A.m->set_assignment(model1::game_assignment::match_vs, vs_rounds);
@@ -524,6 +529,14 @@ int main(int argc, char **argv)
 		for (Watcher &w : ws) all = all && w.on && w.sp->frame() >= lobby.in.size() / 2;
 		if (all) break;
 	}
+	// (--no-random: a side that ended, the other's end within 40 s too, no match half started on either)
+	if (!no_random.empty() && (sa.state() == vfnet::Session::State::ended) != (sb.state() == vfnet::Session::State::ended)) {
+		const double until = t + 40000;
+		for (; t < until && (sa.state() != vfnet::Session::State::ended || sb.state() != vfnet::Session::State::ended); t += 1) { wire.now = t; sa.poll(t); sb.poll(t); }
+	}
+	if (!no_random.empty())
+		printf("no-random: host %s (frame %u, refused %d), guest %s (frame %u, refused %d), %.1f s simulated\n", sa.state() == vfnet::Session::State::ended ? "ended" : "on",
+		       sa.frame(), int(A.adapter->refused_random), sb.state() == vfnet::Session::State::ended ? "ended" : "on", sb.frame(), int(B.adapter->refused_random), (t - 1000) / 1000);
 	vfnet::Session::Event e;
 	bool failed = false;
 	while (sa.next_event(e)) if (e.kind == e.ended) { printf("host: %s\n", e.text.c_str()); failed = true; }

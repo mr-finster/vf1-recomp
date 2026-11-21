@@ -178,6 +178,7 @@ bool Online::open_host(tr::line &error)
 	if (adapter.settle) adapter.settle();
 	identity.name = started_with.name;
 	identity.extra = vf1net::fighter_extra(started_with.fighter, board);   // (this player's fighter, in the hello)
+	adapter.no_random = false;   // (a Rooms 2 seat's alone: room2_seat)
 	adapter.hosting = true;
 	adapter.watching = false;
 	adapter.own_extra = identity.extra;
@@ -290,6 +291,7 @@ bool Online::join(const OnlineSettings &s, tr::line &error)
 	if (std::string e; !link->connect(host, uint16_t(p), e)) { error = e; link.reset(); return false; }
 	identity.name = s.name;
 	identity.extra = vf1net::fighter_extra(s.fighter, board);
+	adapter.no_random = false;   // (a Rooms 2 seat's alone: room2_seat)
 	adapter.hosting = false;
 	adapter.watching = false;
 	adapter.own_extra = identity.extra;
@@ -330,6 +332,7 @@ bool Online::find_random(const OnlineSettings &s, tr::line &error)
 	room->set_relay_only(s.hide_ip);
 	identity.name = s.name;
 	identity.extra = vf1net::fighter_extra(s.fighter, board);
+	adapter.no_random = false;   // (a Rooms 2 seat's alone: room2_seat)
 	rooms = true;
 	random = true;
 	random_misses = 0;
@@ -371,6 +374,7 @@ bool Online::host_room(const OnlineSettings &s, tr::line &error, const std::stri
 	room->set_relay_only(s.hide_ip);
 	identity.name = s.name;
 	identity.extra = vf1net::fighter_extra(s.fighter, board);
+	adapter.no_random = false;   // (a Rooms 2 seat's alone: room2_seat)
 	rooms = true;
 	ph = Phase::hosting;
 	st = Step::getting_ready;
@@ -412,6 +416,7 @@ bool Online::join_room(const OnlineSettings &s, const std::string &c, tr::line &
 	room->set_relay_only(s.hide_ip);
 	identity.name = s.name;
 	identity.extra = vf1net::fighter_extra(s.fighter, board);
+	adapter.no_random = false;   // (a Rooms 2 seat's alone: room2_seat)
 	rooms = true;
 	code = want;
 	ph = Phase::joining;
@@ -3149,21 +3154,24 @@ menu_page room2_settings_page(Online &o, OnlineSettings &s, game_menu &menu, std
 		[&o, put](int) { if (RoomMember *m = const_cast<RoomMember *>(o.room2())) { m->listed = !m->listed; put(); } } });
 	// (the room's rules as the lobby has them (this player's own till its first word, or a lobby without them); each change
 	// the room's with that one changed, to the lobby at once (sent again if it fails), and kept as this player's for the next
-	// room made; this game has no Dural, Customize nor stage select: only the winner's side and the room's size)
-	struct ruled { bool side; int max; };
+	// room made; this game has no Dural, Customize nor stage select: the winner's side, random fighters and the room's size)
+	struct ruled { bool side; int max; bool random; };
 	auto now = [&o, &s] {
 		const RoomMember *m = o.room2();
-		return m && m->has_rules ? ruled{ m->rule_side, m->rule_max } : ruled{ s.rule_side, s.rule_max };
+		return m && m->has_rules ? ruled{ m->rule_side, m->rule_max, m->rule_random } : ruled{ s.rule_side, s.rule_max, s.rule_random };
 	};
 	auto rules = [&o, &s, now, changed](const std::function<void(ruled &)> &f) {
 		ruled r = now();
 		f(r);
-		s.rule_side = r.side; s.rule_max = r.max;
+		s.rule_side = r.side; s.rule_max = r.max; s.rule_random = r.random;
 		o.room2_rules(s);
 		if (changed) changed();
 	};
 	auto onoff = [](bool v) { return std::string(v ? tr::ON : tr::OFF); };
 	p.items.push_back({ tr::ROOM2_RULE_SIDE, tr::ROOM2_RULE_SIDE_HELP, [now, onoff] { return onoff(now().side); }, [rules](int) { rules([](ruled &r) { r.side = !r.side; }); } });
+	// (random fighters (Online > Settings > Your fighter): Off, the lobby seats the plain match's terms, the select's fighters
+	// for both whatever each chose, a game's own build or another's alike)
+	p.items.push_back({ tr::ROOM2_RULE_RANDOM, tr::ROOM2_RULE_RANDOM_HELP, [now, onoff] { return onoff(now().random); }, [rules](int) { rules([](ruled &r) { r.random = !r.random; }); } });
 	p.items.push_back({ tr::ROOM2_RULE_MAX, tr::ROOM2_RULE_MAX_HELP, [now] { const int n = now().max; return n ? std::to_string(n) : std::string(tr::ROOM2_NO_LIMIT); },
 		[rules](int d) {   // (no limit, 2 to 16, then no limit again)
 			rules([d](ruled &r) {

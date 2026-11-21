@@ -288,6 +288,7 @@ void Online::room2_state(const Value &st)
 	if ((m.has_rules = rm["rules"].kind == Value::object)) {
 		const Value &ru = rm["rules"];
 		m.rule_side = truthy(ru["side"]);
+		m.rule_random = truthy(ru["random"]);
 		m.rule_dural = truthy(ru["dural"]);
 		m.rule_custom = truthy(ru["custom"]);
 		m.rule_stage = ru["stage"].kind != Value::boolean || ru["stage"].b;
@@ -556,7 +557,8 @@ void Online::room2_poll()
 				extra += std::string(",\"listed\":") + (w.room_who >= 1 ? "true" : "false") + (w.room_name.empty() ? "" : ",\"room\":" + quote(w.room_name));
 				if (!release.empty()) extra += ",\"build\":" + quote(release);   // (an older build given this room's code is told "The host has <it>")
 				extra += std::string(",\"rules\":{\"side\":") + (w.rule_side ? "true" : "false") + ",\"dural\":" + (w.rule_dural ? "true" : "false") +
-				         ",\"custom\":false,\"max\":" + std::to_string(w.rule_max) + ",\"stage\":" + (w.rule_stage ? "true" : "false") + "}";
+				         ",\"custom\":false,\"max\":" + std::to_string(w.rule_max) + ",\"stage\":" + (w.rule_stage ? "true" : "false") +
+				         ",\"random\":" + (w.rule_random ? "true" : "false") + "}";
 			} else {
 				extra += ",\"code\":" + quote(m.code);
 				// (a membership from before, this room's: a crash or a restart, its place taken back if it's still there)
@@ -984,7 +986,17 @@ void Online::room2_seat()
 	m.seen_token = m.seat.token;
 	// (the one who stays: the table's holder, a winner on, against the newcomer; the stage select the newcomer's, in VF3)
 	m.stayer = m.holder == "a" || m.holder == "b" ? m.holder : "";
-	// (VF1 has no terms of its own: the online version both players have, as a /v1 room's seat)
+	// (VF1 has no terms of its own: the online version both players have, as a /v1 room's seat. A room with Random fighters
+	// off has the lobby's "+norandom" in the seat's terms: no fighter of this player's, an opponent's refused at the start)
+	{
+		const std::string &as = m.seat.as;
+		bool no_random = false;
+		for (size_t at = as.find('+'); at != std::string::npos; at = as.find('+', at + 1))
+			if (as.compare(at, 9, "+norandom") == 0 && (at + 9 == as.size() || as[at + 9] == '+')) no_random = true;
+		adapter.no_random = no_random;
+		identity.extra = no_random ? std::string() : vf1net::fighter_extra(started_with.fighter, board);
+		if (no_random && !vf1net::fighter_extra(started_with.fighter, board).empty()) log("Rooms 2: the room's Random fighters off: this match with the select's fighter");
+	}
 	room->set_peer(m.seat.cands, m.seat.relay, is_host);
 	room_session(is_host);
 	ph = is_host ? Phase::hosting : Phase::joining;
@@ -1042,6 +1054,7 @@ void Online::room2_session_ended(const vfnet::Session::Event &e)
 		m.failed_token = m.played_token;
 		m.gathered_at = std::min(m.gathered_at, now - room2_regather_ms);   // (perhaps this side's network changed: its addresses gathered again, between seats)
 		m.settling = true;   // (not before the lobby's word on this seat: still seated, or back in the line)
+		if (adapter.refused_random) log("Rooms 2: a random fighter in this match, the room's Random fighters off: it can't be played");
 		log("Rooms 2: the session with " + online_menu::clean_name(peer_name) + " didn't get going (" + e.text + "): " + (room ? room->report([](const std::string &a) { return online_detail::mask_list({ a }); }) : std::string()) + "; the lobby moves on");
 	}
 	stop_activity(true);
@@ -1240,12 +1253,12 @@ void Online::room2_rules(const OnlineSettings &s)
 	if (!r2 || r2->owner_key.empty()) return;
 	const std::string body = "{\"code\":" + quote(r2->code) + ",\"owner_key\":" + quote(r2->owner_key) + ",\"rules\":{\"side\":" + (s.rule_side ? "true" : "false") +
 	                         ",\"dural\":" + (s.rule_dural ? "true" : "false") + ",\"custom\":false,\"max\":" + std::to_string(s.rule_max) +
-	                         ",\"stage\":" + (s.rule_stage ? "true" : "false") + "}}";   // (custom: none till Customize comes, whatever's kept)
+	                         ",\"stage\":" + (s.rule_stage ? "true" : "false") + ",\"random\":" + (s.rule_random ? "true" : "false") + "}}";   // (custom: none till Customize comes, whatever's kept)
 	room2_owner_send("rules", body);
 	r2->has_rules = true;   // (as asked, till the lobby's state says)
-	r2->rule_side = s.rule_side; r2->rule_dural = s.rule_dural; r2->rule_custom = false; r2->rule_stage = s.rule_stage; r2->rule_max = s.rule_max;
+	r2->rule_side = s.rule_side; r2->rule_dural = s.rule_dural; r2->rule_custom = false; r2->rule_stage = s.rule_stage; r2->rule_max = s.rule_max; r2->rule_random = s.rule_random;
 	r2->version++;
-	log("Rooms 2: the room's rules: the winner may change side " + std::string(s.rule_side ? "yes" : "no") + ", Dural " + (s.rule_dural ? "yes" : "no") + ", players at most " + (s.rule_max ? std::to_string(s.rule_max) : std::string("no limit")) + ", the challenger's stage select " + (s.rule_stage ? "yes" : "no"));
+	log("Rooms 2: the room's rules: the winner may change side " + std::string(s.rule_side ? "yes" : "no") + ", random fighters " + (s.rule_random ? "yes" : "no") + ", Dural " + (s.rule_dural ? "yes" : "no") + ", players at most " + (s.rule_max ? std::to_string(s.rule_max) : std::string("no limit")) + ", the challenger's stage select " + (s.rule_stage ? "yes" : "no"));
 }
 
 void Online::room2_close()

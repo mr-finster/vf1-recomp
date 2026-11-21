@@ -255,6 +255,11 @@ public:
 	// The fighters (Online sets these before the session): this side's choice (fighter_extra), and whether it hosts
 	// (player 1, its choice in its blob) or joins (player 2)
 	std::string own_extra;
+	// (a Rooms 2 room with Random fighters off: its seat's terms "+norandom". No fighter of this side's (own_extra empty), and
+	// a match where either player has one refused at its start (begin false: the session can't start, the room moves on),
+	// never played with one: both boards make the fighters from both players' words, so one side can't drop the other's)
+	bool no_random = false;
+	bool refused_random = false;   // (begin refused a fighter for no_random: said in the log)
 	bool hosting = false;
 	std::vector<uint8_t> host_blob();   // (start_blob with this side's fighter and a fresh seed)
 	void peer_extra(const std::string &extra) override { their_extra = extra; }
