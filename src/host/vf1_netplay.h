@@ -232,6 +232,7 @@ public:
 	// byte with another's data, data bytes under another message's running status), as VF2's (issue #35); now only a
 	// wrong guess's own sounds extra (the sound board can't take back what it played)
 	void take_sound(std::vector<uint8_t> &out);
+	uint32_t frame_now() const { return frame; }   // (the frame running now, or the next: tests' logs)
 	bool failed_stack = false;   // (a stack too deep for STACK_ROOM: the save is refused, the match ends)
 	bool native;   // (the recompiled code runs the board: its stack in the states; the host's to set, the game falling back to the interpreter)
 	// The fighters (Online sets these before the session): this side's choice (fighter_extra), and whether it hosts
