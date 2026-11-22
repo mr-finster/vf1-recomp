@@ -4711,7 +4711,9 @@ int main(int argc, char **argv)
 					const uint8_t in0 = m.m_inputs[0], in1 = m.m_inputs[1], in2 = m.m_inputs[2];
 					memcpy(m.m_inputs, ports_were, sizeof ports_were);
 					uint16_t bits = menu.is_open() ? 0 : uint16_t(vf1net::pack(in0, in1, 0) | vf1net::pack(in0, in2, 1) | step_carry);
-					if (static const char *rf = getenv("VF1_ROOM2_FIGHT"); rf && online.in_room2() && online.room2()->in_seat && !online.watching()) {
+					static const double r2_away_after = getenv("VF1_ROOM2_AWAY_AFTER") ? atof(getenv("VF1_ROOM2_AWAY_AFTER")) * 1000 : -1;   // (tests: no input at all from s s on: away)
+					const bool r2_away = r2_away_after >= 0 && double(SDL_GetTicks()) >= r2_away_after;
+					if (static const char *rf = getenv("VF1_ROOM2_FIGHT"); rf && !r2_away && online.in_room2() && online.room2()->in_seat && !online.watching()) {
 						// (tests: Start whenever the match wants it from this player (its start, a rematch), tapped; then
 						// random play, or none: the other wins)
 						static uint64_t rng = 0x9E3779B97F4A7C15ull ^ uint64_t(SDL_GetTicksNS());
@@ -4741,6 +4743,7 @@ int main(int argc, char **argv)
 						}
 					}
 					if (static uint32_t spam_n = 0; room2_spam && online.in_room2() && ++spam_n % 10 < 3) bits |= vf1net::START_BUTTON;   // (tests: Start pressed over and over)
+					if (r2_away) bits = 0;
 					online.poll(double(SDL_GetTicksNS()) / 1e6);
 					if (hk == hotkey::menu) open_menu();
 					if (!online.step(bits)) {
