@@ -4635,7 +4635,10 @@ int main(int argc, char **argv)
 			double rate = FRAME_HZ;
 			int low = 0;                         // frames the sound needs at once (it's nearly run dry)
 			bool sound_full = false;             // over 300 ms queued: no frames run this pass
-			if (audio && !ff && !online.playing()) {   // (a match's sound: its own thread's, to the real clock)
+			// (a match's sound: its own thread's, to the real clock. And not while the board's sound board is lent to it (from a
+			// match's start to end_match): the board makes no sound then, a queue that never fills, and this ran 3-5 frames a
+			// pass, the game fast-forwarding on alone after an opponent dropped (foops); beta 2 also keeps the board still then)
+			if (audio && !ff && !online.playing() && !msound.board) {
 				const int q = SDL_GetAudioStreamQueued(audio);
 				// a sound device that stopped taking data without going away, or takes it slower than
 				// the 1% trim can follow (Wine's on a Mac: 5%): the queue would grow without end, the
