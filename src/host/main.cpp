@@ -5046,6 +5046,12 @@ int main(int argc, char **argv)
 			fprintf(stderr, "test: pass %lld: the window %d x %d pixels at %d, %d, window_scale %d, the picture %.4f wide\n",
 			        (long long)frames_run, pw, ph, x, y, cfg.window_scale, m.aspect());
 		}
+		if (static const bool sel_shot = getenv("VF1_ROOM2_SELECT_SHOT") != nullptr; sel_shot && story_shot.empty()) {   // (tests: the window 4 s after each room seat's select ends)
+			static int seen = 0;
+			static uint64_t due = 0;   // (4 s after it: the fighters on screen, the select's end is a black frame)
+			if (online.select_ends() != seen) { seen = online.select_ends(); due = SDL_GetTicks() + 4000; }
+			if (due && SDL_GetTicks() >= due) { due = 0; story_shot = "select_end_" + std::to_string(seen); }
+		}
 		if (!story_shot.empty() || room2_shot) {   // (tests: VF1_TEST_STORY_AT's shot, VF1_ROOM2_SHOT's)
 			const std::string to = !story_shot.empty() ? "build/" + story_shot + ".png" : std::string("build/host_room2_ready.png");
 			if (story_shot.empty()) { room2_shot = false; fprintf(stderr, "(test) the ready check's banner: %s\n", to.c_str()); }
