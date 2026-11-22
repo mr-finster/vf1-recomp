@@ -101,6 +101,10 @@ struct Score
 {
 	int matches[2] = {}, rounds[2] = {};   // between the two players: matches won, and rounds won in them
 	void frame(const model1 &board);
+	// (the same from bytes read before: a frame's rounds and who's in, the adapter's as each frame ran (Online's held reading
+	// from frames run for good only); bytes: those of the board as it is now, false not known for this program
+	void feed(const uint8_t r[3]);
+	static bool bytes(const model1 &board, uint8_t r[3]);
 	int players() const { return playing; }          // (who's in the game, as held: bit 0 player 1, bit 1 player 2)
 	uint8_t players_now() const { return now[2]; }   // (as the RAM has it this frame, not yet held)
 	uint8_t rounds_now(int p) const { return now[p]; }   // (a player's rounds won in this match, as the RAM has it this frame)
@@ -185,6 +189,7 @@ void run_unheard(m1audio &board, const UnheardQueue::Piece &piece, std::vector<u
 class Adapter : public vfnet::Game
 {
 public:
+	std::function<void(uint32_t f)> after_frame;   // (each frame as it runs, a guess or again: its number; the board as it left it)
 	explicit Adapter(model1 &board, bool native) : native(native), board(board) {}
 	~Adapter() override { board.on_uart_tx = nullptr; }
 

@@ -574,6 +574,7 @@ void Adapter::advance(const uint16_t input[2], bool resim)
 			if (!out.empty()) sound_out(out);
 		}
 	}
+	if (after_frame) after_frame(frame);
 	frame++;
 	if (checkpoint_every && frame % checkpoint_every == 0) {
 		save_into(check_buf);
@@ -757,10 +758,22 @@ uint8_t Score::players_in(const model1 &board)
 	return uint8_t((in(PLAYING_P1) ? 1 : 0) | (in(PLAYING_P2) ? 2 : 0));
 }
 
-void Score::frame(const model1 &board)
+bool Score::bytes(const model1 &board, uint8_t r_out[3])
 {
 	const std::vector<uint8_t> &ram = const_cast<model1 &>(board).work_ram();
 	const uint8_t r[3] = { ram[ROUNDS_P1], ram[ROUNDS_P2], players_in(board) };
+	memcpy(r_out, r, 3);
+	return true;
+}
+
+void Score::frame(const model1 &board)
+{
+	uint8_t r[3];
+	if (bytes(board, r)) feed(r);
+}
+
+void Score::feed(const uint8_t r[3])
+{
 	if (memcmp(r, now, 3) != 0) { memcpy(now, r, 3); held = 0; return; }
 	if (++held != 30) return;   // (once, when it's held long enough)
 	playing = r[2];
