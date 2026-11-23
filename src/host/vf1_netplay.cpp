@@ -538,16 +538,21 @@ void Adapter::save(std::vector<uint8_t> &state)
 
 bool Adapter::load(const std::vector<uint8_t> &state)
 {
-	if (state.size() < STACK_ROOM + 4 || failed_stack) return false;
+	// (a load refused says why, once: the rollback that needed it ends the match)
+	auto refused = [&](const char *why) { fprintf(stderr, "vf1: a state not loaded (frame %u): %s\n", frame, why); return false; };
+	if (state.size() < STACK_ROOM + 4) return refused("too short");
+	if (failed_stack) return refused("a save before had a stack deeper than STACK_ROOM");
 	if (settle) settle();
 	if (native) {
 		uint64_t used = 0;
 		memcpy(&used, state.data(), sizeof used);
-		if (used + sizeof used > STACK_ROOM || !rec::load_stack(state.data(), size_t(sizeof used + used))) return false;
+		if (used + sizeof used > STACK_ROOM) return refused("its stack too deep");
+		if (!rec::load_stack(state.data(), size_t(sizeof used + used))) return refused("its stack not taken back");
 	}
 	memcpy(&frame, state.data() + state.size() - 4, 4);
 	pending.clear();
-	return board.load_state(state.data() + STACK_ROOM, state.size() - STACK_ROOM - 4);
+	if (!board.load_state(state.data() + STACK_ROOM, state.size() - STACK_ROOM - 4)) return refused("the board's state not taken");
+	return true;
 }
 
 void Adapter::advance(const uint16_t input[2], bool resim)

@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <deque>
 #include <string>
 #include <type_traits>
@@ -73,7 +74,8 @@ public:
 	StateReader(const uint8_t *p, size_t n) : p(p), end(p + n) {}
 	static constexpr bool loading = true;
 	bool ok = true;
-	void section(const char *) {}
+	const char *at = "(start)";   // (the section read last: a refused state's diagnosis)
+	void section(const char *n) { if (ok) at = n; }
 	void bytes(void *q, size_t n)
 	{
 		if (!ok || size_t(end - p) < n) { ok = false; return; }
@@ -101,7 +103,7 @@ public:
 		static_assert(std::has_unique_object_representations_v<T>);
 		uint64_t n = 0;
 		pod(n);
-		if (!ok || n != v.size() || n > size_t(end - p) / sizeof(T)) { ok = false; return; }
+		if (!ok || n != v.size() || n > size_t(end - p) / sizeof(T)) { if (ok && n != v.size()) fprintf(stderr, "state: a memory of %llu, now %zu (%s)\n", (unsigned long long)n, v.size(), at); ok = false; return; }
 		bytes(v.data(), size_t(n) * sizeof(T));
 	}
 	// A loaded value's check (a state from another process, a watcher's snapshot, may hold anything): false refuses

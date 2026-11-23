@@ -1,3 +1,4 @@
+#include <cstdio>
 // Save states (model1.h's save_state): the field list, run both ways (state_io.h).
 #include "model1.h"
 
@@ -184,14 +185,15 @@ template <class IO> void model1::state(IO &io)
 // The board's own states always are (a few comparisons a load)
 bool model1::state_sane() const
 {
-	if (m_bank_base < 0x1000000 || m_bank_base > 0x1700000 || (m_bank_base & 0xfffff) || m_bank_base + 0x100000 > m_regions.maincpu.size()) return false;
-	if (m_last_irq < 0 || m_last_irq > 7) return false;
-	for (const int b : { m_uart_txbuf, m_uart_shift, m_uart_rx }) if (b < -1 || b > 255) return false;
-	for (const int c : { m_uart_shift_left, m_uart_rx_left }) if (c < -(1 << 24) || c > (1 << 24)) return false;
+	const auto out_of_range = [](int line) { fprintf(stderr, "model1: a state's value out of range (line %d)\n", line); return false; };
+	if (m_bank_base < 0x1000000 || m_bank_base > 0x1700000 || (m_bank_base & 0xfffff) || m_bank_base + 0x100000 > m_regions.maincpu.size()) return out_of_range(__LINE__);
+	if (m_last_irq < 0 || m_last_irq > 7) return out_of_range(__LINE__);
+	for (const int b : { m_uart_txbuf, m_uart_shift, m_uart_rx }) if (b < -1 || b > 255) return out_of_range(__LINE__);
+	for (const int c : { m_uart_shift_left, m_uart_rx_left }) if (c < -(1 << 24) || c > (1 << 24)) return out_of_range(__LINE__);
 	constexpr int64_t most = int64_t(1) << 32;   // (the timers' 0x800 x 65535 cycles; the I/O board's acknowledgement 1.6M)
-	for (const int64_t r : m_timer_remain) if (r < -most || r > most) return false;
-	if (m_io_ack < -most || m_io_ack > most) return false;
-	if (m_mat_stack_pos < 0 || m_mat_stack_pos > MAT_STACK_SIZE) return false;
+	for (const int64_t r : m_timer_remain) if (r < -most || r > most) return out_of_range(__LINE__);
+	if (m_io_ack < -most || m_io_ack > most) return out_of_range(__LINE__);
+	if (m_mat_stack_pos < 0 || m_mat_stack_pos > MAT_STACK_SIZE) return out_of_range(__LINE__);
 	return true;
 }
 
@@ -218,7 +220,7 @@ bool model1::load_state(const uint8_t *p, size_t n)
 	if (!r.ok || magic != STATE_MAGIC || version != STATE_VERSION) return false;
 	m_frame = frame;
 	state(r);
-	if (!r.done()) return false;
+	if (!r.done()) { fprintf(stderr, "model1: a state not taken (%s, %s)\n", r.ok ? "bytes left over" : "refused", r.at); return false; }
 	// what's made from the board: the pens from the palette, and the 2D decoded again
 	for (int i = 0; i < 0x2000; i++) model1_paletteram_w(offs_t(i), m_paletteram16[i], 0xffff);
 	for (auto &c : m_layer_cache) c.frame = ~0ull;

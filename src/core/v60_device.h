@@ -64,8 +64,10 @@ public:
 		io.pod(m_stall_io);
 		io.pod(*m_cycles);
 		if constexpr (IO::loading) m_stopped = false;   // (a state loaded: running, as it was saved)
-		if constexpr (IO::loading)   // (flags and lines 0 or 1; the cycles owed a frame's at most, never a run that doesn't end)
-			io.check(m_flags.CY <= 1 && m_flags.OV <= 1 && m_flags.S <= 1 && m_flags.Z <= 1 && m_irq_line <= 1 && m_nmi_line <= 1 &&
+		// (a flag 0 or 1, or its PSW bit: a PSW written (v60_WritePSW, as MAME) leaves S 2, OV 4, CY 8, read as set; the
+		// lines 0 or 1; the cycles owed a frame's at most, never a run that doesn't end)
+		if constexpr (IO::loading)
+			io.check((m_flags.CY <= 1 || m_flags.CY == 8) && (m_flags.OV <= 1 || m_flags.OV == 4) && m_flags.S <= 2 && m_flags.Z <= 1 && m_irq_line <= 1 && m_nmi_line <= 1 &&
 			         (m_stall_io == 0 || m_stall_io == 1) && *m_cycles >= -(1 << 24) && *m_cycles <= (1 << 24));
 	}
 
