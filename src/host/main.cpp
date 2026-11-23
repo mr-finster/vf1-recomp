@@ -4826,12 +4826,16 @@ int main(int argc, char **argv)
 			}
 		}
 		if (++perf.frames == 120) {
+			static int64_t perf_game_was = 0;   // (the game's own frames run since the last line: a pass can run several)
+			const int64_t perf_games = game_run - perf_game_was;
+			perf_game_was = game_run;
 			if (perf.show) {
-				char t[200];
+				char t[240];
 				const double secs = double(SDL_GetTicksNS() - perf.since) / 1e9;
 				snprintf(t, sizeof t, "Virtua Fighter  %dx  %.0f passes/s  %.0f shown/s  load %.0f%%  game %.1f ms/frame (max %.1f)  picture %.1f ms  sound dropouts %d",
 						 cfg.scale, 120 / secs, perf.shown / secs, perf.work / (secs * 1e7), perf.emu / (secs * FRAME_HZ) / 1e6, perf.emu_max / 1e6,
 						 perf.present / 120e6, perf.starved);
+				{ const size_t n = strlen(t); snprintf(t + n, sizeof t - n, "  game frames %.1f/s", perf_games / secs); }
 				SDL_SetWindowTitle(win, t);
 				fprintf(stderr, "%s\n", t);
 			}
