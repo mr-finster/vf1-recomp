@@ -1,0 +1,8 @@
+{
+  "label": "Virtua Fighter",
+  "icon": "icon.png",
+  "iconsel": "icon.png",
+  "icontop": "icon.png",
+  "launch": "launch.sh",
+  "description": "Virtua Fighter Recomp (needs your own vf.zip)"
+}

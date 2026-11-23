@@ -176,6 +176,21 @@ From the [latest release](https://github.com/mr-finster/vf1-recomp/releases/late
 The Windows download also runs on the Deck under Proton (add `VirtuaFighter.exe` instead, with Proton forced on),
 but the native Linux build above is the one to use.
 
+**TrimUI Smart Pro / Brick Pro (community build)**
+
+A build for these ARM64 handhelds (Allwinner A133P, PowerVR GE8300) is made with `tools/trimui/build.sh` (below); it's
+checked on the consoles by its contributors, and isn't among the release downloads yet. It runs on the stock firmware
+and on custom ones (Mosaik and others that start a port's `launch.sh`):
+
+1. Copy the whole `VirtuaFighter` folder from `build/trimui/` to the console's SD card: the stock firmware's `Apps/`,
+   Mosaik's `Arcade/Linux/`, or another firmware's ports folder.
+2. Put your `vf.zip` (with `315-5724.bin`) and, if you have it, `model1io.zip` in `VirtuaFighter/roms`.
+3. Start it from the firmware's menu. Select opens the game's menu (Quit is there).
+
+It plays at the arcade's speed with about 40 pictures a second on a Brick Pro, in one fixed profile (1x, the 3D on the
+CPU, no smooth motion), the sound board on a core of its own, the console's own button names, and no Online for now.
+`VirtuaFighter/README.txt` has the buttons and the switches (`scale2`: 2x; `bench`: a measured run).
+
 **Portable mode:** put a file named `portable.txt` next to the program (Windows: beside `VirtuaFighter.exe`; Mac:
 beside the app, in the same folder; Steam Deck / Linux: in the VirtuaFighter folder) and the game keeps everything in
 that folder: settings, saves, screenshots, `log.txt` and the copy of your `vf.zip` (in its `roms` folder), with
@@ -457,6 +472,7 @@ then picks the GPU unless it's clearly slower than the CPU on that machine.
 | `tools/port` | the script that ported MAME's TGP and rasterizer |
 | `tools/*.cpp`, `tools/romset.py` | region builder, disassembler, headless runner, lockstep checker, coverage |
 | `tools/mac`, `tools/win`, `tools/deck`, `tools/release` | the release packages and their licence notices |
+| `tools/trimui` | the TrimUI Smart Pro / Brick Pro build: its container, SDL3's `mali` video driver for the PowerVR (`sdl3-mali/`, zlib), the console's launcher and `opaco` |
 | `tools/site` | the download site |
 
 ## Run it yourself
@@ -469,7 +485,11 @@ build/bin/vf-native
 ```
 
 The release packages: `tools/mac/package.sh` (Mac, universal), `tools/win/build.sh` (Windows, cross-compiled with
-MinGW-w64), `tools/deck/build.sh` (Steam Deck / x86-64 Linux, in Valve's Steam Runtime "sniper" SDK container).
+MinGW-w64), `tools/deck/build.sh` (Steam Deck / x86-64 Linux, in Valve's Steam Runtime "sniper" SDK container),
+`tools/trimui/build.sh` (TrimUI Smart Pro / Brick Pro, in a Debian 11 arm64 container: glibc 2.31, as the consoles'
+firmware has 2.33; SDL3 is built static with `tools/trimui/sdl3-mali`, a `mali` video driver for the PowerVR's fbdev
+EGL, ported from TrimUI's SDL2; the game with `-DVF_TRIMUI`; `tools/trimui/test-launch.sh` checks the launcher with
+BusyBox's shell).
 They also take `assets/backgrounds/` (painted widescreen sides for the title and player select screens), which
 isn't in this repository: the game runs without it, and those two screens are then shown 4:3.
 

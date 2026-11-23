@@ -1,0 +1,10 @@
+# The TrimUI build's bench (launch.sh, the "bench" file): from the attract, a coin and Start, a fighter picked, then
+# punches and kicks (mash) through a fight. VF_SCRIPT plays it a step a frame; VF_QUIT_AFTER=4000 ends the run.
+wait 900
+press 0 01 6
+wait 30
+press 0 10 6
+wait 400
+press 1 01 4
+wait 600
+mash 2400

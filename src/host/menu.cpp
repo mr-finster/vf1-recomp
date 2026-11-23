@@ -862,8 +862,13 @@ bool game_menu::handle_event(const SDL_Event &e)
 		case SDL_GAMEPAD_BUTTON_DPAD_DOWN: move(+1); break;
 		case SDL_GAMEPAD_BUTTON_DPAD_LEFT: change(-1); break;
 		case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: change(+1); break;
+#ifdef VF_TRIMUI   // (the console's A, on the right, confirms; its B, below, goes back: as Mosaik and the firmware)
+		case SDL_GAMEPAD_BUTTON_EAST: activate(); break;
+		case SDL_GAMEPAD_BUTTON_SOUTH: pop(); break;
+#else
 		case SDL_GAMEPAD_BUTTON_SOUTH: activate(); break;
 		case SDL_GAMEPAD_BUTTON_EAST: pop(); break;
+#endif
 		case SDL_GAMEPAD_BUTTON_NORTH: clear(); break;
 		case SDL_GAMEPAD_BUTTON_START: case SDL_GAMEPAD_BUTTON_BACK: case SDL_GAMEPAD_BUTTON_GUIDE: case SDL_GAMEPAD_BUTTON_TOUCHPAD: close(); break;
 		default: break;

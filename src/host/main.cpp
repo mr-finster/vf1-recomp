@@ -1179,7 +1179,9 @@ int main(int argc, char **argv)
 	// copy links go to, and this user's system told it opens them (not in tests)
 	if (!arg_link.empty() && links::hand_over(dir, arg_link)) { fprintf(stderr, "links: handed %s to the copy running\n", arg_link.c_str()); return 0; }
 	links::running(dir);
+#ifndef VF_TRIMUI   // (TrimUI: no Online, so no vf1recomp:// links, and no .desktop file written into the game's folder)
 	if (!getenv("VF_HIDDEN") && !getenv("VF_QUIT_AFTER")) { const std::string said = links::register_scheme(); if (!said.empty()) fprintf(stderr, "%s\n", said.c_str()); }
+#endif
 	const std::string settings_path = dir + "/settings.ini";
 	settings cfg;
 	bool cfg_dirty = false;      // saved at exit only when the player changed something
@@ -1194,6 +1196,18 @@ int main(int argc, char **argv)
 	if (arg_aspect >= 0) cfg.aspect = arg_aspect;
 	if (arg_full >= 0) cfg.fullscreen = arg_full;
 	if (arg_arcade) cfg.arcade = true;
+#ifdef VF_TRIMUI
+	// TrimUI Smart Pro / Brick Pro (4 Cortex-A53, PowerVR GE8300): one profile, the lightest, whatever settings.ini says
+	// (the Display > Quality and Screen pages aren't in the menu): the arcade's 1x, no antialiasing, the CPU's 3D, each
+	// frame's own picture (no smooth motion), no backdrop filter, vsync and the screen's rate, no screen filter or CRT colours
+	// (the render scale: 1x, the arcade's 496 x 384; VF_SCALE2=1 (the "scale2" switch) 2x, 992 x 768, a Brick Pro's own lines)
+	const int trimui_scale = getenv("VF_SCALE2") ? 2 : 1;
+	cfg.scale = trimui_scale; cfg.aa = 1; cfg.renderer3d = 0; cfg.smooth_bg = false;
+	cfg.smooth = false;
+	cfg.vsync = true; cfg.frame_limit = -1; cfg.filter = 0; cfg.crt_colours = 0; cfg.brightness = 100; cfg.gamma = 100;
+	cfg.fullscreen = true;
+	fprintf(stderr, "TrimUI: the fixed profile (%dx, no antialiasing, CPU 3D, no smooth motion, vsync)\n", trimui_scale);
+#endif
 	g_pc_mode = !cfg.arcade;
 	// the 3D's renderer: VF_3D=cpu|gpu|auto (tests) over the setting
 	if (const char *r = getenv("VF_3D")) cfg.renderer3d = !strcmp(r, "cpu") ? 0 : !strcmp(r, "gpu") ? 1 : 2;
@@ -1298,16 +1312,47 @@ int main(int argc, char **argv)
 	scene_sync sync;                     // clean scene changes (the menu's Display page)
 	sync.enabled = true;                 // always: it is a fix, not a choice
 	// Reset; the PC build then runs through the boot screen (about 3.5 s of settings text) unseen.
+#ifdef VF_TRIMUI
+	// The TrimUI build: the sound board on a thread of its own, as online play's matches have it (the match's sound): it's
+	// taken off the board (which then never hears back from it, as in a match) and fed the bytes the board sends it; the
+	// bytes of a boot run unseen are kept and go to it first (split_start, below). VF_SOUND_INLINE=1: in the game's
+	// frames, as on a PC
+	const bool split_sound = !getenv("VF_SOUND_INLINE");
+	fprintf(stderr, "TrimUI: the sound board %s\n", split_sound ? "on a thread of its own" : "in the game's frames (as on a PC)");
+	std::unique_ptr<m1audio> split_board;          // (taken off the board, till the sound's thread has it)
+	std::vector<uint8_t> split_boot;               // (the bytes sent while the boot ran unseen)
+	bool split_recording = false;
+	std::function<void(uint8_t)> split_live;       // (after it: to the sound's thread)
+	std::function<void()> split_after_boot;
+	auto split_take = [&] {   // (the board's sound board off it, and its bytes taken: before a boot)
+		if (!split_sound || g_match_board) return;
+		if (auto a = m.take_audio()) split_board = std::move(a);
+		m.on_uart_tx = [&](uint8_t b) { if (split_recording) split_boot.push_back(b); else if (split_live) split_live(b); };
+	};
+	auto split_booted = [&] { split_recording = false; if (split_after_boot) split_after_boot(); };
+#endif
 	auto boot = [&] {
+#ifdef VF_TRIMUI
+		split_take();
+		split_boot.clear();
+		split_recording = split_sound && !g_match_board;
+#endif
 		m.reset();
 		if (!interp) rec::attach(m.cpu());   // a fresh game stack
 		std::fill_n(&m.work_ram()[0x17f0], 4, 0);   // work RAM survives a reset: forget the last camera (past_boot)
+#ifdef VF_TRIMUI
+		if (!g_pc_mode) { sync.start(); split_booted(); return; }
+#else
 		if (!g_pc_mode) { sync.start(); return; }
+#endif
 		m.set_drawing(false);
 		for (int i = 0; i < 900 && !m.past_boot(); i++) m.run_frame();
 		m.set_drawing(true);
 		m.m_audio_out.clear();
 		sync.start();
+#ifdef VF_TRIMUI
+		split_booted();
+#endif
 	};
 	load_backgrounds(m, find_assets() + "/backgrounds");   // the title and select's widescreen sides
 	load_backgrounds(m, dir + "/backgrounds");   // the player's own (hi-res stage skies...), which win
@@ -2350,6 +2395,9 @@ int main(int argc, char **argv)
 	};
 	auto save_settings = [&] { return cfg.save(settings_path); };
 	auto set_scale = [&](int v) {
+#ifdef VF_TRIMUI
+		v = getenv("VF_SCALE2") ? 2 : 1;   // (the fixed profile: F5, View + LB and the menu change nothing)
+#endif
 		// (a new picture size or antialiasing: the GPU's pictures checked against the CPU's again, as at the
 		// start. Low's edge pass on the GPU, chosen after the start's checks, was never checked: on some
 		// NVIDIA cards, Direct3D 12, it left the 3D frozen or gone (vf1-recomp #29); now that's caught and
@@ -2659,6 +2707,7 @@ int main(int argc, char **argv)
 				                is_fullscreen() ? std::string(tr::D_FULLSCREEN)
 				                : cfg.window_scale > 0 ? tr::fill(tr::D_SUM_WINDOW_N, { { "n", std::to_string(cfg.window_scale) } }) : std::string(tr::D_SUM_WINDOW) });
 			}, {}, [&] { menu.push(picture_page()); } });
+#ifndef VF_TRIMUI   // (TrimUI: the fixed profile, no Quality or Screen pages)
 		// Quality: the render scale, the antialiasing in use if any, and the 3D renderer drawing ("3x, AA 2x, GPU")
 		p.items.push_back({ tr::D_QUALITY,
 #ifdef _WIN32
@@ -2679,6 +2728,7 @@ int main(int argc, char **argv)
 				const tr::text names[] = { tr::OFF, tr::D_SCANLINES, tr::D_CRT };
 				return listed({ std::string(names[cfg.filter]), cfg.crt_colours ? std::string(tr::D_CRT_COLOURS) : std::string() });
 			}, {}, [&] { menu.push(screen_page()); } });
+#endif
 		p.items.push_back({ tr::D_FREECAM, tr::D_FREECAM_HELP,   // (not saved: taken as the menu closes)
 			[&] { return fc_online_play ? std::string(tr::D_FREECAM_NOT_ONLINE) : on_off(fc_menu); },
 			[&](int) { if (fc_online_play) menu.toast(std::string(tr::FREECAM_NOT_ONLINE), 3); else fc_menu = !fc_menu; } });
@@ -2850,8 +2900,13 @@ int main(int argc, char **argv)
 					std::string &t = st->typed;
 					auto turn = [&](int d) { if (t.empty()) t.push_back('A'); else t.back() = char('A' + ((t.back() - 'A' + d) % 26 + 26) % 26); };
 					switch (e.gbutton.button) {
+#ifdef VF_TRIMUI   // (the console's B, below: as it was; its A, on the right: enter)
+					case SDL_GAMEPAD_BUTTON_SOUTH: st->typing = false; st->error.clear(); rebuild(pl, false); return true;
+					case SDL_GAMEPAD_BUTTON_EAST: enter = true; break;
+#else
 					case SDL_GAMEPAD_BUTTON_EAST: st->typing = false; st->error.clear(); rebuild(pl, false); return true;   // (B: as it was)
 					case SDL_GAMEPAD_BUTTON_SOUTH: enter = true; break;
+#endif
 					case SDL_GAMEPAD_BUTTON_DPAD_UP: turn(+1); break;
 					case SDL_GAMEPAD_BUTTON_DPAD_DOWN: turn(-1); break;
 					case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (t.size() < 12) t.push_back(t.empty() ? 'A' : t.back()); break;
@@ -3488,6 +3543,21 @@ int main(int argc, char **argv)
 		snap_interp = interp = false;
 		m.run_cpu = [](int n) { rec::run(n); };
 	};
+#ifdef VF_TRIMUI
+	// (the TrimUI build's sound board alone, offline: started after each boot, the boot's bytes first, then live)
+	auto split_start = [&] {
+		if (!split_sound || g_match_board) return;
+		split_take();   // (again after a match, which gave the board its sound board back)
+		if (!msound.board && split_board) msound.board = std::move(split_board);
+		match_sound_start();
+		std::lock_guard<std::mutex> lk(msound.mx);
+		msound.in.insert(msound.in.begin(), split_boot.begin(), split_boot.end());
+		msound.bytes_in += split_boot.size();
+	};
+	split_live = [&](uint8_t b) { std::lock_guard<std::mutex> lk(msound.mx); msound.in.push_back(b); msound.bytes_in++; };
+	split_after_boot = split_start;
+	split_start();   // (the first boot's, before this was here)
+#endif
 	online.adapter.on_begin = [&] {
 		native_again();
 		if (!g_match_board) {   // (this player's own, given back after the match)
@@ -3537,8 +3607,10 @@ int main(int argc, char **argv)
 		p.items.push_back({ tr::P_SOUND, tr::M_SOUND_HELP, {}, {}, [&] { menu.push(sound_page()); } });
 		p.items.push_back({ tr::P_GAME, tr::M_GAME_HELP, {}, {}, [&] { menu.push(game_page()); } });
 		p.items.push_back({ tr::M_ARCADE, tr::M_ARCADE_HELP, {}, {}, [&] { menu.push(arcade_page()); } });
+#ifndef VF_TRIMUI   // (TrimUI: no Online for now: a rollback runs frames again, and an A53 has little room past 57.5 a second)
 		online_at = int(p.items.size());
 		p.items.push_back({ tr::P_ONLINE, tr::M_ONLINE_HELP, {}, {}, [&] { menu.push(online_page()); } });
+#endif
 		p.items.push_back({ tr::P_CONTROLS, tr::M_CONTROLS_HELP, {}, {}, [&] { menu.push(controls_page()); } });
 		p.items.push_back({ tr::P_CHEATS, tr::M_CHEATS_HELP, {}, {}, [&] { menu.push(cheats_page()); } });
 		p.items.push_back({ tr::M_QUIT, tr::M_QUIT_HELP, {}, {}, [&] { running = false; } });
@@ -4346,7 +4418,12 @@ int main(int argc, char **argv)
 			double rate = FRAME_HZ;
 			int low = 0;                         // frames the sound needs at once (it's nearly run dry)
 			bool sound_full = false;             // over 300 ms queued: no frames run this pass
+#ifdef VF_TRIMUI   // (and the sound board on its own thread: that thread's queue isn't the game's to keep filled; frames
+			// run to fill it sped the game up, 59.9 a second on a Brick Pro)
+			if (audio && !ff && !online.playing() && !split_sound) {
+#else
 			if (audio && !ff && !online.playing()) {   // (a match's sound: its own thread's, to the real clock)
+#endif
 				const int q = SDL_GetAudioStreamQueued(audio);
 				// a sound device that stopped taking data without going away, or takes it slower than
 				// the 1% trim can follow (Wine's on a Mac: 5%): the queue would grow without end, the
@@ -4847,6 +4924,11 @@ int main(int argc, char **argv)
 
 	}
 
+#ifdef VF_TRIMUI   // (the sound hook let go: the static Online's adapter empties the board's hook as it goes, after this
+	// board is gone)
+	split_live = nullptr;
+	m.on_uart_tx = nullptr;
+#endif
 	if (rec.video) pclose(rec.video);
 	if (rec.wav) { wav_header(); fclose(rec.wav); }
 	if (rec.on) fprintf(stderr, "record: %llu pictures, %.2f s, to %s\n", (unsigned long long)rec.n, rec.n / double(rec.hz), rec.dir.c_str());

@@ -318,13 +318,33 @@ T(CTL_KEY_HELP_COIN, "A coin for this player in Arcade mode (a cabinet's coin sl
 T(CTL_KEY_HELP_MENU, "Opens this menu (as Esc always does): for a cabinet's button. Select, then press the key to use. Delete clears it.")
 T(CTL_PRESS_KEY_P1, "Press a key for {control} (player 1). Backspace or Delete clears it, Esc keeps it.")
 T(CTL_PRESS_KEY_P2, "Press a key for {control} (player 2). Backspace or Delete clears it, Esc keeps it.")
+#ifdef VF_TRIMUI
+T(CTL_PADB_HELP, "Select, then press the button (or trigger) to use. X (or Delete) clears it. The d-pad and left stick always move.")
+#else
 T(CTL_PADB_HELP, "Select, then press the button (or trigger) to use. Y (or Delete) clears it. The d-pad and left stick always move.")
+#endif
+#ifdef VF_TRIMUI
+T(CTL_PADB_HELP_COIN, "A coin for this player in Arcade mode (a cabinet's coin slot). Select, then press the button (or trigger) to use. X (or Delete) clears it. The d-pad and left stick always move.")
+#else
 T(CTL_PADB_HELP_COIN, "A coin for this player in Arcade mode (a cabinet's coin slot). Select, then press the button (or trigger) to use. Y (or Delete) clears it. The d-pad and left stick always move.")
+#endif
+#ifdef VF_TRIMUI
+T(CTL_PADB_HELP_MENU, "Opens this menu. L3 + R3 and the touchpad click (when it isn't set to something else) always do too, and Esc on a keyboard. Select, then press the button (or trigger) to use. X (or Delete) clears it. The d-pad and left stick always move.")
+#else
 T(CTL_PADB_HELP_MENU, "Opens this menu. L3 + R3 and the touchpad click (when it isn't set to something else) always do too, and Esc on a keyboard. Select, then press the button (or trigger) to use. Y (or Delete) clears it. The d-pad and left stick always move.")
+#endif
 T(CTL_PRESS_PAD_P1, "Press a pad button for {control} (player 1). Esc keeps it; Delete clears it.")
 T(CTL_PRESS_PAD_P2, "Press a pad button for {control} (player 2). Esc keeps it; Delete clears it.")
+#ifdef VF_TRIMUI
+T(CTL_PRESS_PAD_VIEW_P1, "Press a pad button for {control} (player 1). Select or Esc keeps it; Delete clears it.")
+#else
 T(CTL_PRESS_PAD_VIEW_P1, "Press a pad button for {control} (player 1). View or Esc keeps it; Delete clears it.")
+#endif
+#ifdef VF_TRIMUI
+T(CTL_PRESS_PAD_VIEW_P2, "Press a pad button for {control} (player 2). Select or Esc keeps it; Delete clears it.")
+#else
 T(CTL_PRESS_PAD_VIEW_P2, "Press a pad button for {control} (player 2). View or Esc keeps it; Delete clears it.")
+#endif
 T(PAD_LEFT_STICK, "Left stick press")      // (pad buttons with words in their names: the rest as printed)
 T(PAD_RIGHT_STICK, "Right stick press")
 T(PAD_TOUCHPAD, "Touchpad click")
@@ -333,7 +353,11 @@ T(PAD_DPAD_DOWN, "D-pad down")
 T(PAD_DPAD_LEFT, "D-pad left")
 T(PAD_DPAD_RIGHT, "D-pad right")
 T(SETUP_PRESS, "Press {button} on the pad (player {player}, {n} of {of}). Delete skips it, Esc stops.")
+#ifdef VF_TRIMUI
+T(SETUP_MENU_STEP, "Menu (Select; Start again if it has none)")
+#else
 T(SETUP_MENU_STEP, "Menu (View or Select; Start again if it has none)")
+#endif
 T(SETUP_NO_PAD, "No pad for this player: connect one, or choose it in Pad, first.")
 T(SETUP_UNREADABLE, "That pad can't be read as it is.")
 T(SETUP_FAILED, "The buttons couldn't be set up.")

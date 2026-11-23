@@ -313,13 +313,33 @@ T(CTL_KEY_HELP_COIN, "Un gettone per questo giocatore in modalità Arcade (la ge
 T(CTL_KEY_HELP_MENU, "Apre questo menu (come sempre Esc): per un pulsante del cabinato. Selezionalo, poi premi il tasto da usare. Canc lo cancella.")
 T(CTL_PRESS_KEY_P1, "Premi un tasto per {control} (giocatore 1). Backspace o Canc lo cancella, Esc lo tiene.")
 T(CTL_PRESS_KEY_P2, "Premi un tasto per {control} (giocatore 2). Backspace o Canc lo cancella, Esc lo tiene.")
+#ifdef VF_TRIMUI
+T(CTL_PADB_HELP, "Selezionalo, poi premi il pulsante (o grilletto) da usare. X (o Canc) lo cancella. La croce direzionale e lo stick sinistro muovono sempre.")
+#else
 T(CTL_PADB_HELP, "Selezionalo, poi premi il pulsante (o grilletto) da usare. Y (o Canc) lo cancella. La croce direzionale e lo stick sinistro muovono sempre.")
+#endif
+#ifdef VF_TRIMUI
+T(CTL_PADB_HELP_COIN, "Un gettone per questo giocatore in modalità Arcade (la gettoniera di un cabinato). Selezionalo, poi premi il pulsante (o grilletto) da usare. X (o Canc) lo cancella. La croce direzionale e lo stick sinistro muovono sempre.")
+#else
 T(CTL_PADB_HELP_COIN, "Un gettone per questo giocatore in modalità Arcade (la gettoniera di un cabinato). Selezionalo, poi premi il pulsante (o grilletto) da usare. Y (o Canc) lo cancella. La croce direzionale e lo stick sinistro muovono sempre.")
+#endif
+#ifdef VF_TRIMUI
+T(CTL_PADB_HELP_MENU, "Apre questo menu. Anche L3 + R3 e il clic del touchpad (se non usati per altro), ed Esc da tastiera. Selezionalo, poi premi il pulsante (o grilletto) da usare. X (o Canc) lo cancella. La croce direzionale e lo stick sinistro muovono sempre.")
+#else
 T(CTL_PADB_HELP_MENU, "Apre questo menu. Anche L3 + R3 e il clic del touchpad (se non usati per altro), ed Esc da tastiera. Selezionalo, poi premi il pulsante (o grilletto) da usare. Y (o Canc) lo cancella. La croce direzionale e lo stick sinistro muovono sempre.")
+#endif
 T(CTL_PRESS_PAD_P1, "Premi un pulsante per {control} (giocatore 1). Esc lo tiene; Canc lo cancella.")
 T(CTL_PRESS_PAD_P2, "Premi un pulsante per {control} (giocatore 2). Esc lo tiene; Canc lo cancella.")
+#ifdef VF_TRIMUI
+T(CTL_PRESS_PAD_VIEW_P1, "Premi un pulsante per {control} (giocatore 1). Select o Esc lo tiene; Canc lo cancella.")
+#else
 T(CTL_PRESS_PAD_VIEW_P1, "Premi un pulsante per {control} (giocatore 1). View o Esc lo tiene; Canc lo cancella.")
+#endif
+#ifdef VF_TRIMUI
+T(CTL_PRESS_PAD_VIEW_P2, "Premi un pulsante per {control} (giocatore 2). Select o Esc lo tiene; Canc lo cancella.")
+#else
 T(CTL_PRESS_PAD_VIEW_P2, "Premi un pulsante per {control} (giocatore 2). View o Esc lo tiene; Canc lo cancella.")
+#endif
 T(PAD_LEFT_STICK, "Pressione stick sinistro")
 T(PAD_RIGHT_STICK, "Pressione stick destro")
 T(PAD_TOUCHPAD, "Clic del touchpad")
@@ -328,7 +348,11 @@ T(PAD_DPAD_DOWN, "Croce giù")
 T(PAD_DPAD_LEFT, "Croce sinistra")
 T(PAD_DPAD_RIGHT, "Croce destra")
 T(SETUP_PRESS, "Premi {button} sul controller (giocatore {player}, {n} di {of}). Canc lo salta, Esc si ferma.")
+#ifdef VF_TRIMUI
+T(SETUP_MENU_STEP, "Menu (Select; se manca, di nuovo Start)")
+#else
 T(SETUP_MENU_STEP, "Menu (View o Select; se manca, di nuovo Start)")
+#endif
 T(SETUP_NO_PAD, "Nessun controller per questo giocatore: collegane uno, o sceglilo in Controller, prima.")
 T(SETUP_UNREADABLE, "Quel controller non si può leggere così com'è.")
 T(SETUP_FAILED, "Non è stato possibile configurare i pulsanti.")

@@ -1,0 +1,8 @@
+Virtua Fighter  1x  60 passes/s  57 shown/s  load 14%  game 8.3 ms/frame (max 16.7)  picture 16.1 ms  sound dropouts 0  game frames 57.5/s
+Virtua Fighter  1x  60 passes/s  58 shown/s  load 14%  game 8.7 ms/frame (max 16.7)  picture 16.1 ms  sound dropouts 0  game frames 57.5/s
+Virtua Fighter  1x  60 passes/s  58 shown/s  load 14%  game 8.5 ms/frame (max 16.7)  picture 16.1 ms  sound dropouts 0  game frames 57.0/s
+Virtua Fighter  1x  60 passes/s  58 shown/s  load 15%  game 8.1 ms/frame (max 16.7)  picture 16.1 ms  sound dropouts 0  game frames 57.5/s
+Virtua Fighter  1x  60 passes/s  58 shown/s  load 14%  game 8.3 ms/frame (max 16.7)  picture 16.1 ms  sound dropouts 0  game frames 57.5/s
+Virtua Fighter  1x  60 passes/s  57 shown/s  load 13%  game 8.7 ms/frame (max 16.7)  picture 16.2 ms  sound dropouts 0  game frames 57.5/s
+Virtua Fighter  1x  60 passes/s  57 shown/s  load 15%  game 8.9 ms/frame (max 16.7)  picture 16.0 ms  sound dropouts 0  game frames 57.5/s
+Virtua Fighter  1x  60 passes/s  58 shown/s  load 14%  game 8.5 ms/frame (max 16.7)  picture 16.1 ms  sound dropouts 0  game frames 57.0/s
