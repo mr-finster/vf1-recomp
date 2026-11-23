@@ -10,16 +10,18 @@ cp /trimui/launch.sh /trimui/settings-trimui.ini $A/ && : > $A/start_game.txt &&
 printf '#!/bin/sh\nexit 0\n' > $A/opaco
 cat > $A/vf <<'V'
 #!/bin/sh
-{ echo "args: $* env: INLINE=${VF_SOUND_INLINE:-} SCALE2=${VF_SCALE2:-} SCRIPT=${VF_SCRIPT:-} QUIT=${VF_QUIT_AFTER:-} PERF=${VF_PERF:-} VIDEO=${SDL_VIDEO_DRIVER:-}"
+{ echo "args: $* env: INLINE=${VF_SOUND_INLINE:-} SCALE2=${VF_SCALE2:-} SCRIPT=${VF_SCRIPT:-} QUIT=${VF_QUIT_AFTER:-} PERF=${VF_PERF:-} VIDEO=${SDL_VIDEO_DRIVER:-} stay_awake=$([ -e /tmp/stay_awake ] && echo yes || echo no)"
   cat /trimui/test-data-log.txt; } > "$(dirname "$0")/log.txt"
 V
 chmod +x $A/launch.sh $A/opaco $A/vf
 
 # a normal start: the game alone, the mali driver, the first start's settings
+rm -f /tmp/stay_awake
 sh $A/launch.sh 2>/dev/null
 check "a normal start runs the game, with SDL's mali driver" "grep -q 'env: INLINE= SCALE2= SCRIPT= QUIT= PERF= VIDEO=mali' $A/log.txt"
 check "the first start's settings copied (1x)" "grep -q '^scale = 1' $A/settings.ini"
 check "the game's exit in launch.log" "grep -q '^exit 0' $A/launch.log"
+check "no /tmp/stay_awake while the game runs: the console may still sleep on its own (the stock firmware and Mosaik read it)" "grep -q 'stay_awake=no' $A/log.txt"
 
 # switches
 : > $A/scale2; : > $A/soundinline; sh $A/launch.sh 2>/dev/null; rm -f $A/scale2 $A/soundinline

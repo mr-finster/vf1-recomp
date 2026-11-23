@@ -12,12 +12,12 @@ restore() {
     "$APP/opaco" off >/dev/null 2>&1
     [ -n "$OLD_GOV" ] && echo "$OLD_GOV" 2>/dev/null > "$CPUFREQ/scaling_governor"
     [ -n "$PRINTK" ] && echo "$PRINTK" 2>/dev/null > /proc/sys/kernel/printk
-    rm -f /tmp/stay_awake
     sync
 }
 trap restore EXIT
 trap 'exit 143' INT TERM HUP QUIT
-echo 1 2>/dev/null > /tmp/stay_awake   # (no auto-suspend while playing, as the firmware's own apps)
+# (no /tmp/stay_awake: the stock firmware and Mosaik would then never put the console to sleep on its own, even with the
+# game paused)
 # The CPU at its most, 2000 MHz (cpu0 sets all four cores). /run/cpu-gioco keeps it while a custom firmware's menu or
 # volume bar is open over the game (Mosaik's); the stock firmware ignores it.
 echo userspace 2>/dev/null > "$CPUFREQ/scaling_governor"
