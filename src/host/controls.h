@@ -100,9 +100,25 @@ struct player_controls
 		return SDL_GetGamepadButton(g, SDL_GamepadButton(code));
 	}
 
-	// For people: the Xbox-style names most pads (and the Deck) print.
+	// For people: the Xbox-style names most pads (and the Deck) print; the TrimUI build, the console's own (its pad, from
+	// trimui_inputd, is an Xbox 360 one to SDL, its buttons laid out as Nintendo's: A right, B bottom, X top, Y left)
 	static std::string pad_label(int code)
 	{
+#ifdef VF_TRIMUI
+		switch (code) {
+		case SDL_GAMEPAD_BUTTON_SOUTH: return "B";
+		case SDL_GAMEPAD_BUTTON_EAST: return "A";
+		case SDL_GAMEPAD_BUTTON_WEST: return "Y";
+		case SDL_GAMEPAD_BUTTON_NORTH: return "X";
+		case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return "L";
+		case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "R";
+		case PAD_LT: return "L2";
+		case PAD_RT: return "R2";
+		case SDL_GAMEPAD_BUTTON_BACK: return "Select";
+		case SDL_GAMEPAD_BUTTON_GUIDE: return "Menu";
+		default: break;
+		}
+#endif
 		switch (code) {
 		case PAD_NONE: return "-";
 		case PAD_LT: return "LT";
