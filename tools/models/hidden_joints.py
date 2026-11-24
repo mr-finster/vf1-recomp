@@ -122,7 +122,7 @@ def clear_apart(solid, joints, gap, tol=1e-3):
             if a == b: return True
         return False
     names = list(solid); fixed = []
-    for _ in range(3):
+    for _ in range(8):
         changed = False
         for i in range(len(names)):
             for k in range(i + 1, len(names)):
@@ -150,7 +150,7 @@ def rot_about(M, c, axis, ang):
     R = bj.rot_axis_m(np.asarray(axis, float), ang); c = np.asarray(c, float)
     return M.transform(np.hstack([R, (c - R @ c)[:, None]]))
 
-def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0, sheet_mm=1.0):
+def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0, sheet_mm=1.0, thicken_mm=0.25):
     members, origin, far, parent, root = bj.build_skeleton(parts)
     allp = np.vstack([bj.pose(p["m"], p["p"]) for p in parts])
     lo, hi = allp.min(0), allp.max(0); scale = height_mm / ((hi[1] - lo[1]) or 1)
@@ -163,7 +163,11 @@ def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0
     solid = {}; pts = {}
     for n, ps in members.items():
         s, P = node_solid(ps, xf, sheet_mm)
-        if s is not None: solid[n] = bridge_shells(s); pts[n] = P
+        if s is not None:
+            # FDM: grow every part by thicken_mm so fingers, hair spikes and the
+            # game's paper-thin sheets have walls a 0.4 mm nozzle can print
+            if thicken_mm > 0: s = s.minkowski_sum(m3.Manifold.sphere(thicken_mm, 12))
+            solid[n] = bridge_shells(s); pts[n] = P
     seg = 48; joints = {}; orig = dict(solid)
     def depth(n):
         k = 0
@@ -280,7 +284,7 @@ def verify(rig, gap):
     for i in range(len(names)):
         for k in range(i + 1, len(names)):
             A, B = rig["solid"][names[i]], rig["solid"][names[k]]
-            if too_close(A, B, gap * 0.98):
+            if too_close(A, B, gap):
                 ok = False; lines.append(f"  {names[i]} - {names[k]}: closer than {gap} mm")
             g = 0.0 if (A ^ B).volume() > 1e-4 else A.min_gap(B, gap + 1.0)
             if g < worst[0]: worst = (g, (names[i], names[k]))
@@ -307,7 +311,7 @@ def main():
     bj.write_stl(os.path.join(a.outdir, "figure_assembled.stl"), allm)
     print(f"{len(rig['solid'])} parts, {len(rig['joints'])} hidden joints -> {a.outdir}")
     need = min(a.seam_mm, a.clearance_mm)
-    ok, worst, lines = verify(rig, need * 0.97)
+    ok, worst, lines = verify(rig, need * 0.97)   # same test as check_print.py
     print(("PRINT CHECK PASSED" if ok else "PRINT CHECK FAILED") +
           f": every part one closed solid; closest two parts {worst[0]:.2f} mm ({worst[1][0]}-{worst[1][1]}), need {need} mm")
     for l in lines: print(l)
