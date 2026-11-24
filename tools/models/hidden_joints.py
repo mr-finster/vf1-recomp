@@ -45,6 +45,17 @@ def solidify(V, F, t):
             out += [[v, u, u + N], [v, u + N, v + N]]
     return W, out
 
+def skin(V, F, t):
+    """Last resort for a shell the game left non-manifold: a t-thick skin, one
+    slab per triangle, all merged. Works on any triangle soup."""
+    V = np.asarray(V, float); slabs = []
+    for a, b, c in F:
+        P = V[[a, b, c]]; n = np.cross(P[1] - P[0], P[2] - P[0]); L = np.linalg.norm(n)
+        if L < 1e-12: continue
+        n = n / L * t / 2
+        slabs.append(m3.Manifold.hull_points(np.vstack([P + n, P - n])))
+    return m3.Manifold.batch_boolean(slabs, m3.OpType.Add) if slabs else m3.Manifold()
+
 def node_solid(ps, xf, sheet_t):
     solid = None; pts = []
     for p in ps:
@@ -57,8 +68,11 @@ def node_solid(ps, xf, sheet_t):
         ext = np.ptp(Vm[np.unique(np.asarray(F))], axis=0)
         if M.status().name != "NoError" or abs(M.volume()) < 0.02 * np.prod(np.sort(ext)[1:]) * sheet_t:
             M = to_manifold(*solidify(Vm, F, sheet_t))      # a sheet: give it thickness
-        if M.volume() < 0:
+        if M.status().name == "NoError" and M.volume() < 0:
             M = to_manifold(Vc, [[a, c, b] for a, b, c in Fc])
+        if M.status().name != "NoError" or M.volume() <= 0:
+            M = skin(Vm, F, sheet_t)                         # non-manifold in the game data
+        if M.status().name != "NoError" or M.is_empty(): continue   # never merge an invalid solid
         solid = M if solid is None else solid + M
         pts.append(Vm)
     return solid, np.vstack(pts)
@@ -142,8 +156,10 @@ def clear_apart(solid, joints, gap, tol=1e-3):
                 grow = (K ^ box).minkowski_sum(m3.Manifold.sphere(gap * 1.06, 24))
                 # carve; rejoin any piece the carve split off with rods only (a weld
                 # could grow back into the gap); then carve once more to be sure
-                solid[cut] = bridge_shells(solid[cut] - grow, weld=0.0) - grow
-                solid[cut] = bridge_shells(solid[cut], weld=0.0)
+                # slivers the carve cuts off are dropped (re-attaching them with rods
+                # pushed parts back into contact and the pass went round in circles)
+                solid[cut] = bridge_shells(solid[cut] - grow, min_vol=20.0, weld=0.0) - grow
+                solid[cut] = bridge_shells(solid[cut], min_vol=20.0, weld=0.0)
                 fixed.append((keep, cut)); changed = True
         if not changed: break
     return fixed
@@ -158,6 +174,12 @@ def rot_about(M, c, axis, ang):
     return M.transform(np.hstack([R, (c - R @ c)[:, None]]))
 
 def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0, sheet_mm=1.0, thicken_mm=0.25):
+    # the opponent can be the same character (Jacky vs Jacky): the dump then also
+    # tags the opponent's copies of shared models. The player's are drawn first.
+    seen = set(); own = []
+    for p in parts:
+        if p["tag"] not in seen: seen.add(p["tag"]); own.append(p)
+    parts = own
     members, origin, far, parent, root = bj.build_skeleton(parts)
     allp = np.vstack([bj.pose(p["m"], p["p"]) for p in parts])
     lo, hi = allp.min(0), allp.max(0); scale = height_mm / ((hi[1] - lo[1]) or 1)
