@@ -248,6 +248,142 @@ def build_skeleton(parts):
     return members, origin, far, parent, root
 
 # ---- main ----------------------------------------------------------------
+def clip_plane(V, F, point, n):
+    """Slice a closed mesh with a plane, keeping the side n points to, and cap
+    the cut flat. Triangles are split along the plane (shared edge points, so
+    it stays watertight); the cut loop lies in the plane, so its cap is flat."""
+    V = [np.asarray(v, float) for v in V]; point = np.asarray(point); n = np.asarray(n)
+    sd = [float(np.dot(v - point, n)) for v in V]
+    cache = {}
+    def cut(i, j):
+        k = (min(i, j), max(i, j))
+        if k not in cache:
+            t = sd[i] / (sd[i] - sd[j])
+            cache[k] = len(V); V.append(V[i] + t * (V[j] - V[i])); sd.append(0.0)
+        return cache[k]
+    out = []
+    for f in F:
+        ins = [sd[i] >= 0 for i in f]
+        if all(ins): out.append(list(f)); continue
+        if not any(ins): continue
+        poly = []
+        for a in range(3):
+            i, j = f[a], f[(a + 1) % 3]
+            if sd[i] >= 0: poly.append(i)
+            if (sd[i] >= 0) != (sd[j] >= 0): poly.append(cut(i, j))
+        for k in range(1, len(poly) - 1):
+            if len({poly[0], poly[k], poly[k + 1]}) == 3:
+                out.append([poly[0], poly[k], poly[k + 1]])
+    if not out:
+        return np.array(V), out
+    return cap(np.array(V), out)
+
+
+def trim_joint(V, F, pivot, d, r_sphere, side, reach, offset=0.0):
+    """Cut a limb end back at a joint: drop faces with a vertex inside the
+    sphere r_sphere about the pivot, and (within `reach` of it) faces on the
+    wrong side of the joint plane (side=+1 keeps +d, -1 keeps -d). Re-capped."""
+    V = np.asarray(V); pivot = np.asarray(pivot)
+    rel = V - pivot; dist = np.linalg.norm(rel, axis=1); along = rel @ d
+    bad = (dist < r_sphere) | ((dist < reach) & (side * along < offset))
+    keep = [f for f in F if not bad[f].any()]
+    return cap(V, keep) if keep else (V, F)
+
+
+def build_rig(parts, height_mm=180.0, clearance_mm=0.3, ball_frac=0.58,
+              snap_mm=0.3, smooth=0, zup=True, gap_mm=1.5, wall_frac=0.45):
+    """Everything the STL writer, the checker and the animator need."""
+    members, origin, far, parent, root = build_skeleton(parts)
+    mesh = {}; radius = {}; allpts = []
+    for node, ps in members.items():
+        Vl = []; Fl = []
+        for p in ps:
+            W = pose(p["m"], p["p"]); V, remap = weld(W)
+            F = faces_of(p.get("q", []), remap)
+            if not F: continue
+            V = smooth_taubin(V, F, smooth); V, F = cap(V, F)
+            b = sum(len(v) for v in Vl); Vl.append(V); Fl += [[x + b, y + b, z + b] for x, y, z in F]
+        if not Fl: continue
+        V = np.vstack(Vl); mesh[node] = (V, Fl); allpts.append(V)
+        o = origin[node]; ax = far[node] - o; axn = ax / (np.linalg.norm(ax) or 1)
+        rel = V - o; perp = rel - np.outer(rel @ axn, axn)
+        radius[node] = float(np.median(np.linalg.norm(perp, axis=1))) or 0.05
+    allpts = np.vstack(allpts); lo, hi = allpts.min(0), allpts.max(0)
+    scale = height_mm / ((hi[1] - lo[1]) or 1.0)
+    center = np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
+    mm = 1.0 / scale                                  # one millimetre in model units
+    clr = clearance_mm * mm; gap = gap_mm * mm
+    balls = {n: [] for n in mesh}; sockets = {n: [] for n in mesh}; joints = {}
+    for child, par in parent.items():
+        if par is None or child not in mesh or par not in mesh: continue
+        p = origin[child]; d = far[child] - p
+        if np.linalg.norm(d) < 1e-6: d = far[child] - far[par]
+        d = d / (np.linalg.norm(d) or 1)
+        rb = max(ball_frac * radius[child], 1.6 * mm)     # >= 3.2 mm ball
+        rin = rb + clr                                     # socket cavity
+        ro = rin + max(wall_frac * rb, 1.0 * mm)            # socket outer (>= 1 mm wall)
+        neck = 0.36 * rb
+        th0 = float(np.arcsin(min(0.99, max(rb - snap_mm * mm, neck * 1.4) / rin)))
+        # child: flat cut just past the socket shell; only its +d side stays
+        mesh[child] = clip_plane(*mesh[child], p + d * (ro + gap), d)
+        # parent: flat cut at the cavity's back, so the cavity is empty of limb;
+        # the socket's outer wall reaches back past it and fuses to the limb.
+        # The torso (several joints) gets a local sphere bite instead of a plane.
+        if parent.get(par) is None:
+            mesh[par] = trim_joint(*mesh[par], p, d, rin + 0.4 * mm, -1, 0.0)
+        else:
+            mesh[par] = clip_plane(*mesh[par], p - d * rin, -d)
+        balls[child].append(uv_sphere(p, rb))
+        balls[child].append(cylinder(p + d * (ro + gap + 0.8 * rb), p, neck))
+        sockets[par].append(socket_cup(p, d, rin, ro - rin, open_half_angle=th0))
+        swing = float(np.degrees(th0 - np.arcsin(min(1.0, neck / rin))))
+        joints[child] = dict(parent=par, pivot=p, axis=d, rb=rb, rin=rin, ro=ro,
+                             neck=neck, th0=th0, swing=swing)
+
+    def xform(V):
+        Q = (np.asarray(V) - center) * scale
+        return Q[..., [0, 2, 1]] * np.array([1, -1, 1]) if zup else Q
+    return dict(mesh=mesh, balls=balls, sockets=sockets, joints=joints,
+                parent=parent, root=root, scale=scale, xform=xform)
+
+
+def check_rig(rig, samples=12):
+    """Per joint: ball/socket sizes (mm), snap interference, swing range, and
+    the closest the child gets to the parent while swinging through that range
+    (vertex distances, limb + neck vs limb + cup)."""
+    s = rig["scale"]; rows = []
+    for child, j in rig["joints"].items():
+        par = j["parent"]; p = j["pivot"]; d = j["axis"]
+        used = lambda VF: np.asarray(VF[0])[np.unique(np.asarray(VF[1]).ravel())]  # drop orphaned verts
+        cv = used(rig["mesh"][child])       # the limb body (the neck meeting the rim is the stop)
+        pv = np.vstack([used(rig["mesh"][par])] + [used(c) for c in rig["sockets"][par]])
+        near = np.linalg.norm(pv - p, axis=1) < j["ro"] + 4 * j["rb"]
+        pv = pv[near]; cv = cv[np.linalg.norm(cv - p, axis=1) < j["ro"] + 4 * j["rb"]]
+        # swing about axes perpendicular to d, up to the socket's limit
+        a = np.cross(d, [0, 0, 1.0]);  a = a if np.linalg.norm(a) > 1e-6 else np.cross(d, [0, 1.0, 0])
+        a /= np.linalg.norm(a); b = np.cross(d, a)
+        worst = 1e9
+        for ang in (0.0, j["swing"]):
+            for k in range(samples if ang else 1):
+                t = 2 * np.pi * k / samples
+                R = rot_axis_m(np.cos(t) * a + np.sin(t) * b, np.radians(ang))
+                q = (cv - p) @ R.T + p
+                if len(q) and len(pv):
+                    dd = np.sqrt(((q[:, None, :] - pv[None, :, :]) ** 2).sum(-1)).min()
+                    worst = min(worst, dd)
+        rows.append((par, child, 2 * j["rb"] * s, 2 * j["rin"] * s,
+                     2 * j["rin"] * np.sin(j["th0"]) * s, (j["rb"] - j["rin"] * np.sin(j["th0"])) * s,
+                     j["swing"], worst * s))
+    return rows
+
+
+def rot_axis_m(ax, ang):
+    ax = ax / (np.linalg.norm(ax) or 1); c, s_ = np.cos(ang), np.sin(ang); x, y, z = ax
+    return np.array([[c + x*x*(1-c), x*y*(1-c) - z*s_, x*z*(1-c) + y*s_],
+                     [y*x*(1-c) + z*s_, c + y*y*(1-c), y*z*(1-c) - x*s_],
+                     [z*x*(1-c) - y*s_, z*y*(1-c) + x*s_, c + z*z*(1-c)]])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dump"); ap.add_argument("outdir")
@@ -255,89 +391,36 @@ def main():
     ap.add_argument("--clearance-mm", type=float, default=0.3)
     ap.add_argument("--ball-frac", type=float, default=0.58,
                     help="ball radius as a fraction of the child's cross-section")
+    ap.add_argument("--snap-mm", type=float, default=0.3,
+                    help="how much the ball is wider than the socket opening, per side")
+    ap.add_argument("--gap-mm", type=float, default=1.5,
+                    help="how far both limb ends are cut back from the joint")
     ap.add_argument("--smooth", type=int, default=0,
                     help="optional Taubin smoothing passes (0 = raw crisp low-poly)")
     ap.add_argument("--zup", action="store_true")
+    ap.add_argument("--check", action="store_true", help="print the joint check")
     args = ap.parse_args()
 
     parts = [json.loads(l) for l in open(args.dump) if l.strip()]
     os.makedirs(args.outdir, exist_ok=True)
-    members, origin, far, parent, root = build_skeleton(parts)
-
-    # pose+weld+cap each body node (a node may merge several dump parts, e.g.
-    # the head's shells); measure cross-section near its pivot
-    mesh = {}; radius = {}
-    allpts = []
-    for node, ps in members.items():
-        Vlist = []; Flist = []
-        for p in ps:
-            W = pose(p["m"], p["p"]); V, remap = weld(W)
-            F = faces_of(p.get("q", []), remap)
-            if not F:
-                continue
-            V = smooth_taubin(V, F, args.smooth)
-            V, F = cap(V, F)
-            base = sum(len(v) for v in Vlist)
-            Vlist.append(V); Flist += [[a + base, b + base, c + base] for a, b, c in F]
-        if not Flist:
-            continue
-        V = np.vstack(Vlist); mesh[node] = (V, Flist); allpts.append(V)
-        o = origin[node]; ax = far[node] - o; axn = ax / (np.linalg.norm(ax) or 1)
-        rel = V - o; perp = rel - np.outer(rel @ axn, axn)
-        radius[node] = float(np.median(np.linalg.norm(perp, axis=1))) or 0.05
-
-    allpts = np.vstack(allpts)
-    lo, hi = allpts.min(0), allpts.max(0)
-    scale = args.height_mm / ((hi[1] - lo[1]) or 1.0)
-    center = np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
-    clr = args.clearance_mm / scale  # clearance back in model units
-
-    # add joints: trim both limb ends back from the pivot, then bridge the gap
-    # with a protruding ball (child) seated in a socket cup (parent).
-    joints = 0
-    extra = {t: [] for t in mesh}   # extra primitive meshes per part
-    for child, par in parent.items():
-        if par is None or child not in mesh or par not in mesh:
-            continue
-        p = origin[child]
-        d_child = far[child] - p                    # child extends this way (+d)
-        if np.linalg.norm(d_child) < 1e-6:
-            d_child = far[child] - far[par]
-        d_child /= (np.linalg.norm(d_child) or 1)
-        rb = max(args.ball_frac * radius[child], 2.0 / scale)   # >= ~2 mm ball
-        rcut = rb * 1.3
-        # cut the child's proximal end and the parent's distal end back
-        mesh[child] = trim(*mesh[child], p, rcut)
-        mesh[par] = trim(*mesh[par], p, rcut)
-        # child: ball centred at the pivot, on a neck back to the trimmed stub
-        extra[child].append(uv_sphere(p, rb))
-        extra[child].append(cylinder(p + d_child * rcut * 1.25, p, rb * 0.42))
-        # parent: socket cup at the pivot, cavity = ball + clearance, opening to child
-        extra[par].append(socket_cup(p, d_child, rb + clr, wall=max(rb * 0.5, 1.2 / scale)))
-        joints += 1
-
-    def xform(V):
-        Q = (np.asarray(V) - center) * scale
-        if args.zup: Q = Q[:, [0, 2, 1]] * np.array([1, -1, 1])
-        return Q
-
-    for t, (V, F) in mesh.items():
-        meshes = [(xform(V), F)] + [(xform(ev), ef) for ev, ef in extra[t]]
-        name = t.replace("_", "-")
-        write_stl(os.path.join(args.outdir, f"part_{name}.stl"), meshes)
-
-    # a combined preview (parts + joints), for a quick look
+    rig = build_rig(parts, args.height_mm, args.clearance_mm, args.ball_frac,
+                    args.snap_mm, args.smooth, args.zup, args.gap_mm)
+    xf = rig["xform"]
     allm = []
-    for t, (V, F) in mesh.items():
-        allm.append((xform(V), F))
-        for ev, ef in extra[t]: allm.append((xform(ev), ef))
+    for t, (V, F) in rig["mesh"].items():
+        meshes = [(xf(V), F)] + [(xf(v), f) for v, f in rig["balls"][t] + rig["sockets"][t]]
+        write_stl(os.path.join(args.outdir, f"part_{t.replace('_', '-')}.stl"), meshes)
+        allm += meshes
     write_stl(os.path.join(args.outdir, "figure_jointed.stl"), allm)
-
-    print(f"{len(mesh)} parts, {joints} ball joints; root={root}; "
+    print(f"{len(rig['mesh'])} parts, {len(rig['joints'])} ball joints; "
           f"{args.height_mm:.0f} mm, clearance {args.clearance_mm} mm -> {args.outdir}")
-    print("skeleton:")
-    for c, pr in parent.items():
-        if pr: print(f"  {pr:>5} -> {c}")
+    if args.check:
+        print(f"{'joint':>12} {'ball':>6} {'cavity':>7} {'opening':>8} {'snap':>6} {'swing':>6} {'min gap':>8}")
+        for par, ch, b, cav, op, sn, sw, g in check_rig(rig):
+            flag = "" if sn > 0.15 and g > 0.25 else "  <-- check"
+            print(f"{par + '>' + ch:>12} {b:6.2f} {cav:7.2f} {op:8.2f} {sn:6.2f} {sw:5.0f}° {g:8.2f}{flag}")
+        print("(mm; snap = how much the ball is wider than the opening, per side;"
+              " min gap = closest approach, child vs parent, across the swing)")
 
 
 if __name__ == "__main__":

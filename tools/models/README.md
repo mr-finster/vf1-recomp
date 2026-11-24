@@ -55,15 +55,23 @@ characters are forced directly, so they're named.
   even a few passes round off the headband, face and fingers, so leave it off
   unless you specifically want a softened look.
 - **`ball_joints.py dump.json OUTDIR`** — recovers the skeleton from the part
-  pose matrices (each part's matrix translation *is* its joint pivot), then at
-  every joint trims the two limb ends back and bridges the gap with a ball
-  (on the child) seated in a socket cup (on the parent). `--height-mm 180`,
-  `--clearance-mm 0.3`, `--ball-frac 0.45`, `--zup`.
+  pose matrices (each part's matrix translation *is* its joint pivot) and builds
+  13 assembled ball joints: neck, shoulders, elbows, wrists, hips, knees, ankles.
+  At each joint both limbs get a flat planar cut (triangles are sliced, so the
+  cut is capped flat): the parent is cut at the back of the socket cavity, so
+  the cavity is empty, and the socket cup's wall fuses to the limb; the child is
+  cut just past the socket shell and carries a ball on a neck.
 
-  The ball and socket are emitted as overlapping watertight primitives — a slicer
-  unions them, so no CSG library is needed. Joints are **assembled** (print the
-  parts, click them together), not print‑in‑place. The ball size and 0.3 mm
-  clearance are sensible defaults but want a real test print to dial in.
+  Defaults (all tunable): `--clearance-mm 0.3` (ball to cavity), `--snap-mm 0.3`
+  (the ball is that much wider than the socket opening, per side, so it clicks
+  in and holds), `--gap-mm 1.5` (limb ends cut back from the joint),
+  `--ball-frac 0.58` (ball size vs the limb). Balls are at least 3.2 mm.
+
+  `--check` prints, per joint: ball, cavity and opening sizes, the snap, the
+  swing range (35–44° each way before the neck meets the rim; twist is free),
+  and the closest the two limbs get to each other while swinging through that
+  range. Defaults pass on Akira with every joint ≥ 0.44 mm clear. Untested on a
+  real printer: print one joint first and adjust clearance/snap to your printer.
 
 ## Notes
 
