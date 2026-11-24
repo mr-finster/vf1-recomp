@@ -15,7 +15,9 @@
 #
 #   hidden_joints.py dump.json OUTDIR [--height-mm 180] [--seam-mm 0.4]
 #                    [--clearance-mm 0.3] [--swing 40] [--check]
-import argparse, json, os, sys
+import argparse, json, os, sys, time
+_T0 = time.time()
+def log(msg): print(f"[{time.time() - _T0:6.0f}s] {msg}", file=sys.stderr, flush=True)
 import numpy as np
 import manifold3d as m3
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -132,6 +134,7 @@ def clear_apart(solid, joints, gap, tol=1e-3):
             for k in range(i + 1, len(names)):
                 a, b = names[i], names[k]; A, B = solid[a], solid[b]
                 if not too_close(A, B, gap): continue
+                log(f"  carving {a}/{b} apart")
                 keep, cut = (a, b) if anc(b, a) else (b, a) if anc(a, b) else ((a, b) if A.volume() >= B.volume() else (b, a))
                 K = solid[keep]
                 lo, hi = np.asarray(solid[cut].bounding_box()[:3]) - 3, np.asarray(solid[cut].bounding_box()[3:]) + 3
@@ -180,6 +183,7 @@ def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0
     for child in sorted((c for c in parent if parent[c] and c in solid), key=depth):
         par = parent[child]
         if par not in solid: continue
+        log(f"joint {par}>{child}")
         c = xf(origin[child]); d = xd(far[child] - origin[child])
         # seam sphere: the limbs' cross-section where they meet, so the seam goes all the way round
         Q = pts[child]; rel = Q - c; al = rel @ d            # the moving part's own cross-section
@@ -251,7 +255,9 @@ def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0
         _, P, C, meta = best
         solid[par], solid[child] = P, C
         joints[child] = meta
+    log("joints done; joining loose pieces")
     for n in solid: solid[n] = bridge_shells(solid[n])
+    log("clearance pass")
     fixed = clear_apart(solid, joints, min(seam_mm, clearance_mm))
     return dict(solid=solid, joints=joints, parent=parent, root=root, cleared=fixed)
 

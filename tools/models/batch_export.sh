@@ -5,7 +5,7 @@
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$REPO"
 DUMPS=${1:-build/exports/dumps}; OUT=${2:-build/exports}
-ORDER="akira pai lau wolf jeffry kage sarah jacky dural"
+ORDER="akira pai lau jeffry kage sarah jacky dural wolf"   # wolf last: his build is the slowest
 SUM="$OUT/SUMMARY.md"
 echo "# Character exports" > "$SUM"; echo >> "$SUM"; echo "Started $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$SUM"; echo >> "$SUM"
 echo "| Character | Print check | Parts | Size (mm) | Build time |" >> "$SUM"; echo "|---|---|---|---|---|" >> "$SUM"
