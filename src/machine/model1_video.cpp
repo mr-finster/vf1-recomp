@@ -1263,7 +1263,7 @@ void model1::dump_part(uint32_t tex_adr, uint32_t poly_adr, uint32_t size)
 	static const char *spec = getenv("VF_DUMP_FIGHTER");
 	if (!spec || m_ram_a.size() < 0x1f00 || m_frame != strtoull(spec, nullptr, 10)) return;
 	static FILE *out = [] { const char *c = strchr(spec, ':'); return c ? fopen(c + 1, "w") : stderr; }();
-	static std::set<uint32_t> done;
+	static std::set<std::string> done;
 	auto rd = [&](const uint8_t *p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); };
 	const auto &rom = m_regions.maincpu;
 	const uint32_t rec = rd(&m_ram_a[0x700 - 0x50]);
@@ -1278,7 +1278,15 @@ void model1::dump_part(uint32_t tex_adr, uint32_t poly_adr, uint32_t size)
 	for (uint32_t t : { 0x5eu, 0x62u })
 		for (uint32_t k = 0, tb = rd(&rom[rec + t]); k < 32 && tag.empty() && (tb >> 16) == 0xfd && tb + 4 * k + 4 <= rom.size(); k++)
 			if (poly_of(rd(&rom[tb + 4 * k])) == (poly_adr & 0x7fffff)) tag = "k" + std::to_string(t) + "_" + std::to_string(k);
-	if (tag.empty() || !done.insert(poly_adr).second) return;
+	// Dedup a redraw of the same frame (the GPU check, a screenshot: the same
+	// matrix again), but keep a model reused at another matrix in the one frame
+	// (a mirrored limb drawn twice): key on the poly and the matrix together.
+	if (tag.empty()) return;
+	{
+		std::string key(reinterpret_cast<const char *>(&poly_adr), sizeof poly_adr);
+		key.append(reinterpret_cast<const char *>(m_view->translation), 12 * sizeof(float));
+		if (!done.insert(key).second) return;
+	}
 	const float *pd = (poly_adr & 0x800000) ? (const float *)m_poly_ram.get() : (const float *)m_poly_rom;
 	uint32_t a = poly_adr & 0x7fffff;
 	std::vector<std::array<float, 3>> pts{ { pd[a], pd[a + 1], pd[a + 2] }, { pd[a + 3], pd[a + 4], pd[a + 5] } };
