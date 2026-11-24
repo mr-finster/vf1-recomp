@@ -61,6 +61,86 @@ def node_solid(ps, xf, sheet_t):
         pts.append(Vm)
     return solid, np.vstack(pts)
 
+def roundtrip(M):
+    """The solid as a slicer will see it: written out as a triangle soup and
+    read back. Pieces that only touch along an edge or a point come apart here."""
+    V, F = mesh_of(M); T = V[F].reshape(-1, 3).astype(np.float32)
+    mesh = m3.Mesh(vert_properties=T, tri_verts=np.arange(len(T), dtype=np.uint32).reshape(-1, 3)); mesh.merge()
+    return m3.Manifold(mesh)
+
+def bridge_shells(M, min_vol=1.0, r=0.6, weld=0.3):
+    """Make a part one piece, as the printer will see it: drop slivers, weld
+    shells that touch (a real 2*weld mm seam of material along the contact, not
+    a knife-edge), and tie floating ones (the game's fingers, toes, hair cap)
+    to the body with a short rod buried in both."""
+    for _ in range(4):
+        sh = [x for x in roundtrip(M).decompose() if x.volume() >= min_vol]
+        if not sh: return M
+        sh.sort(key=lambda x: -x.volume()); main = sh[0]
+        if len(sh) == 1: return main
+        for x in sh[1:]:
+            lo = np.asarray(x.bounding_box()[:3]) - 2; hi = np.asarray(x.bounding_box()[3:]) + 2
+            near = main ^ m3.Manifold.cube(hi - lo).translate(lo)
+            g = main.min_gap(x, 3.0)
+            if g < 0.05 and weld > 0:                       # touching: weld along the contact
+                ball = m3.Manifold.sphere(weld, 8)
+                main = main + x + (x.minkowski_sum(ball) ^ near.minkowski_sum(ball))
+            else:                                           # floating: a buried rod
+                A = np.asarray(x.to_mesh().vert_properties)[:, :3]; B = np.asarray(near.to_mesh().vert_properties)[:, :3]
+                d = ((A[:, None, :] - B[None, :, :]) ** 2).sum(-1); i, k = np.unravel_index(d.argmin(), d.shape)
+                a, b = A[i], B[k]; v = b - a; v = v / (np.linalg.norm(v) or 1)
+                p0, p1 = a - v * 1.0, b + v * 1.0
+                main = main + x + place(m3.Manifold.cylinder(float(np.linalg.norm(p1 - p0)), r, r, 16), p0, p1 - p0)
+        M = main
+    return roundtrip(M)
+
+def _near(A, B, pad):
+    lo = np.maximum(np.asarray(A.bounding_box()[:3]), np.asarray(B.bounding_box()[:3])) - pad
+    hi = np.minimum(np.asarray(A.bounding_box()[3:]), np.asarray(B.bounding_box()[3:])) + pad
+    if np.any(hi <= lo): return None
+    return m3.Manifold.cube(hi - lo).translate(lo)
+
+def too_close(A, B, gap):
+    """Exact clearance test: grow both by gap/2 (a sphere's Minkowski sum) and
+    see whether they meet. (min_gap is only approximate.)"""
+    if (A ^ B).volume() > 1e-4: return True
+    box = _near(A, B, gap + 1.0)
+    if box is None: return False
+    a, b = A ^ box, B ^ box
+    if a.is_empty() or b.is_empty(): return False
+    s = m3.Manifold.sphere(gap / 2 * 1.04, 24)     # inscribed tessellation: pad a touch
+    return (a.minkowski_sum(s) ^ b.minkowski_sum(s)).volume() > 1e-5
+
+def clear_apart(solid, joints, gap, tol=1e-3):
+    """Every pair of parts must stay `gap` apart or a print-in-place figure fuses.
+    Where two come closer, carve the lower one in the hierarchy (or the smaller)
+    back by an exact offset of the other: its Minkowski sum with a sphere."""
+    par = {c: j["parent"] for c, j in joints.items()}
+    def anc(a, b):
+        while a in par:
+            a = par[a]
+            if a == b: return True
+        return False
+    names = list(solid); fixed = []
+    for _ in range(3):
+        changed = False
+        for i in range(len(names)):
+            for k in range(i + 1, len(names)):
+                a, b = names[i], names[k]; A, B = solid[a], solid[b]
+                if not too_close(A, B, gap): continue
+                keep, cut = (a, b) if anc(b, a) else (b, a) if anc(a, b) else ((a, b) if A.volume() >= B.volume() else (b, a))
+                K = solid[keep]
+                lo, hi = np.asarray(solid[cut].bounding_box()[:3]) - 3, np.asarray(solid[cut].bounding_box()[3:]) + 3
+                box = m3.Manifold.cube(hi - lo).translate(lo)
+                grow = (K ^ box).minkowski_sum(m3.Manifold.sphere(gap * 1.06, 24))
+                # carve; rejoin any piece the carve split off with rods only (a weld
+                # could grow back into the gap); then carve once more to be sure
+                solid[cut] = bridge_shells(solid[cut] - grow, weld=0.0) - grow
+                solid[cut] = bridge_shells(solid[cut], weld=0.0)
+                fixed.append((keep, cut)); changed = True
+        if not changed: break
+    return fixed
+
 def place(M, c, d):
     """Move a +Z-aligned primitive so its origin is at c and +Z points along d."""
     R = bj.rot_to(np.asarray(d, float))
@@ -70,7 +150,7 @@ def rot_about(M, c, axis, ang):
     R = bj.rot_axis_m(np.asarray(axis, float), ang); c = np.asarray(c, float)
     return M.transform(np.hstack([R, (c - R @ c)[:, None]]))
 
-def build(parts, height_mm=180.0, seam_mm=0.4, clearance_mm=0.3, swing_deg=40.0, sheet_mm=0.8):
+def build(parts, height_mm=180.0, seam_mm=0.5, clearance_mm=0.45, swing_deg=40.0, sheet_mm=1.0):
     members, origin, far, parent, root = bj.build_skeleton(parts)
     allp = np.vstack([bj.pose(p["m"], p["p"]) for p in parts])
     lo, hi = allp.min(0), allp.max(0); scale = height_mm / ((hi[1] - lo[1]) or 1)
@@ -83,7 +163,7 @@ def build(parts, height_mm=180.0, seam_mm=0.4, clearance_mm=0.3, swing_deg=40.0,
     solid = {}; pts = {}
     for n, ps in members.items():
         s, P = node_solid(ps, xf, sheet_mm)
-        if s is not None: solid[n] = s; pts[n] = P
+        if s is not None: solid[n] = bridge_shells(s); pts[n] = P
     seg = 48; joints = {}; orig = dict(solid)
     def depth(n):
         k = 0
@@ -113,8 +193,8 @@ def build(parts, height_mm=180.0, seam_mm=0.4, clearance_mm=0.3, swing_deg=40.0,
             body = orig[par] + orig[child]
             while rb > 1.6 and (m3.Manifold.sphere(rb + clearance_mm + 0.8, seg).translate(c) - body).volume() > 0.05:
                 rb *= 0.9
-            rb = max(rb, 1.6)
-            rin = rb + clearance_mm; rn = 0.42 * rb
+            rb = max(rb, 1.8)
+            rin = rb + clearance_mm; rn = max(0.42 * rb, 0.8)        # post >= 1.6 mm thick
             S = m3.Manifold.sphere(Rs, seg).translate(c)
             Sg = m3.Manifold.sphere(Rs + seam_mm, seg).translate(c)
             P, C = solid[par], solid[child]
@@ -163,7 +243,9 @@ def build(parts, height_mm=180.0, seam_mm=0.4, clearance_mm=0.3, swing_deg=40.0,
         _, P, C, meta = best
         solid[par], solid[child] = P, C
         joints[child] = meta
-    return dict(solid=solid, joints=joints, parent=parent, root=root)
+    for n in solid: solid[n] = bridge_shells(solid[n])
+    fixed = clear_apart(solid, joints, min(seam_mm, clearance_mm))
+    return dict(solid=solid, joints=joints, parent=parent, root=root, cleared=fixed)
 
 def check(rig, max_deg=70, dirs=8, tol=0.5):
     """Per joint: swing (deg) before the child touches its parent (>tol mm^3 of
@@ -187,6 +269,23 @@ def check(rig, max_deg=70, dirs=8, tol=0.5):
         out.append((j["parent"], child, 2 * j["Rs"], 2 * j["rb"], rest, min(lims), max(lims)))
     return out
 
+def verify(rig, gap):
+    """Print-readiness: every part a single closed solid; every pair of parts at
+    least `gap` apart (else a print-in-place figure fuses there)."""
+    ok = True; lines = []
+    for n, M in rig["solid"].items():
+        R = roundtrip(M); sh = len([x for x in R.decompose() if x.volume() > 1e-6]); st = R.status().name
+        if sh != 1 or st != "NoError": ok = False; lines.append(f"  part {n}: {sh} shells, {st}")
+    names = list(rig["solid"]); worst = (1e9, None)
+    for i in range(len(names)):
+        for k in range(i + 1, len(names)):
+            A, B = rig["solid"][names[i]], rig["solid"][names[k]]
+            if too_close(A, B, gap * 0.98):
+                ok = False; lines.append(f"  {names[i]} - {names[k]}: closer than {gap} mm")
+            g = 0.0 if (A ^ B).volume() > 1e-4 else A.min_gap(B, gap + 1.0)
+            if g < worst[0]: worst = (g, (names[i], names[k]))
+    return ok, worst, lines
+
 def mesh_of(M):
     m = M.to_mesh(); return np.asarray(m.vert_properties)[:, :3], np.asarray(m.tri_verts)
 
@@ -194,8 +293,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dump"); ap.add_argument("outdir")
     ap.add_argument("--height-mm", type=float, default=180.0)
-    ap.add_argument("--seam-mm", type=float, default=0.4)
-    ap.add_argument("--clearance-mm", type=float, default=0.3)
+    ap.add_argument("--seam-mm", type=float, default=0.5, help="gap between moving parts (FDM: 0.5)")
+    ap.add_argument("--clearance-mm", type=float, default=0.45, help="ball to cavity (FDM: 0.45)")
     ap.add_argument("--swing", type=float, default=40.0, help="post swing the channel allows (deg)")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
@@ -207,6 +306,11 @@ def main():
         V, F = mesh_of(M); bj.write_stl(os.path.join(a.outdir, f"part_{n.replace('_', '-')}.stl"), [(V, F)]); allm.append((V, F))
     bj.write_stl(os.path.join(a.outdir, "figure_assembled.stl"), allm)
     print(f"{len(rig['solid'])} parts, {len(rig['joints'])} hidden joints -> {a.outdir}")
+    need = min(a.seam_mm, a.clearance_mm)
+    ok, worst, lines = verify(rig, need * 0.97)
+    print(("PRINT CHECK PASSED" if ok else "PRINT CHECK FAILED") +
+          f": every part one closed solid; closest two parts {worst[0]:.2f} mm ({worst[1][0]}-{worst[1][1]}), need {need} mm")
+    for l in lines: print(l)
     if a.check:
         print(f"{'joint':>12} {'seam ø':>7} {'ball ø':>7} {'overlap@rest':>13} {'swing min..max':>15}")
         for par, ch, s, b, r, mn, mx in check(rig):
