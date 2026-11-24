@@ -8,6 +8,7 @@
 #include "png.h"
 #include "menu.h"
 #include "online.h"
+#include "present_rate.h"
 #include "links.h"
 #include "text.h"
 #include "chime.h"
@@ -3736,7 +3737,9 @@ int main(int argc, char **argv)
 	game_thread gt;
 	bool carried_curtain = false;      // (a curtain from the frame run during the last present)
 	bool carried_on_gpu = false;       // (... and put together by the GPU)
-	double screen_hz_now = 0;          // (the screen's Hz, looked up each second)
+	double screen_hz_now = 0;          // (the screen's Hz, looked up each second: the rate the presents show where slower, present_rate.h)
+	double reported_hz = 0;            // (the Hz the screen says)
+	PresentRate present_rate("VF_TEST_SCREEN_HZ");
 	bool vsync_now = true;             // (vsync forced off, or not taken: present returns at once, so not every pass)
 	// A game frame's inputs (false: a hotkey opened the menu, no frame runs) and what follows one: the
 	// scene changes' hold, its sound
@@ -4791,9 +4794,13 @@ int main(int argc, char **argv)
 			{ static uint64_t hz_t = 0;
 			  if (SDL_GetTicksNS() - hz_t > 1000000000ull) {
 				  hz_t = SDL_GetTicksNS();
-				  if (const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(win))) screen_hz = dm->refresh_rate;
+				  double said = 0;
+				  if (const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(win))) said = dm->refresh_rate;
+				  said = present_rate.said_hz(said);
+				  if (said != reported_hz) { present_rate.reset(); reported_hz = said; }
+				  screen_hz = said > 0 ? present_rate.rate(said) : 0;
 				  int v = 0;
-				  vsync_on = SDL_GetRenderVSync(ren, &v) && v != 0;
+				  vsync_on = present_rate.faked() || (SDL_GetRenderVSync(ren, &v) && v != 0);
 			  } }
 			// Display > Frame limit: the pictures a second at most, by the budget; the screen's (the default) or more with vsync
 			// a picture every refresh, as before; under the game's own 57.5 (30) a new frame's picture waits for the budget
@@ -5094,7 +5101,11 @@ int main(int argc, char **argv)
 			ahead_t = SDL_GetTicksNS();
 			gt.start([&] { m.run_frame(); });
 		}
+		const uint64_t present_t0 = SDL_GetTicksNS();
 		SDL_RenderPresent(ren);
+		present_rate.sleep_after_present();
+		present_rate.after_present(present_t0, reported_hz, vsync_now && !hidden);
+		if (reported_hz > 0) screen_hz_now = present_rate.rate(reported_hz);
 		{   // (VF3's pace log: a pass over 1.5 refreshes, by what it ran)
 			const double refresh = screen_hz_now > 0 ? 1e9 / screen_hz_now : 8333333.0;
 			if (double(SDL_GetTicksNS() - pass_t) > 1.5 * refresh) {
