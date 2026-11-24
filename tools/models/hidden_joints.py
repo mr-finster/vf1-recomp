@@ -101,6 +101,9 @@ def bridge_shells(M, min_vol=1.0, r=0.6, weld=0.3):
             if g < 0.05 and weld > 0:                       # touching: weld along the contact
                 ball = m3.Manifold.sphere(weld, 8)
                 main = main + x + (x.minkowski_sum(ball) ^ near.minkowski_sum(ball))
+            elif g <= 4.0:                                  # just apart: fill the gap where they're nearest
+                r = g / 2 + 0.3; ball = m3.Manifold.sphere(r, 16)   # (a lens that follows both surfaces, not a strut)
+                main = main + x + (x.minkowski_sum(ball) ^ near.minkowski_sum(ball))
             else:                                           # floating: a buried rod
                 A = np.asarray(x.to_mesh().vert_properties)[:, :3]
                 B = np.asarray(near.to_mesh().vert_properties)[:, :3] if not near.is_empty() else np.empty((0, 3))
