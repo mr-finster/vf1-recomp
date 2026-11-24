@@ -90,6 +90,11 @@ EOF
 		python3 -I "$HERE/dump_to_stl.py" "$OUT/$name.json" "$OUT/$name.stl" --zup
 		python3 -I "$HERE/build_print.py" "$OUT/$name.json" "$OUT/${name}_parts"  --height-mm "$HEIGHT_MM" --smooth "$SMOOTH" --zup
 		python3 -I "$HERE/ball_joints.py" "$OUT/$name.json" "$OUT/${name}_joints" --height-mm "$HEIGHT_MM" --clearance-mm "$CLEARANCE_MM" --smooth "$SMOOTH" --zup
+		if python3 -c "import manifold3d" 2>/dev/null; then
+			python3 "$HERE/hidden_joints.py" "$OUT/$name.json" "$OUT/${name}_figure" --height-mm "$HEIGHT_MM" --clearance-mm "$CLEARANCE_MM"
+		else
+			echo "   (pip install manifold3d for the hidden-joint figure, ${name}_figure)" >&2
+		fi
 	else
 		echo "   !! no dump for $name — check $OUT/$name.png and retune BOOT/TO_SELECT/DUMP_FRAME" >&2
 	fi

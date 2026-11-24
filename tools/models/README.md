@@ -73,6 +73,20 @@ characters are forced directly, so they're named.
   range. Defaults pass on Akira with every joint ≥ 0.44 mm clear. Untested on a
   real printer: print one joint first and adjust clearance/snap to your printer.
 
+- **`hidden_joints.py dump.json OUTDIR`** — the finished figure: joints hidden
+  **inside** the body, so it looks like the character with thin seam lines
+  (needs `pip install manifold3d` for exact solid booleans). Each joint is a
+  spherical seam centred on the pivot (sized to swallow where the two parts
+  overlapped in the game model): the moving part owns everything inside the
+  sphere, the parent the rest, `--seam-mm 0.4` apart, so it turns without
+  colliding. Inside, the parent's ball on a post is captive in a cavity in
+  the moving part, with a channel kept within the parent's cover so it never
+  shows. **Print‑in‑place**: it prints assembled (`figure_assembled.stl`), the
+  balls already captive; resin or a well‑tuned FDM printer for the 0.3 mm
+  clearances. `--check` reports how far each joint swings before the parts
+  touch; in Akira's crouched stance knees reach ~10–20°, elbows and the right
+  shoulder up to 70°, others ~20–40°.
+
 ## Notes
 
 - **Pose**: the dump is a snapshot of the round‑start idle stance (VF has no
