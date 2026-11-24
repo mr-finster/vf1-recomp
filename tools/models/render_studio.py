@@ -21,7 +21,7 @@ def _raster(tris, cols, W, H, proj, zbuf, img):
         if img is not None: img[miny:maxy + 1, minx:maxx + 1][dr] = col
 
 def render(tris, out, yaw=0.5, pitch=0.18, res=1100, material=(0.62, 0.64, 0.68),
-           ss=3, frame=None, bg_top=(236, 238, 242), bg_bot=(196, 200, 208)):
+           ss=3, frame=None, bg_top=(236, 238, 242), bg_bot=(196, 200, 208), colors=None):
     tris = np.asarray(tris, float)                      # (N,3,3) mm, Z up
     cy, sy, cp, sp = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch)
     R = np.array([[cy, -sy, 0], [sp * sy, sp * cy, cp], [cp * sy, cp * cy, -sp]])  # rows: right, up, depth(into)
@@ -43,7 +43,8 @@ def render(tris, out, yaw=0.5, pitch=0.18, res=1100, material=(0.62, 0.64, 0.68)
     view = R[2] * -1                                     # toward the camera
     mat = np.array(material)
     cols = []
-    for tri in tris:
+    for ti, tri in enumerate(tris):
+        if colors is not None: mat = np.asarray(colors[ti], float)
         n = np.cross(tri[1] - tri[0], tri[2] - tri[0]); L = np.linalg.norm(n)
         n = n / L if L else np.array([0, 0, 1.0])
         if np.dot(n, view) < 0: n = -n                   # two-sided
