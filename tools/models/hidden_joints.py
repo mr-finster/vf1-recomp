@@ -86,7 +86,11 @@ def bridge_shells(M, min_vol=1.0, r=0.6, weld=0.3):
                 ball = m3.Manifold.sphere(weld, 8)
                 main = main + x + (x.minkowski_sum(ball) ^ near.minkowski_sum(ball))
             else:                                           # floating: a buried rod
-                A = np.asarray(x.to_mesh().vert_properties)[:, :3]; B = np.asarray(near.to_mesh().vert_properties)[:, :3]
+                A = np.asarray(x.to_mesh().vert_properties)[:, :3]
+                B = np.asarray(near.to_mesh().vert_properties)[:, :3] if not near.is_empty() else np.empty((0, 3))
+                if len(B) == 0:                             # nothing within 2 mm (a braid, a strand): search the whole body
+                    B = np.asarray(main.to_mesh().vert_properties)[:, :3]
+                A = A[::max(1, len(A) // 2000)]; B = B[::max(1, len(B) // 4000)]
                 d = ((A[:, None, :] - B[None, :, :]) ** 2).sum(-1); i, k = np.unravel_index(d.argmin(), d.shape)
                 a, b = A[i], B[k]; v = b - a; v = v / (np.linalg.norm(v) or 1)
                 p0, p1 = a - v * 1.0, b + v * 1.0
