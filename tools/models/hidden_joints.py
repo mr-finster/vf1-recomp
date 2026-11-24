@@ -102,50 +102,67 @@ def build(parts, height_mm=180.0, seam_mm=0.4, clearance_mm=0.3, swing_deg=40.0,
         Rs = min(max(Rs, 4.5), 1.8 * rc_child)
         # where the two parts overlapped in the game model, they'd be left touching
         # (zero gap) outside the seam: grow the seam sphere to swallow that overlap
-        ov = solid[child] ^ solid[par]
+        ov = solid[child] ^ solid[par]; Rs_ov = 0.0
         if ov.volume() > 1e-3:
             ovv = np.asarray(ov.to_mesh().vert_properties)[:, :3]
-            Rs = max(Rs, min(float(np.linalg.norm(ovv - c, axis=1).max()) + 0.6, 2.6 * rc_child))
-        rb = float(np.clip(0.36 * Rs, 1.6, Rs - 1.2 - clearance_mm - 1.0))
-        # the ball must fit inside the body with a wall round its cavity: shrink it
-        # until cavity + 0.8 mm is fully enclosed by the original two parts
-        body = orig[par] + orig[child]
-        while rb > 1.6 and (m3.Manifold.sphere(rb + clearance_mm + 0.8, seg).translate(c) - body).volume() > 0.05:
-            rb *= 0.9
-        rb = max(rb, 1.6)
-        rin = rb + clearance_mm; rn = 0.42 * rb
-        S = m3.Manifold.sphere(Rs, seg).translate(c)
-        Sg = m3.Manifold.sphere(Rs + seam_mm, seg).translate(c)
-        P, C = solid[par], solid[child]
-        dome = (P + C) ^ S
-        for o, Mo in solid.items():                                  # nobody else's material
-            if o not in (par, child): dome = dome - Mo
-        P = P - Sg
-        C = dome + ((C - S) - P)
-        # hidden print-in-place joint: a ball on a post (parent) captive in a
-        # cavity inside the dome (child), with a channel just wide enough for the
-        # post to swing in. The figure prints assembled; nothing snaps in.
-        u = pts[par].mean(0) - c; u = u / (np.linalg.norm(u) or 1)
-        post = Rs + seam_mm + max(2.0 * rb, 3.0)
-        mkstem = lambda: place(m3.Manifold.cylinder(post, rn, rn, seg), c, u)
-        stem = mkstem() ^ (P + Sg)
-        P = P + m3.Manifold.sphere(rb, seg).translate(c) + stem
-        # the channel: hull of the post swung swing_deg every way about c ...
-        w = np.cross(u, [0, 0, 1.0]); w = w if np.linalg.norm(w) > 1e-6 else np.cross(u, [0, 1.0, 0])
-        w /= np.linalg.norm(w); v = np.cross(u, w); sw = [mkstem()]
-        for k in range(8):
-            t = 2 * np.pi * k / 8
-            sw.append(rot_about(mkstem(), c, np.cos(t) * w + np.sin(t) * v, np.radians(swing_deg)))
-        swept = m3.Manifold.batch_hull(sw).offset(clearance_mm) if hasattr(m3.Manifold, "offset") else m3.Manifold.batch_hull(sw)
-        # ... kept inside the cone the parent's body covers, so it never shows
-        band = pts[par][np.abs(np.linalg.norm(pts[par] - c, axis=1) - (Rs + 2.0)) < 2.0]
-        ang = np.degrees(np.arccos(np.clip((band - c) @ u / np.linalg.norm(band - c, axis=1), -1, 1))) if len(band) > 8 else np.array([35.0])
-        beta = float(np.clip(np.percentile(ang, 25) * 0.85, 12.0, 70.0))
-        cone_h = Rs + seam_mm + 1.0
-        cover = place(m3.Manifold.cylinder(cone_h, 0.0, cone_h * np.tan(np.radians(beta)), seg), c, u)
-        C = C - m3.Manifold.sphere(rin, seg).translate(c) - (swept ^ cover)
+            Rs_ov = float(np.linalg.norm(ovv - c, axis=1).max()) + 0.6
+        def make(Rs):
+            rb = float(np.clip(0.36 * Rs, 1.6, Rs - 1.2 - clearance_mm - 1.0))
+            # the ball must fit inside the body with a wall round its cavity: shrink it
+            # until cavity + 0.8 mm is fully enclosed by the original two parts
+            body = orig[par] + orig[child]
+            while rb > 1.6 and (m3.Manifold.sphere(rb + clearance_mm + 0.8, seg).translate(c) - body).volume() > 0.05:
+                rb *= 0.9
+            rb = max(rb, 1.6)
+            rin = rb + clearance_mm; rn = 0.42 * rb
+            S = m3.Manifold.sphere(Rs, seg).translate(c)
+            Sg = m3.Manifold.sphere(Rs + seam_mm, seg).translate(c)
+            P, C = solid[par], solid[child]
+            dome = (P + C) ^ S
+            for o, Mo in solid.items():                                  # nobody else's material
+                if o not in (par, child): dome = dome - Mo
+            P = P - Sg
+            C = dome + ((C - S) - P)
+            # hidden print-in-place joint: a ball on a post (parent) captive in a
+            # cavity inside the dome (child), with a channel just wide enough for the
+            # post to swing in. The figure prints assembled; nothing snaps in.
+            u = pts[par].mean(0) - c; u = u / (np.linalg.norm(u) or 1)
+            post = Rs + seam_mm + max(2.0 * rb, 3.0)
+            mkstem = lambda: place(m3.Manifold.cylinder(post, rn, rn, seg), c, u)
+            stem = mkstem() ^ (P + Sg)
+            P = P + m3.Manifold.sphere(rb, seg).translate(c) + stem
+            # the channel: hull of the post swung swing_deg every way about c ...
+            w = np.cross(u, [0, 0, 1.0]); w = w if np.linalg.norm(w) > 1e-6 else np.cross(u, [0, 1.0, 0])
+            w /= np.linalg.norm(w); v = np.cross(u, w); sw = [mkstem()]
+            for k in range(8):
+                t = 2 * np.pi * k / 8
+                sw.append(rot_about(mkstem(), c, np.cos(t) * w + np.sin(t) * v, np.radians(swing_deg)))
+            swept = m3.Manifold.batch_hull(sw).offset(clearance_mm) if hasattr(m3.Manifold, "offset") else m3.Manifold.batch_hull(sw)
+            # ... kept inside the cone the parent's body covers, so it never shows
+            band = pts[par][np.abs(np.linalg.norm(pts[par] - c, axis=1) - (Rs + 2.0)) < 2.0]
+            ang = np.degrees(np.arccos(np.clip((band - c) @ u / np.linalg.norm(band - c, axis=1), -1, 1))) if len(band) > 8 else np.array([35.0])
+            beta = float(np.clip(np.percentile(ang, 25) * 0.85, 12.0, 70.0))
+            cone_h = Rs + seam_mm + 1.0
+            cover = place(m3.Manifold.cylinder(cone_h, 0.0, cone_h * np.tan(np.radians(beta)), seg), c, u)
+            C = C - m3.Manifold.sphere(rin, seg).translate(c) - (swept ^ cover)
+            return P, C, dict(parent=par, c=c, d=d, u=u, Rs=Rs, rb=rb, rin=rin, rn=rn, beta=beta)
+        # choose the seam size by trying it: the candidate whose moving part swings
+        # cleanest (8 directions x 15/30/40 deg) wins; ties go to the smaller seam
+        cands = sorted({round(min(max(Rs, Rs_ov) * f, 3.4 * rc_child), 3) for f in (1.0, 1.15, 1.35, 1.6)} | {round(Rs, 3)})
+        best = None
+        for R_ in cands:
+            P, C, meta = make(R_)
+            dd = meta["d"]; w = np.cross(dd, [0, 0, 1.0]); w = w if np.linalg.norm(w) > 1e-6 else np.cross(dd, [0, 1.0, 0])
+            w /= np.linalg.norm(w); v = np.cross(dd, w); score = 0
+            for kk in range(8):
+                ax = np.cos(2 * np.pi * kk / 8) * w + np.sin(2 * np.pi * kk / 8) * v
+                for deg in (15, 30, 40):
+                    if (P ^ rot_about(C, c, ax, np.radians(deg))).volume() <= 0.5: score += 1
+                    else: break
+            if best is None or score > best[0]: best = (score, P, C, meta)
+        _, P, C, meta = best
         solid[par], solid[child] = P, C
-        joints[child] = dict(parent=par, c=c, d=d, u=u, Rs=Rs, rb=rb, rin=rin, rn=rn, beta=beta)
+        joints[child] = meta
     return dict(solid=solid, joints=joints, parent=parent, root=root)
 
 def check(rig, max_deg=70, dirs=8, tol=0.5):
