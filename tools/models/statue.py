@@ -45,6 +45,12 @@ def main():
             print(f"FAIL: {len(far)} piece(s) more than 5 mm from the body (wrong extraction?)"); sys.exit(1)
     body = hj.bridge_shells(body, min_vol=0.3)
     body = body.translate([0, 0, -body.bounding_box()[2]])
+    # the very top: a tip that tapers below one nozzle line (~0.45 mm²) gets
+    # skipped by the slicer, leaving a speck printed in mid-air above empty
+    # layers (Jacky's hair spike). Blunt it where it's still printable.
+    top = body.bounding_box()[5]; z = top
+    while z > top - 3.0 and body.slice(float(z)).area() < 0.45: z -= 0.04
+    if z < top - 1e-6: body = body.trim_by_plane([0, 0, -1.0], -float(z)); print(f"blunted the top tip by {top - z:.2f} mm")
     R = hj.roundtrip(body); pieces = [x for x in R.decompose() if x.volume() > 1e-6]
     hj.bj.write_stl(os.path.join(a.outdir, "statue.stl"), [hj.mesh_of(R)])
     # can it stand on its own? centre of mass vs the feet's contact area
