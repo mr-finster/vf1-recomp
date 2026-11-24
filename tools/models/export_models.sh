@@ -1,118 +1,97 @@
 #!/usr/bin/env bash
-# Export VF character meshes to STL, for poking around in Blender.
+# Export VF characters as 3D-printable STL meshes (optionally ball-jointed),
+# driving the headless game against YOUR OWN roms/vf.zip.
 #
-# The models live inside your own vf.zip and are assembled and posed at
-# runtime; nothing ships with the project. This drives the headless game
-# (tools/vfscript) to a posed fight frame for each character, dumps player 1's
-# body with the engine's VF_DUMP_FIGHTER debug path, and converts the dump to a
-# binary STL with dump_to_stl.py.
+# The models live inside the ROM and are assembled/posed at runtime; nothing
+# ships with the project. This reaches a round-1 idle frame for a character,
+# dumps player 1's body with the engine's VF_DUMP_FIGHTER debug path, and runs:
+#   dump_to_stl.py   - one merged STL (quick look)
+#   build_print.py   - per-part watertight solids + a combined figure
+#   ball_joints.py   - per-part ball-and-socket parts + a jointed figure
 #
-# Prerequisites (same as a normal build): a C++20 toolchain, zlib, SDL3,
-# FreeType, python3, and YOUR OWN roms/vf.zip (a MAME "vf" set). Nothing here
-# downloads or ships game data.
+# Prerequisites: a C++20 toolchain, zlib, python3 (numpy for the print tools),
+# and your own MAME "vf" set at roms/vf.zip. No SDL needed (runs on the
+# interpreter). Nothing here downloads game data.
 #
-#   ./tools/models/export_models.sh                # all characters -> build/models
-#   ./tools/models/export_models.sh --one 3        # just P1 cursor slot 3
-#   ./tools/models/export_models.sh --secret 2     # just secret character 2 (Jeff)
+#   ./tools/models/export_models.sh                 # all characters -> build/models
+#   ./tools/models/export_models.sh --one 0         # one cast member by select slot
+#   ./tools/models/export_models.sh --secret 7      # one secret character (7 = Dural)
 #
-# What you get in the output dir, per character:
-#   <name>.json   the raw dump (parts, points, quads, colours, matrices)
-#   <name>.stl    the merged, posed mesh for Blender
-#   <name>.png    a screenshot of that frame, so you can SEE who/what you got
-#
-# IMPORTANT — this part can't be tested without a ROM, so the timings below are
-# first guesses. The cursor-slot -> character order is defined by ROM bytes, so
-# which cast member each slot gives is confirmed by the .png, not assumed here.
-# If a mesh comes out empty or mid-animation, open the .png and adjust the
-# frame knobs at the top of this script (they're all plain variables).
+# Slot 0 is always Akira; the rest of the cast order is ROM-defined, so each
+# character also gets a screenshot (<name>.png) to confirm who you got.
 
 set -euo pipefail
 
-# ---- tuning knobs (frames are the game's own 57.5 fps clock) --------------
-BOOT=${BOOT:-260}             # frames to sit through boot/attract before coining
-TO_SELECT=${TO_SELECT:-200}   # frames from start button to the character select
-TO_FIGHT=${TO_FIGHT:-260}     # frames from confirming a fighter to round 1 idle
-DUMP_FRAME=${DUMP_FRAME:-}    # absolute frame to dump at; default computed below
-CONFIRM_MASK=${CONFIRM_MASK:-01}   # select-confirm button (01=punch, 02=kick, 04=guard)
+# ---- validated timing (the game's 57.5 fps clock) -------------------------
+BOOT=${BOOT:-260}; TO_SELECT=${TO_SELECT:-300}; DUMP_FRAME=${DUMP_FRAME:-749}
+HEIGHT_MM=${HEIGHT_MM:-180}; CLEARANCE_MM=${CLEARANCE_MM:-0.3}
 # ---------------------------------------------------------------------------
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REGIONS=${REGIONS:-"$REPO/build/vf"}
 OUT=${OUT:-"$REPO/build/models"}
 VFSCRIPT="$REPO/build/bin/vfscript"
-STL="$REPO/tools/models/dump_to_stl.py"
-STL_OPTS=${STL_OPTS:-}        # e.g. "--zup --scale 0.01" for Blender-friendly units
+HERE="$REPO/tools/models"
 
-# cursor slot 0 is always Akira; the rest of the order is ROM-defined (check the
-# .png). VF has eight cast members, so slots 0..7.
-CAST_SLOTS=(0 1 2 3 4 5 6 7)
-# secret characters, by set_akira_slot / VF_AKIRA index:
 SECRET_NAMES=("" "siba" "jeff" "takeru" "rekka" "score" "aeon" "dural")
 
 mode="all"; sel=""
 case "${1:-}" in
-	--one)    mode="one";    sel="${2:?slot number}";;
-	--secret) mode="secret"; sel="${2:?secret index 1..7}";;
-	--help|-h) sed -n '2,40p' "$0"; exit 0;;
+	--one)    mode="one";    sel="${2:?slot 0-7}";;
+	--secret) mode="secret"; sel="${2:?secret 1-7}";;
+	--help|-h) sed -n '2,33p' "$0"; exit 0;;
 	"") ;;
 	*) echo "unknown option: $1 (try --help)" >&2; exit 2;;
 esac
 
-# ---- build what's needed --------------------------------------------------
+# ---- build regions + vfscript (interpreter; no AOT recompile, no SDL) ------
 if [ ! -f "$REGIONS/maincpu.bin" ]; then
-	if [ ! -f "$REPO/roms/vf.zip" ]; then
-		echo "error: no regions at $REGIONS and no $REPO/roms/vf.zip to build them from." >&2
-		echo "Put your MAME 'vf' set at roms/vf.zip (see the README), or set REGIONS=<dir>." >&2
-		exit 1
-	fi
+	[ -f "$REPO/roms/vf.zip" ] || { echo "error: put your MAME 'vf' set at roms/vf.zip" >&2; exit 1; }
 	echo "==> building regions from roms/vf.zip"
 	( cd "$REPO" && python3 tools/romset.py roms/vf.zip build/vf )
 fi
 if [ ! -x "$VFSCRIPT" ]; then
-	echo "==> building vfscript"
-	( cd "$REPO" && make build/bin/vfscript )
+	echo "==> building vfscript (interpreter build)"
+	# stub the AOT-recompiled table so the link succeeds without a coverage run;
+	# vfscript runs on the V60 interpreter unless VF_REC is set, so this is enough.
+	mkdir -p "$REPO/build/gen"
+	: > "$REPO/build/gen/vf_prog.txt"
+	cp "$REPO/src/rt/rec_table_none.cpp" "$REPO/build/gen/vf_rec.cpp"
+	( cd "$REPO" && make -j"$(nproc)" SDL_LIBS= build/bin/vfscript )
 fi
 mkdir -p "$OUT"
 
-: "${DUMP_FRAME:=$(( BOOT + 40 + TO_SELECT + 40 + TO_FIGHT + 120 ))}"
-
-# write a vfscript that reaches a posed round-1 frame for one fighter.
-#   $1 cursor slot, $2 shot name
-gen_script() {
-	local ch="$1" name="$2"
-	cat <<EOF
-# generated by export_models.sh
+# dump + convert one character.  $1 cursor slot, $2 name, $3 VF_AKIRA (optional)
+run_one() {
+	local ch="$1" name="$2" akira="${3:-}" dir="$OUT/.work_$2"
+	mkdir -p "$dir"
+	cat > "$dir/s.txt" <<EOF
 wait $BOOT
 press 0 01 4
 press 0 10 4
 wait $TO_SELECT
-# force player 1's select cursor to slot $ch (0 = Akira), then confirm
 poke8 50749c $(printf '%x' "$ch")
-wait 4
-press 1 $CONFIRM_MASK 4
+press 1 01 4
 poke8 50749c $(printf '%x' "$ch")
-press 1 $CONFIRM_MASK 4
-wait $TO_FIGHT
-# idle in the fight long enough that frame $DUMP_FRAME lands here, then shot it
-wait 240
+press 1 01 4
+wait 141
 shot $name
+wait 20
 EOF
-}
-
-run_one() {
-	local ch="$1" name="$2" akira="${3:-}"
-	local dir; dir="$(mktemp -d)"
-	gen_script "$ch" "$name" > "$dir/script.txt"
-	echo "==> $name (cursor slot $ch${akira:+, VF_AKIRA=$akira}), dump at frame $DUMP_FRAME"
-	( cd "$REPO" && \
-	  VF_PCMODE=1 VF_FREEPLAY=1 \
-	  ${akira:+VF_AKIRA=$akira} \
-	  VF_DUMP_FIGHTER="$DUMP_FRAME:$OUT/$name.json" \
-	  "$VFSCRIPT" "$REGIONS" "$dir/script.txt" "$OUT" ) || true
+	echo "==> $name (slot $ch${akira:+, VF_AKIRA=$akira}) dump@$DUMP_FRAME"
+	(
+		cd "$REPO"
+		export VF_PCMODE=1 VF_FREEPLAY=1
+		export VF_DUMP_FIGHTER="$DUMP_FRAME:$OUT/$name.json"
+		[ -n "$akira" ] && export VF_AKIRA="$akira"
+		"$VFSCRIPT" "$REGIONS" "$dir/s.txt" "$OUT" >/dev/null 2>&1
+	) || true
 	if [ -s "$OUT/$name.json" ]; then
-		python3 -I "$STL" "$OUT/$name.json" "$OUT/$name.stl" $STL_OPTS
+		python3 -I "$HERE/dump_to_stl.py" "$OUT/$name.json" "$OUT/$name.stl" --zup
+		python3 -I "$HERE/build_print.py" "$OUT/$name.json" "$OUT/${name}_parts"  --height-mm "$HEIGHT_MM" --zup
+		python3 -I "$HERE/ball_joints.py" "$OUT/$name.json" "$OUT/${name}_joints" --height-mm "$HEIGHT_MM" --clearance-mm "$CLEARANCE_MM" --zup
 	else
-		echo "   !! no geometry dumped for $name — open $OUT/$name.png and retune the frame knobs" >&2
+		echo "   !! no dump for $name — check $OUT/$name.png and retune BOOT/TO_SELECT/DUMP_FRAME" >&2
 	fi
 	rm -rf "$dir"
 }
@@ -121,11 +100,8 @@ case "$mode" in
 	one)    run_one "$sel" "slot$sel";;
 	secret) run_one 0 "secret_${SECRET_NAMES[$sel]:-$sel}" "$sel";;
 	all)
-		for ch in "${CAST_SLOTS[@]}"; do run_one "$ch" "cast_slot$ch"; done
-		for which in 1 2 3 4 5 6 7; do run_one 0 "secret_${SECRET_NAMES[$which]}" "$which"; done
+		for ch in 0 1 2 3 4 5 6 7; do run_one "$ch" "cast_slot$ch"; done
+		for w in 1 2 3 4 5 6 7; do run_one 0 "secret_${SECRET_NAMES[$w]}" "$w"; done
 		;;
 esac
-
-echo
-echo "Done. STLs and screenshots are in: $OUT"
-echo "Open each .png to confirm which character/pose you got, then rename its .stl."
+echo; echo "Done -> $OUT  (check each .png to label the cast; _parts = solids, _joints = ball-jointed)"
