@@ -255,8 +255,8 @@ def main():
     ap.add_argument("--clearance-mm", type=float, default=0.3)
     ap.add_argument("--ball-frac", type=float, default=0.45,
                     help="ball radius as a fraction of the child's cross-section")
-    ap.add_argument("--smooth", type=int, default=12,
-                    help="Taubin smoothing passes to clean the mesh noise (0 = raw)")
+    ap.add_argument("--smooth", type=int, default=0,
+                    help="optional Taubin smoothing passes (0 = raw crisp low-poly)")
     ap.add_argument("--zup", action="store_true")
     args = ap.parse_args()
 

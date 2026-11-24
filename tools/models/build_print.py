@@ -160,8 +160,9 @@ def main():
     ap.add_argument("--height-mm", type=float, default=180.0)
     ap.add_argument("--zup", action="store_true", help="Z-up for printing/Blender")
     ap.add_argument("--eps", type=float, default=1e-4, help="weld epsilon (model units)")
-    ap.add_argument("--smooth", type=int, default=12,
-                    help="Taubin smoothing passes to clean the mesh noise (0 = raw)")
+    ap.add_argument("--smooth", type=int, default=0,
+                    help="optional Taubin smoothing passes (0 = raw crisp low-poly; "
+                         "a few passes soften noise but also round off detail)")
     ap.add_argument("--combined-only", action="store_true")
     args = ap.parse_args()
 

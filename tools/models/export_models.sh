@@ -24,7 +24,7 @@ set -euo pipefail
 
 # ---- validated timing (the game's 57.5 fps clock) -------------------------
 BOOT=${BOOT:-260}; TO_SELECT=${TO_SELECT:-300}; DUMP_FRAME=${DUMP_FRAME:-749}
-HEIGHT_MM=${HEIGHT_MM:-180}; CLEARANCE_MM=${CLEARANCE_MM:-0.3}; SMOOTH=${SMOOTH:-12}
+HEIGHT_MM=${HEIGHT_MM:-180}; CLEARANCE_MM=${CLEARANCE_MM:-0.3}; SMOOTH=${SMOOTH:-0}
 # ---------------------------------------------------------------------------
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
