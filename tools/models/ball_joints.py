@@ -253,7 +253,7 @@ def main():
     ap.add_argument("dump"); ap.add_argument("outdir")
     ap.add_argument("--height-mm", type=float, default=180.0)
     ap.add_argument("--clearance-mm", type=float, default=0.3)
-    ap.add_argument("--ball-frac", type=float, default=0.45,
+    ap.add_argument("--ball-frac", type=float, default=0.58,
                     help="ball radius as a fraction of the child's cross-section")
     ap.add_argument("--smooth", type=int, default=0,
                     help="optional Taubin smoothing passes (0 = raw crisp low-poly)")
@@ -311,7 +311,7 @@ def main():
         mesh[par] = trim(*mesh[par], p, rcut)
         # child: ball centred at the pivot, on a neck back to the trimmed stub
         extra[child].append(uv_sphere(p, rb))
-        extra[child].append(cylinder(p + d_child * rcut * 1.15, p, rb * 0.5))
+        extra[child].append(cylinder(p + d_child * rcut * 1.25, p, rb * 0.42))
         # parent: socket cup at the pivot, cavity = ball + clearance, opening to child
         extra[par].append(socket_cup(p, d_child, rb + clr, wall=max(rb * 0.5, 1.2 / scale)))
         joints += 1
