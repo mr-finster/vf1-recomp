@@ -13,3 +13,7 @@ refs/
 .DS_Store
 # the lobby's address (one line): the builds read it, git never has it
 .lobby-url
+
+# python bytecode
+__pycache__/
+*.pyc
