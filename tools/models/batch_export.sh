@@ -12,6 +12,11 @@ echo "| Character | Print check | Parts | Size (mm) | Build time |" >> "$SUM"; e
 for n in $ORDER; do
 	[ -s "$DUMPS/$n.json" ] || { echo "| $n | no dump | | | |" >> "$SUM"; continue; }
 	D="$OUT/$n"; mkdir -p "$D"; t0=$(date +%s)
+	if [ -s "$OUT/$n.zip" ] && [ -s "$D/check.log" ]; then      # resumable: already done
+		st=$(grep -q '^PASS' "$D/check.log" && echo PASS || echo "FAIL (see $n/check.log)")
+		echo "| $n | $st | $(ls "$D"/print/part_*.stl | wc -l) | $(grep -o 'figure [0-9]* x [0-9]* x [0-9]* mm' "$D/check.log" | head -1 | sed 's/figure //;s/ mm//') | (earlier run) |" >> "$SUM"
+		echo "    $n: already done, $st"; continue
+	fi
 	echo "=== $n $(date -u +%H:%M)" 
 	python3 tools/models/hidden_joints.py "$DUMPS/$n.json" "$D/print" --check > "$D/build.log" 2>&1; b=$?
 	python3 tools/models/check_print.py "$D/print" --min-wall 0.45 > "$D/check.log" 2>&1; c=$?
