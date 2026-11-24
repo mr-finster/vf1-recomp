@@ -1281,6 +1281,11 @@ void model1::dump_part(uint32_t tex_adr, uint32_t poly_adr, uint32_t size)
 	// Dedup a redraw of the same frame (the GPU check, a screenshot: the same
 	// matrix again), but keep a model reused at another matrix in the one frame
 	// (a mirrored limb drawn twice): key on the poly and the matrix together.
+	// TESTONLY (VF_DUMP_ALL=1 with VF_DUMP_FIGHTER): every fighter model drawn that frame, not
+	// only player 1's record's parts: the hair strands, braids and ribbons are drawn outside the
+	// record (tagged "x<poly>"; the extractor keeps the ones on player 1's body)
+	static const bool dump_all = getenv("VF_DUMP_ALL") != nullptr;
+	if (tag.empty() && dump_all && !stage_model(poly_adr)) tag = "x" + std::to_string(poly_adr);
 	if (tag.empty()) return;
 	{
 		std::string key(reinterpret_cast<const char *>(&poly_adr), sizeof poly_adr);
