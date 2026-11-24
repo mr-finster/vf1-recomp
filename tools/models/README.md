@@ -41,12 +41,17 @@ characters are forced directly, so they're named.
 
 - **`dump_to_stl.py dump.json out.stl`** — merges the posed parts into one STL.
   `--scale`, `--zup` (Y‑up→Z‑up), `--ascii`.
-- **`build_print.py dump.json OUTDIR`** — welds vertices and caps open boundary
-  loops so each body part is a **watertight solid**, scaled to a target height.
-  `--height-mm 180`, `--zup`. The limb segments are already closed in the ROM
-  data; the torso/head/hands/feet shells get capped. (A handful of parts keep a
-  few hairline sliver edges from the original triangle strips — any slicer
-  auto‑repairs those.)
+- **`build_print.py dump.json OUTDIR`** — welds vertices, smooths the mesh, and
+  caps open boundary loops so each body part is a **watertight solid**, scaled to
+  a target height. `--height-mm 180`, `--smooth 12`, `--zup`. The limb segments
+  are already closed in the ROM data; the torso/head/hands/feet shells get
+  capped. (A handful of parts keep a few hairline sliver edges from the original
+  triangle strips — any slicer auto‑repairs those.)
+
+  `--smooth N` runs N Taubin passes to clean the vertex noise of the 1993 game
+  meshes (they were hand‑built for the arcade and are a bit lumpy). It smooths
+  the bumps without shrinking the model or changing the poly count; 0 keeps the
+  raw mesh, ~12 is clean low‑poly, ~25+ starts softening faces and fingers.
 - **`ball_joints.py dump.json OUTDIR`** — recovers the skeleton from the part
   pose matrices (each part's matrix translation *is* its joint pivot), then at
   every joint trims the two limb ends back and bridges the gap with a ball

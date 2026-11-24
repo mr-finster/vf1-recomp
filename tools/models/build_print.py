@@ -40,6 +40,29 @@ def pose(m, P):
     return np.asarray(P) @ A.T + np.array(m[9:12])
 
 
+def smooth_taubin(V, F, iters, lam=0.5, mu=-0.53):
+    """Low-pass the vertex noise of the 1993 game mesh without shrinking it
+    (Taubin's lambda/mu): smooths the little bumps, keeps the low-poly form."""
+    if iters <= 0 or len(F) == 0:
+        return V
+    from collections import defaultdict
+    nb = defaultdict(set)
+    for f in F:
+        for a, b in ((f[0], f[1]), (f[1], f[2]), (f[2], f[0])):
+            nb[a].add(b); nb[b].add(a)
+    idx = [np.array(sorted(nb[i])) if nb.get(i) else np.array([i]) for i in range(len(V))]
+    V = np.asarray(V, float).copy()
+    def lap(P):
+        out = np.empty_like(P)
+        for i in range(len(P)):
+            out[i] = P[idx[i]].mean(0) - P[i]
+        return out
+    for _ in range(iters):
+        V = V + lam * lap(V)
+        V = V + mu * lap(V)
+    return V
+
+
 def faces_of(quads, remap):
     F = []
     for q in quads:
@@ -137,6 +160,8 @@ def main():
     ap.add_argument("--height-mm", type=float, default=180.0)
     ap.add_argument("--zup", action="store_true", help="Z-up for printing/Blender")
     ap.add_argument("--eps", type=float, default=1e-4, help="weld epsilon (model units)")
+    ap.add_argument("--smooth", type=int, default=12,
+                    help="Taubin smoothing passes to clean the mesh noise (0 = raw)")
     ap.add_argument("--combined-only", action="store_true")
     args = ap.parse_args()
 
@@ -152,6 +177,7 @@ def main():
         F = faces_of(p.get("q", []), remap)
         if len(F) == 0:
             continue
+        V = smooth_taubin(V, F, args.smooth)
         V, F = cap(V, F)
         processed.append((p["tag"], V, F))
         allpts.append(V)

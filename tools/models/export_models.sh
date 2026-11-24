@@ -24,7 +24,7 @@ set -euo pipefail
 
 # ---- validated timing (the game's 57.5 fps clock) -------------------------
 BOOT=${BOOT:-260}; TO_SELECT=${TO_SELECT:-300}; DUMP_FRAME=${DUMP_FRAME:-749}
-HEIGHT_MM=${HEIGHT_MM:-180}; CLEARANCE_MM=${CLEARANCE_MM:-0.3}
+HEIGHT_MM=${HEIGHT_MM:-180}; CLEARANCE_MM=${CLEARANCE_MM:-0.3}; SMOOTH=${SMOOTH:-12}
 # ---------------------------------------------------------------------------
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -88,8 +88,8 @@ EOF
 	) || true
 	if [ -s "$OUT/$name.json" ]; then
 		python3 -I "$HERE/dump_to_stl.py" "$OUT/$name.json" "$OUT/$name.stl" --zup
-		python3 -I "$HERE/build_print.py" "$OUT/$name.json" "$OUT/${name}_parts"  --height-mm "$HEIGHT_MM" --zup
-		python3 -I "$HERE/ball_joints.py" "$OUT/$name.json" "$OUT/${name}_joints" --height-mm "$HEIGHT_MM" --clearance-mm "$CLEARANCE_MM" --zup
+		python3 -I "$HERE/build_print.py" "$OUT/$name.json" "$OUT/${name}_parts"  --height-mm "$HEIGHT_MM" --smooth "$SMOOTH" --zup
+		python3 -I "$HERE/ball_joints.py" "$OUT/$name.json" "$OUT/${name}_joints" --height-mm "$HEIGHT_MM" --clearance-mm "$CLEARANCE_MM" --smooth "$SMOOTH" --zup
 	else
 		echo "   !! no dump for $name — check $OUT/$name.png and retune BOOT/TO_SELECT/DUMP_FRAME" >&2
 	fi
