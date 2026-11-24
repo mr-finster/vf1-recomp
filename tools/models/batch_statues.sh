@@ -7,7 +7,7 @@ SUM="$OUT/SUMMARY.md"
 printf '# Statues (exact game models, one solid each)\n\n| Character | Result | Size (mm) | Volume | Thinnest walls |\n|---|---|---|---|---|\n' > "$SUM"
 for n in akira pai lau wolf jeffry kage sarah jacky dural; do
 	D="$OUT/$n"; mkdir -p "$D"
-	python3 tools/models/statue.py "$DUMPS/${n}_full.json" "$D" > "$D/build.log" 2>&1; b=$?
+	python3 tools/models/statue.py "$DUMPS/${n}_full.json" "$D" --base-across "${BASE_ACROSS:-120}" > "$D/build.log" 2>&1; b=$?
 	python3 - "$D" "$n" > "$D/check.log" 2>&1 <<'PY'
 import sys, numpy as np
 sys.path.insert(0, "tools/models"); import check_print as cp
@@ -29,7 +29,7 @@ s.resize((1800, 600), Image.LANCZOS).save(f"{D}/{n}_sheet.png")
 print("OK" if len(pieces) == 1 and M.status().name == "NoError" else "BAD")
 PY
 	cp -f "$DUMPS/$n.png" "$D/${n}_ingame.png"
-	( cd "$D" && rm -f "../$n.zip" && zip -q "../$n.zip" statue.stl statue_on_base.stl ./*.png build.log check.log )
+	( cd "$D" && rm -f "../$n.zip" && zip -q "../$n.zip" statue.stl statue_on_base.stl stand.json ./*.png build.log check.log )
 	res=$(grep -q '^OK' "$D/check.log" && [ $b -eq 0 ] && echo PASS || echo FAIL)
 	sz=$(grep -o 'size [0-9]* x [0-9]* x [0-9]*' "$D/check.log" | sed 's/size //'); vol=$(grep -o 'vol [0-9.]*' "$D/check.log" | sed 's/vol //')
 	wl=$(grep -o '[0-9.]*% of surface under 0.45 mm' "$D/check.log")
