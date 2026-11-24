@@ -17,7 +17,8 @@
 #   ./tools/models/export_models.sh --one 0         # one cast member by select slot
 #   ./tools/models/export_models.sh --secret 7      # one secret character (7 = Dural)
 #
-# Slot 0 is always Akira; the rest of the cast order is ROM-defined, so each
+# The cast is picked like a player does, pressing Right on the select screen:
+# 0 Akira, 1 Pai, 2 Lau, 3 Wolf, 4 Jeffry, 5 Kage, 6 Sarah, 7 Jacky. Each
 # character also gets a screenshot (<name>.png) to confirm who you got.
 
 set -euo pipefail
@@ -70,9 +71,8 @@ wait $BOOT
 press 0 01 4
 press 0 10 4
 wait $TO_SELECT
-poke8 50749c $(printf '%x' "$ch")
+$(for i in $(seq 1 "$ch"); do echo "press 1 40 4"; done)
 press 1 01 4
-poke8 50749c $(printf '%x' "$ch")
 press 1 01 4
 wait 141
 shot $name
@@ -82,7 +82,7 @@ EOF
 	(
 		cd "$REPO"
 		export VF_PCMODE=1 VF_FREEPLAY=1
-		export VF_DUMP_FIGHTER="$DUMP_FRAME:$OUT/$name.json"
+		export VF_DUMP_FIGHTER="$((DUMP_FRAME + 12 * ch)):$OUT/$name.json"   # each Right press is 12 frames
 		[ -n "$akira" ] && export VF_AKIRA="$akira"
 		"$VFSCRIPT" "$REGIONS" "$dir/s.txt" "$OUT" >/dev/null 2>&1
 	) || true
@@ -102,11 +102,11 @@ EOF
 }
 
 case "$mode" in
-	one)    run_one "$sel" "slot$sel";;
-	secret) run_one 0 "secret_${SECRET_NAMES[$sel]:-$sel}" "$sel";;
+	one)    CAST=(akira pai lau wolf jeffry kage sarah jacky); run_one "$sel" "${CAST[$sel]:-slot$sel}";;
+	secret) run_one 0 "${SECRET_NAMES[$sel]:-secret$sel}" "$sel";;
 	all)
-		for ch in 0 1 2 3 4 5 6 7; do run_one "$ch" "cast_slot$ch"; done
-		for w in 1 2 3 4 5 6 7; do run_one 0 "secret_${SECRET_NAMES[$w]}" "$w"; done
+		i=0; for n in akira pai lau wolf jeffry kage sarah jacky; do run_one "$i" "$n"; i=$((i+1)); done
+		for w in 1 2 3 4 5 6 7; do run_one 0 "${SECRET_NAMES[$w]}" "$w"; done
 		;;
 esac
 echo; echo "Done -> $OUT  (check each .png to label the cast; _parts = solids, _joints = ball-jointed)"
