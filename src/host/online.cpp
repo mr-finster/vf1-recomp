@@ -693,6 +693,9 @@ void Online::room_session(bool host)
 	}
 	vfnet::Config c = config(started_with);
 	c.token = room_token;
+	// (round 11c) a room seat: the handshake given the holder's arcade ending too (room2_win_sequence's cap, 25 s): the holder's
+	// game connects only once its last match's ending is over, and a challenger who gave up first was voided and set AWAY
+	if (r2) c.handshake_ms += 25000;
 	adapter.hosting = host;
 	adapter.watching = false;
 	adapter.own_extra = identity.extra;
